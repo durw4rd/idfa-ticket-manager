@@ -1,5 +1,18 @@
-import { sql } from '@vercel/postgres';
+import { sql as vercelSql } from '@vercel/postgres';
 import { Ticket, Screening } from './types';
+
+// Set DATABASE_URL or POSTGRES_URL before importing
+// @vercel/postgres uses POSTGRES_URL by default, but we support DATABASE_URL too
+if (process.env.DATABASE_URL && !process.env.POSTGRES_URL) {
+  process.env.POSTGRES_URL = process.env.DATABASE_URL;
+}
+
+if (!process.env.POSTGRES_URL && !process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL or POSTGRES_URL environment variable is required');
+}
+
+// Use the sql template tag - it will use POSTGRES_URL or DATABASE_URL
+const sql = vercelSql;
 
 export async function createTicket(ticket: Omit<Ticket, 'id' | 'createdAt'>): Promise<Ticket> {
   const result = await sql`
@@ -84,7 +97,7 @@ export function groupTicketsIntoScreenings(tickets: Ticket[]): Screening[] {
   
   const screenings: Screening[] = [];
   
-  for (const [key, ticketGroup] of screeningMap.entries()) {
+  for (const [key, ticketGroup] of Array.from(screeningMap.entries())) {
     const firstTicket = ticketGroup[0];
     screenings.push({
       id: key,
