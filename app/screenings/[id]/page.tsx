@@ -26,10 +26,11 @@ function formatTime(date: Date): string {
 export default async function ScreeningDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
+  const { id } = await params;
   const screenings = await getAllScreenings();
-  const screeningId = decodeURIComponent(params.id);
+  const screeningId = decodeURIComponent(id);
   const screening = screenings.find((s) => s.id === screeningId);
 
   if (!screening) {
