@@ -14,9 +14,12 @@ A Next.js application for managing IDFA (International Documentary Film Festival
 
 ### Prerequisites
 
-- Node.js 18+ and npm
+- **Node.js 22+** (required for `pdfjs-dist` compatibility)
+- npm
 - Vercel account (for Postgres and Blob storage)
 - OpenAI API key
+
+**Note:** If you use `nvm`, the project includes a `.nvmrc` file. Simply run `nvm use` in the project directory to switch to the correct Node.js version.
 
 ### Installation
 
@@ -45,6 +48,8 @@ npm install
    DATABASE_URL=your_neon_or_supabase_postgres_connection_string
    BLOB_READ_WRITE_TOKEN=your_vercel_blob_token_here
    ```
+   
+   **Note:** The code supports both `DATABASE_URL` (for Neon/Supabase) and `POSTGRES_URL` (for Vercel Postgres). Use `DATABASE_URL` for marketplace providers like Neon.
 
 4. Initialize database:
 Run this SQL in your Postgres database (Neon or Supabase):

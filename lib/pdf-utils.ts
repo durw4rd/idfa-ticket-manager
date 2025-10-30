@@ -1,13 +1,24 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import sharp from 'sharp';
 
-// Set up PDF.js worker
+// Configure PDF.js for server-side usage (Next.js API routes)
+// Disable worker - PDF.js will run in main thread for server-side
+// Setting workerSrc to empty string prevents worker initialization
 if (typeof window === 'undefined') {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+  // @ts-ignore - workerSrc can be empty string to disable workers
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '';
 }
 
 export async function pdfPageToImage(pdfBuffer: Buffer, pageNumber: number = 0): Promise<Buffer> {
-  const loadingTask = pdfjsLib.getDocument({ data: pdfBuffer });
+  // Convert Buffer to Uint8Array as required by pdfjs-dist
+  const uint8Array = new Uint8Array(pdfBuffer);
+  // Disable worker and auto-fetch for server-side usage
+  const loadingTask = pdfjsLib.getDocument({ 
+    data: uint8Array,
+    useWorkerFetch: false,
+    disableAutoFetch: true,
+    verbosity: 0,
+  });
   const pdf = await loadingTask.promise;
   const page = await pdf.getPage(pageNumber + 1); // pdf.js uses 1-based indexing
 
