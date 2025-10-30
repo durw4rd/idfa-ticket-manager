@@ -2,12 +2,14 @@
 
 import { useState } from 'react';
 import { Upload, File, X, Loader2 } from 'lucide-react';
+import { pdfFileToImages, PDFPageImage } from '@/lib/pdf-client-utils';
 
 export default function UploadTicket() {
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
+  const [totalPages, setTotalPages] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -46,45 +48,82 @@ export default function UploadTicket() {
     setSuccess(null);
 
     try {
+      let totalPages = 0;
+
+      // First, convert all PDFs to images on the client
+      const allPageImages: Array<PDFPageImage & { pdfUrl?: string }> = [];
+
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         setProgress({ current: i + 1, total: files.length });
-
-        // Upload file
-        const formData = new FormData();
-        formData.append('file', file);
-
-        const uploadResponse = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!uploadResponse.ok) {
-          throw new Error(`Failed to upload ${file.name}`);
-        }
-
-        const { url } = await uploadResponse.json();
-
-        // Process PDF
         setProcessing(true);
-        const processResponse = await fetch('/api/process-pdf', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pdfUrl: url }),
-        });
 
-        if (!processResponse.ok) {
-          throw new Error(`Failed to process ${file.name}`);
-        }
+        try {
+          // Convert PDF to images on client side
+          const pageImages = await pdfFileToImages(file);
+          
+          // Optionally upload PDF to blob storage for reference (via API route)
+          let pdfUrl = '';
+          try {
+            const formData = new FormData();
+            formData.append('file', file);
+            const uploadResponse = await fetch('/api/upload', {
+              method: 'POST',
+              body: formData,
+            });
+            if (uploadResponse.ok) {
+              const { url } = await uploadResponse.json();
+              pdfUrl = url;
+            }
+          } catch (e) {
+            console.warn('Failed to upload PDF, continuing without PDF URL:', e);
+          }
 
-        const summary = await processResponse.json();
-        
-        if (summary.failed > 0) {
-          console.warn(`Some pages failed to process in ${file.name}`);
+          // Add PDF URL to each page image
+          pageImages.forEach(page => {
+            allPageImages.push({
+              ...page,
+              pdfUrl,
+            });
+          });
+
+          const pagesCount = pageImages.length;
+          totalPages += pagesCount;
+          setTotalPages(totalPages);
+        } catch (err) {
+          console.error(`Failed to process ${file.name}:`, err);
+          throw new Error(`Failed to convert ${file.name} to images: ${err instanceof Error ? err.message : 'Unknown error'}`);
         }
       }
 
-      setSuccess(`Successfully processed ${files.length} PDF${files.length > 1 ? 's' : ''}`);
+      // Now send all page images to server for processing
+      setProcessing(true);
+      setProgress({ current: 0, total: totalPages });
+
+      const processResponse = await fetch('/api/process-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pageImages: allPageImages.map(page => ({
+            pageNumber: page.pageNumber,
+            imageData: page.imageData,
+            pdfUrl: page.pdfUrl,
+          })),
+        }),
+      });
+
+      if (!processResponse.ok) {
+        const errorData = await processResponse.json();
+        throw new Error(errorData.error || `Failed to process tickets`);
+      }
+
+      const summary = await processResponse.json();
+      
+      if (summary.failed > 0) {
+        console.warn(`Some pages failed to process: ${summary.failed} out of ${summary.totalPages}`);
+      }
+
+      setSuccess(`Successfully processed ${summary.successful} ticket${summary.successful !== 1 ? 's' : ''} from ${files.length} PDF${files.length > 1 ? 's' : ''}`);
       setFiles([]);
       setTimeout(() => {
         window.location.href = '/screenings';
@@ -95,6 +134,7 @@ export default function UploadTicket() {
       setUploading(false);
       setProcessing(false);
       setProgress({ current: 0, total: 0 });
+      setTotalPages(0);
     }
   };
 
@@ -158,8 +198,8 @@ export default function UploadTicket() {
           <div className="flex items-center space-x-3 mb-2">
             <Loader2 className="h-5 w-5 animate-spin" />
             <p className="font-medium">
-              {uploading && `Uploading file ${progress.current} of ${progress.total}...`}
-              {processing && `Processing PDF: extracting ticket information...`}
+              {uploading && `Converting PDF ${progress.current} of ${progress.total} to images...`}
+              {processing && `Processing ${totalPages} ticket${totalPages !== 1 ? 's' : ''}: extracting information...`}
             </p>
           </div>
           {progress.total > 0 && (

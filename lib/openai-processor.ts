@@ -1,5 +1,4 @@
 import OpenAI from 'openai';
-import { pdfPageToImage } from './pdf-utils';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -15,15 +14,14 @@ export interface ExtractedTicketData {
   };
 }
 
-export async function extractTicketDataFromPDFPage(
-  pdfBuffer: Buffer,
-  pageNumber: number = 0
+/**
+ * Extract ticket data from a base64-encoded image
+ * The image should be a PNG image of a single ticket page
+ */
+export async function extractTicketDataFromImage(
+  base64Image: string
 ): Promise<ExtractedTicketData> {
-  // Convert PDF page to image
-  const imageBuffer = await pdfPageToImage(pdfBuffer, pageNumber);
-  
-  // Convert buffer to base64 for OpenAI
-  const base64Image = imageBuffer.toString('base64');
+  // base64Image should already be in format: "data:image/png;base64,..." or just the base64 string
 
   const prompt = `You are analyzing an IDFA (International Documentary Film Festival Amsterdam) ticket PDF. 
 Extract the following information and return it as JSON:
@@ -58,7 +56,7 @@ Return ONLY valid JSON, no additional text or markdown formatting.`;
             {
               type: 'image_url',
               image_url: {
-                url: `data:image/png;base64,${base64Image}`,
+                url: base64Image.startsWith('data:') ? base64Image : `data:image/png;base64,${base64Image}`,
               },
             },
           ],
