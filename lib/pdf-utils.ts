@@ -1,22 +1,32 @@
-import * as pdfjsLib from 'pdfjs-dist';
+// Use legacy build for better server-side compatibility  
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import sharp from 'sharp';
+import path from 'path';
 
 // Configure PDF.js for server-side usage (Next.js API routes)
-// Disable worker - PDF.js will run in main thread for server-side
-// Setting workerSrc to empty string prevents worker initialization
+// Provide worker path for Node.js environment
 if (typeof window === 'undefined') {
-  // @ts-ignore - workerSrc can be empty string to disable workers
-  pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+  try {
+    // Try to resolve the worker file path
+    const workerPath = require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = workerPath;
+  } catch (e) {
+    // Fallback: use a path relative to node_modules
+    pdfjsLib.GlobalWorkerOptions.workerSrc = path.join(process.cwd(), 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.worker.mjs');
+  }
 }
 
 export async function pdfPageToImage(pdfBuffer: Buffer, pageNumber: number = 0): Promise<Buffer> {
   // Convert Buffer to Uint8Array as required by pdfjs-dist
   const uint8Array = new Uint8Array(pdfBuffer);
   // Disable worker and auto-fetch for server-side usage
+  // Using disableStream prevents worker initialization issues
   const loadingTask = pdfjsLib.getDocument({ 
     data: uint8Array,
     useWorkerFetch: false,
     disableAutoFetch: true,
+    disableStream: true,
+    isEvalSupported: false,
     verbosity: 0,
   });
   const pdf = await loadingTask.promise;

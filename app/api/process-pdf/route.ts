@@ -1,47 +1,56 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { splitPDFIntoPages } from '@/lib/pdf-splitter';
-import { extractTicketDataFromPDFPage } from '@/lib/openai-processor';
-import { extractQRCodeFromPDFPage } from '@/lib/qr-extractor';
+import { extractTicketDataFromImage } from '@/lib/openai-processor';
+import { extractQRCodeFromImage } from '@/lib/qr-extractor';
 import { put } from '@vercel/blob';
-import { createTicket, getTicketsByScreeningKey } from '@/lib/db';
+import { createTicket } from '@/lib/db';
 import { PDFProcessingSummary, ProcessedTicketResult } from '@/lib/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+interface ProcessPDFRequest {
+  pageImages: Array<{
+    pageNumber: number;
+    imageData: string; // Base64 encoded image
+    pdfUrl?: string; // Optional: URL of original PDF for reference
+  }>;
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { pdfUrl } = await request.json();
+    const { pageImages }: ProcessPDFRequest = await request.json();
 
-    if (!pdfUrl) {
-      return NextResponse.json({ error: 'PDF URL required' }, { status: 400 });
+    if (!pageImages || !Array.isArray(pageImages) || pageImages.length === 0) {
+      return NextResponse.json({ error: 'Page images array required' }, { status: 400 });
     }
 
-    // Fetch PDF from URL
-    const response = await fetch(pdfUrl);
-    if (!response.ok) {
-      throw new Error('Failed to fetch PDF');
-    }
-    const pdfBuffer = Buffer.from(await response.arrayBuffer());
-
-    // Split PDF into pages
-    const pageBuffers = await splitPDFIntoPages(pdfBuffer);
-    const totalPages = pageBuffers.length;
-
+    const totalPages = pageImages.length;
     const results: ProcessedTicketResult[] = [];
     let successful = 0;
     let failed = 0;
 
-    // Process each page
-    for (let i = 0; i < pageBuffers.length; i++) {
+    // Process each page image
+    for (let i = 0; i < pageImages.length; i++) {
       try {
-        const pageBuffer = pageBuffers[i];
+        const pageImage = pageImages[i];
         
         // Extract ticket data using OpenAI
-        const extractedData = await extractTicketDataFromPDFPage(pageBuffer, 0);
+        let extractedData;
+        try {
+          extractedData = await extractTicketDataFromImage(pageImage.imageData);
+        } catch (openaiError: any) {
+          // Handle OpenAI quota/rate limit errors
+          if (openaiError?.status === 429 || openaiError?.code === 'insufficient_quota') {
+            const errorMsg = openaiError.code === 'insufficient_quota'
+              ? 'OpenAI API quota exceeded. Please check your billing and plan details.'
+              : 'OpenAI API rate limit exceeded. Please try again later.';
+            throw new Error(errorMsg);
+          }
+          throw openaiError;
+        }
         
         // Extract QR code
-        const qrCodeBuffer = await extractQRCodeFromPDFPage(pageBuffer, 0);
+        const qrCodeBuffer = await extractQRCodeFromImage(pageImage.imageData);
         
         if (!qrCodeBuffer) {
           throw new Error('Could not extract QR code');
@@ -67,7 +76,7 @@ export async function POST(request: NextRequest) {
           date: extractedData.date,
           start: extractedData.start,
           qrCodeUrl: qrCodeBlob.url,
-          pdfUrl: pdfUrl,
+          pdfUrl: pageImage.pdfUrl || '',
         });
 
         results.push({

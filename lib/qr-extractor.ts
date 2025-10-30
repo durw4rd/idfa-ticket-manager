@@ -1,14 +1,20 @@
-import { pdfPageToImage } from './pdf-utils';
 import jsQR from 'jsqr';
 import sharp from 'sharp';
 
-export async function extractQRCodeFromPDFPage(
-  pdfBuffer: Buffer,
-  pageNumber: number = 0
+/**
+ * Extract QR code from a base64-encoded image
+ * The image should be a PNG image of a single ticket page
+ */
+export async function extractQRCodeFromImage(
+  base64Image: string
 ): Promise<Buffer | null> {
   try {
-    // Convert PDF page to high-resolution image
-    const imageBuffer = await pdfPageToImage(pdfBuffer, pageNumber);
+    // Convert base64 to buffer
+    // Handle both "data:image/png;base64,..." and plain base64 strings
+    const base64Data = base64Image.includes(',') 
+      ? base64Image.split(',')[1] 
+      : base64Image;
+    const imageBuffer = Buffer.from(base64Data, 'base64');
 
     // Use sharp to get image data for jsQR
     const { data, info } = await sharp(imageBuffer)
