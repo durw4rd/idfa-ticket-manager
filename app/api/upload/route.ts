@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { put } from '@vercel/blob';
-import formidable from 'formidable';
-import fs from 'fs/promises';
+import { requireAuth } from '@/lib/auth-helpers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
+  // Check authentication
+  const { session, error } = await requireAuth();
+  if (error) return error;
+
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File;

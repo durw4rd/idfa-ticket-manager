@@ -4,6 +4,7 @@ import { extractQRCodeFromImage } from '@/lib/qr-extractor';
 import { put } from '@vercel/blob';
 import { createTicket } from '@/lib/db';
 import { PDFProcessingSummary, ProcessedTicketResult } from '@/lib/types';
+import { requireAuth } from '@/lib/auth-helpers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,6 +18,10 @@ interface ProcessPDFRequest {
 }
 
 export async function POST(request: NextRequest) {
+  // Check authentication
+  const { session, error } = await requireAuth();
+  if (error) return error;
+
   try {
     const { pageImages }: ProcessPDFRequest = await request.json();
 
