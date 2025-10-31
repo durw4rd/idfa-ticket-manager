@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server';
 import { getAllScreenings } from '@/lib/db';
+import { requireAuth } from '@/lib/auth-helpers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
+  // Check authentication
+  const { session, error } = await requireAuth();
+  if (error) return error;
+
   try {
     const screenings = await getAllScreenings();
     
