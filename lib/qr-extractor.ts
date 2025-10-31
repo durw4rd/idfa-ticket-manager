@@ -35,18 +35,23 @@ export async function extractQRCodeFromImage(
     }
 
     // Extract QR code region (with some padding)
+    // sharp requires integers for extract coordinates, so we round all values
     const padding = 50;
-    const x = Math.max(0, qrCode.location.topLeftCorner.x - padding);
-    const y = Math.max(0, qrCode.location.topLeftCorner.y - padding);
-    const width = qrCode.location.bottomRightCorner.x - qrCode.location.topLeftCorner.x + (padding * 2);
-    const height = qrCode.location.bottomRightCorner.y - qrCode.location.topLeftCorner.y + (padding * 2);
+    const x = Math.max(0, Math.round(qrCode.location.topLeftCorner.x - padding));
+    const y = Math.max(0, Math.round(qrCode.location.topLeftCorner.y - padding));
+    const width = Math.round(qrCode.location.bottomRightCorner.x - qrCode.location.topLeftCorner.x + (padding * 2));
+    const height = Math.round(qrCode.location.bottomRightCorner.y - qrCode.location.topLeftCorner.y + (padding * 2));
+
+    // Ensure width and height are also integers and within bounds
+    const extractWidth = Math.floor(Math.min(width, info.width - x));
+    const extractHeight = Math.floor(Math.min(height, info.height - y));
 
     const qrCodeImage = await sharp(imageBuffer)
       .extract({
         left: x,
         top: y,
-        width: Math.min(width, info.width - x),
-        height: Math.min(height, info.height - y),
+        width: extractWidth,
+        height: extractHeight,
       })
       .resize(500, 500, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 1 } })
       .png()
