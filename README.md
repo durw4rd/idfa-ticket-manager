@@ -28,19 +28,7 @@ A Next.js application for managing IDFA film festival tickets. Upload PDF ticket
 npm install
 ```
 
-2. Set up icons for mobile devices:
-
-The app requires the following icon files in the `public` directory:
-- `favicon.ico` - Browser favicon
-- `favicon-16x16.png` - Small favicon
-- `favicon-32x32.png` - Standard favicon
-- `apple-touch-icon.png` (180x180px) - Required for iOS home screen icon
-- `android-chrome-192x192.png` - For Android and PWA
-- `android-chrome-512x512.png` - For Android and PWA
-
-All icon files are already present in the `public` directory.
-
-3. Set up environment variables in `.env.local`:
+2. Set up environment variables in `.env.local`:
 
 ```env
 # Authentication (NextAuth.js)
@@ -52,7 +40,6 @@ GOOGLE_CLIENT_SECRET=your-google-client-secret
 
 # Database
 DATABASE_URL=your-postgres-connection-string
-# Alternative: POSTGRES_URL (if using Vercel Postgres directly)
 
 # Storage
 BLOB_READ_WRITE_TOKEN=your-vercel-blob-token
@@ -88,7 +75,7 @@ OPENAI_API_KEY=your-openai-api-key
 - Production on Vercel: Uses `VERCEL_URL` automatically
 - Can be set manually if needed
 
-4. Set up database:
+3. Set up database:
 
 Run this SQL in your Postgres database:
 
@@ -111,7 +98,7 @@ CREATE INDEX idx_act ON tickets(act);
 CREATE INDEX idx_location ON tickets(location);
 ```
 
-5. Configure email whitelist:
+4. Configure email whitelist:
 
 Update the email whitelist in `lib/auth.ts` (currently hardcoded):
 ```typescript
@@ -121,7 +108,7 @@ const ALLOWED_EMAILS = [
 ];
 ```
 
-6. Run development server:
+5. Run development server:
 ```bash
 npm run dev
 ```
