@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import Providers from "@/components/Providers";
 import AuthButton from "@/components/AuthButton";
-import Link from "next/link";
+import IDFALogo from "@/components/IDFALogo";
 
 export const metadata: Metadata = {
   title: "IDFA Ticket Manager",
@@ -21,10 +21,7 @@ export default function RootLayout({
           <header className="border-b border-idfa-gray-200 bg-white">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
               <div className="flex items-center justify-between">
-                <Link href="/" className="flex items-center space-x-2 hover:opacity-80 transition-opacity">
-                  <h1 className="text-2xl font-bold tracking-tight">IDFA</h1>
-                  <span className="text-idfa-gray-600 text-sm">Ticket Manager</span>
-                </Link>
+                <IDFALogo />
                 <AuthButton />
               </div>
             </div>
