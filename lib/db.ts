@@ -16,9 +16,9 @@ const sql = vercelSql;
 
 export async function createTicket(ticket: Omit<Ticket, 'id' | 'createdAt'>): Promise<Ticket> {
   const result = await sql`
-    INSERT INTO tickets (act, location, date, start, qr_code_url, pdf_url, transaction_id)
-    VALUES (${ticket.act}, ${ticket.location}, ${ticket.date}, ${ticket.start}, ${ticket.qrCodeUrl}, ${ticket.pdfUrl}, ${ticket.transactionId || null})
-    RETURNING id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", created_at as "createdAt"
+    INSERT INTO tickets (act, location, date, start, qr_code_url, pdf_url, transaction_id, festival_link)
+    VALUES (${ticket.act}, ${ticket.location}, ${ticket.date}, ${ticket.start}, ${ticket.qrCodeUrl}, ${ticket.pdfUrl}, ${ticket.transactionId || null}, ${ticket.festivalLink || null})
+    RETURNING id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", festival_link as "festivalLink", created_at as "createdAt"
   `;
   
   return result.rows[0] as Ticket;
@@ -26,7 +26,7 @@ export async function createTicket(ticket: Omit<Ticket, 'id' | 'createdAt'>): Pr
 
 export async function getAllTickets(): Promise<Ticket[]> {
   const result = await sql`
-    SELECT id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", created_at as "createdAt"
+    SELECT id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", festival_link as "festivalLink", created_at as "createdAt"
     FROM tickets
     ORDER BY created_at DESC
   `;
@@ -36,7 +36,7 @@ export async function getAllTickets(): Promise<Ticket[]> {
 
 export async function getTicketById(id: string): Promise<Ticket | null> {
   const result = await sql`
-    SELECT id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", created_at as "createdAt"
+    SELECT id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", festival_link as "festivalLink", created_at as "createdAt"
     FROM tickets
     WHERE id = ${id}
   `;
@@ -46,7 +46,7 @@ export async function getTicketById(id: string): Promise<Ticket | null> {
 
 export async function getTicketsByScreeningKey(act: string, date: string, start: string): Promise<Ticket[]> {
   const result = await sql`
-    SELECT id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", created_at as "createdAt"
+    SELECT id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", festival_link as "festivalLink", created_at as "createdAt"
     FROM tickets
     WHERE act = ${act} AND date = ${date} AND start = ${start}
     ORDER BY created_at ASC

@@ -7,6 +7,7 @@ export interface Ticket {
   qrCodeUrl: string;
   pdfUrl: string;
   transactionId?: string;
+  festivalLink?: string; // URL to IDFA festival page
   createdAt: Date;
 }
 
