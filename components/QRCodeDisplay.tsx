@@ -40,10 +40,12 @@ export default function QRCodeDisplay({ qrCodeUrl, alt, ticketLabel }: QRCodeDis
           document.addEventListener('visibilitychange', handleVisibilityChange);
 
           // Handle wake lock release
-          lock.addEventListener('release', () => {
-            setWakeLock(null);
-            lock = null;
-          });
+          if (lock) {
+            lock.addEventListener('release', () => {
+              setWakeLock(null);
+              lock = null;
+            });
+          }
 
           return () => {
             document.removeEventListener('visibilitychange', handleVisibilityChange);
