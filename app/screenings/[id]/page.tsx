@@ -1,9 +1,12 @@
 import Link from 'next/link';
 import { getAllScreenings } from '@/lib/db';
-import { ArrowLeft, Calendar, MapPin, Clock, QrCode } from 'lucide-react';
+import { ArrowLeft, Calendar, MapPin, Clock, Film, Ticket } from 'lucide-react';
 import { parseTicketDateTime } from '@/lib/db';
 import QRCodeDisplay from '@/components/QRCodeDisplay';
 import { getVenueBackground } from '@/lib/venue-backgrounds';
+import { getFestivalLinkForScreening } from '@/lib/festival-links';
+import FestivalLinkButton from '@/components/FestivalLinkButton';
+import CoupleIcon from '@/components/CoupleIcon';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,6 +55,7 @@ export default async function ScreeningDetailPage({
 
   const screeningDateTime = parseTicketDateTime(screening.date, screening.start);
   const venueBackground = getVenueBackground(screening.location);
+  const festivalLink = await getFestivalLinkForScreening(screening);
 
   return (
     <div 
@@ -68,7 +72,15 @@ export default async function ScreeningDetailPage({
       </Link>
 
       <div className="mb-8">
-        <h1 className="text-4xl font-bold mb-6">{screening.act}</h1>
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
+          <h1 className="text-4xl font-bold">{screening.act}</h1>
+          {festivalLink && (
+            <FestivalLinkButton
+              url={festivalLink}
+              movieTitle={screening.act}
+            />
+          )}
+        </div>
         
         <div className="space-y-3 text-lg">
           <div className="flex items-center space-x-3">
@@ -83,6 +95,15 @@ export default async function ScreeningDetailPage({
             <MapPin className="h-5 w-5 text-idfa-gray-600" />
             <span>{screening.location}</span>
           </div>
+          {screening.ticketCount > 1 && (
+            <div className="flex items-center space-x-3">
+              <Ticket className="h-5 w-5 text-idfa-gray-600" />
+              <span>{screening.ticketCount} tickets</span>
+              {screening.ticketCount === 2 && (
+                <CoupleIcon className="ml-1" />
+              )}
+            </div>
+          )}
         </div>
       </div>
 

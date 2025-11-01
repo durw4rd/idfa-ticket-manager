@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "optimize-backgrounds": "node scripts/optimize-backgrounds.js",
-    "generate-favicons": "node scripts/generate-favicons.js"
+    "generate-favicons": "node scripts/generate-favicons.js",
+    "backfill-festival-links": "node scripts/backfill-festival-links.js"
   },
   "dependencies": {
     "@vercel/blob": "^2.0.0",

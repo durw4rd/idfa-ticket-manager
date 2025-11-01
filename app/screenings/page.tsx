@@ -3,6 +3,7 @@ import { getAllScreenings } from '@/lib/db';
 import { Calendar, MapPin, Clock, Ticket } from 'lucide-react';
 import { parseTicketDateTime } from '@/lib/db';
 import { getVenueBackground } from '@/lib/venue-backgrounds';
+import CoupleIcon from '@/components/CoupleIcon';
 
 export const dynamic = 'force-dynamic';
 
@@ -143,6 +144,9 @@ export default async function ScreeningsPage() {
                       <span className={`font-medium ${isPastScreening ? 'text-idfa-gray-500' : 'text-idfa-black'}`}>
                         {screening.ticketCount} tickets
                       </span>
+                      {screening.ticketCount === 2 && (
+                        <CoupleIcon className="ml-1" />
+                      )}
                     </div>
                   )}
                   </div>

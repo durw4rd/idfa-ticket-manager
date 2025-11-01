@@ -5,6 +5,8 @@ import { put } from '@vercel/blob';
 import { createTicket } from '@/lib/db';
 import { PDFProcessingSummary, ProcessedTicketResult } from '@/lib/types';
 import { requireAuth } from '@/lib/auth-helpers';
+import { findFestivalLink } from '@/lib/find-festival-link';
+import { getFestivalLink } from '@/lib/festival-links';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -74,6 +76,19 @@ export async function POST(request: NextRequest) {
         // Create screening key
         const screeningKey = `${extractedData.act}|${extractedData.date}|${extractedData.start}`;
 
+        // Try to find festival link using AI, then fall back to hardcoded mapping
+        let festivalLink: string | null = null;
+        try {
+          festivalLink = await findFestivalLink(extractedData.act);
+        } catch (error) {
+          console.warn(`AI search failed for "${extractedData.act}":`, error);
+        }
+        
+        // Fall back to hardcoded mapping if AI didn't find it
+        if (!festivalLink) {
+          festivalLink = getFestivalLink(extractedData.act);
+        }
+
         // Create ticket in database
         const ticket = await createTicket({
           act: extractedData.act,
@@ -82,6 +97,7 @@ export async function POST(request: NextRequest) {
           start: extractedData.start,
           qrCodeUrl: qrCodeBlob.url,
           pdfUrl: pageImage.pdfUrl || '',
+          festivalLink: festivalLink || undefined,
         });
 
         results.push({
