@@ -1,7 +1,7 @@
 {
-  "name": "IDFA Ticket Manager",
-  "short_name": "IDFA Tickets",
-  "description": "Manage your IDFA film festival tickets",
+  "name": "IDFA Festival Manager",
+  "short_name": "IDFA Manager",
+  "description": "Manage your IDFA film festival experience",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
