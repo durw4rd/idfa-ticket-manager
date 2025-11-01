@@ -36,7 +36,7 @@ export default function RootLayout({
     <html lang="en">
       <body className="antialiased bg-white text-idfa-black">
         <Providers>
-          <header className="border-b border-idfa-gray-200 bg-white">
+          <header className="border-b border-idfa-gray-200 bg-white relative z-50">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
               <div className="flex items-center justify-between">
                 <IDFALogo />
@@ -47,7 +47,7 @@ export default function RootLayout({
           <main className="min-h-screen">
             {children}
           </main>
-          <footer className="border-t border-idfa-gray-200 bg-white mt-auto">
+          <footer className="border-t border-idfa-gray-200 bg-white mt-auto relative z-50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             <p className="text-center text-idfa-gray-600 text-sm">
               International Documentary Film Festival Amsterdam
