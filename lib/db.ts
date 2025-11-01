@@ -1,5 +1,5 @@
 import { sql as vercelSql } from '@vercel/postgres';
-import { Ticket, Screening } from './types';
+import { Ticket, Screening, Rating } from './types';
 
 // Set DATABASE_URL or POSTGRES_URL before importing
 // @vercel/postgres uses POSTGRES_URL by default, but we support DATABASE_URL too
@@ -117,5 +117,75 @@ export function groupTicketsIntoScreenings(tickets: Ticket[]): Screening[] {
 export async function getAllScreenings(): Promise<Screening[]> {
   const tickets = await getAllTickets();
   return groupTicketsIntoScreenings(tickets);
+}
+
+// Rating functions
+export async function getRating(userEmail: string, act: string): Promise<Rating | null> {
+  const result = await sql`
+    SELECT id, user_email as "userEmail", act, rating, comment, created_at as "createdAt", updated_at as "updatedAt"
+    FROM ratings
+    WHERE user_email = ${userEmail} AND act = ${act}
+    LIMIT 1
+  `;
+
+  return result.rows[0] as Rating || null;
+}
+
+export async function getRatingsByMovie(act: string): Promise<Rating[]> {
+  const result = await sql`
+    SELECT id, user_email as "userEmail", act, rating, comment, created_at as "createdAt", updated_at as "updatedAt"
+    FROM ratings
+    WHERE act = ${act}
+    ORDER BY created_at DESC
+  `;
+
+  return result.rows as Rating[];
+}
+
+export async function getAverageRating(act: string): Promise<{ average: number; count: number } | null> {
+  const result = await sql`
+    SELECT 
+      AVG(rating) as average,
+      COUNT(*)::int as count
+    FROM ratings
+    WHERE act = ${act}
+  `;
+
+  const row = result.rows[0];
+  if (!row || row.count === 0) {
+    return null;
+  }
+
+  return {
+    average: parseFloat(row.average),
+    count: row.count,
+  };
+}
+
+export async function upsertRating(
+  userEmail: string,
+  act: string,
+  rating: number,
+  comment?: string | null
+): Promise<Rating> {
+  const result = await sql`
+    INSERT INTO ratings (user_email, act, rating, comment)
+    VALUES (${userEmail}, ${act}, ${rating}, ${comment || null})
+    ON CONFLICT (user_email, act)
+    DO UPDATE SET
+      rating = ${rating},
+      comment = ${comment || null},
+      updated_at = NOW()
+    RETURNING id, user_email as "userEmail", act, rating, comment, created_at as "createdAt", updated_at as "updatedAt"
+  `;
+
+  return result.rows[0] as Rating;
+}
+
+export async function deleteRating(userEmail: string, act: string): Promise<void> {
+  await sql`
+    DELETE FROM ratings
+    WHERE user_email = ${userEmail} AND act = ${act}
+  `;
 }
 

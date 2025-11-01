@@ -1,9 +1,10 @@
 import Link from 'next/link';
-import { getAllScreenings } from '@/lib/db';
+import { getAllScreenings, getAverageRating } from '@/lib/db';
 import { Calendar, MapPin, Clock, Ticket } from 'lucide-react';
 import { parseTicketDateTime } from '@/lib/db';
 import { getVenueBackground } from '@/lib/venue-backgrounds';
 import CoupleIcon from '@/components/CoupleIcon';
+import AverageRating from '@/components/AverageRating';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,6 +49,20 @@ function isPast(date: Date): boolean {
 
 export default async function ScreeningsPage() {
   const screenings = await getAllScreenings();
+  
+  // Get unique movie titles and fetch average ratings for each
+  const uniqueActs = Array.from(new Set(screenings.map(s => s.act)));
+  const averageRatingsMap = new Map<string, { average: number; count: number }>();
+  
+  // Fetch average ratings for all unique movies in parallel
+  await Promise.all(
+    uniqueActs.map(async (act) => {
+      const stats = await getAverageRating(act);
+      if (stats) {
+        averageRatingsMap.set(act, stats);
+      }
+    })
+  );
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -150,6 +165,15 @@ export default async function ScreeningsPage() {
                     </div>
                   )}
                   </div>
+                  {/* Average Rating */}
+                  {averageRatingsMap.has(screening.act) && (
+                    <div className="mt-3 pt-3 border-t border-idfa-gray-200">
+                      <AverageRating
+                        average={averageRatingsMap.get(screening.act)!.average}
+                        count={averageRatingsMap.get(screening.act)!.count}
+                      />
+                    </div>
+                  )}
                 </div>
               </Link>
             );

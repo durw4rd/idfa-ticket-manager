@@ -36,3 +36,13 @@ export interface PDFProcessingSummary {
   tickets: ProcessedTicketResult[];
 }
 
+export interface Rating {
+  id: string;
+  userEmail: string;
+  act: string;
+  rating: number; // 1-10
+  comment?: string | null; // Optional user comment
+  createdAt: Date;
+  updatedAt: Date;
+}
+
