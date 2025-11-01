@@ -1,3 +1,4 @@
+/* PostCSS/Tailwind directives - these are processed at build time */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -23,6 +24,145 @@ body {
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+}
+
+/* Fullscreen QR code styling for better scanning */
+:fullscreen {
+  background-color: #FFFFFF;
+}
+
+:-webkit-full-screen {
+  background-color: #FFFFFF;
+}
+
+:-moz-full-screen {
+  background-color: #FFFFFF;
+}
+
+:-ms-fullscreen {
+  background-color: #FFFFFF;
+}
+
+@layer components {
+  /* Venue background card styling - pattern in header and as border */
+  .venue-card-background {
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Header background pattern */
+  .venue-card-header-bg {
+    position: relative;
+    padding: 1.5rem;
+    margin: -1.5rem -1.5rem 1rem -1.5rem;
+    background-image: var(--venue-bg-image);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    overflow: hidden;
+    border-radius: 0.5rem 0.5rem 0 0; /* Match card top border radius */
+    opacity: 0.8; /* Match left border opacity */
+  }
+
+  /* Text legibility - subtle overlay and minimal shadow for clean design */
+  .venue-card-header-bg h2 {
+    position: relative;
+    z-index: 1;
+    /* Minimal text shadow for subtle contrast */
+    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
+    /* Increased opacity overlay for better readability */
+    padding: 0.5rem 0.75rem;
+    margin: -0.5rem -0.75rem;
+    background: rgba(255, 255, 255, 0.25);
+    backdrop-filter: blur(4px);
+    border-radius: 0.25rem;
+    display: inline-block;
+    width: calc(100% + 1.5rem);
+  }
+
+  /* Border accent using venue pattern */
+  .venue-card-background::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 5px; /* Left border */
+    height: 100%;
+    background-image: var(--venue-bg-image);
+    background-size: auto 100%;
+    background-position: left center;
+    background-repeat: repeat-y;
+    opacity: 0.8;
+    z-index: 1;
+    border-radius: 0.5rem 0 0 0.5rem; /* Match card border radius on left side */
+  }
+
+  .venue-card-background::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 3px; /* Right border accent */
+    height: 100%;
+    background-image: var(--venue-bg-image);
+    background-size: auto 100%;
+    background-position: right center;
+    background-repeat: repeat-y;
+    opacity: 0.6;
+    z-index: 1;
+    border-radius: 0 0.5rem 0.5rem 0; /* Match card border radius on right side */
+  }
+
+  /* Content should be above border */
+  .venue-card-content {
+    position: relative;
+    z-index: 2;
+  }
+
+  /* Full page venue background for detail pages */
+  .venue-page-background {
+    position: relative;
+    min-height: 100vh;
+  }
+
+  .venue-page-background::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image: var(--venue-bg-image);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: 0.60; /* Increased brightness/opacity of background */
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  /* Overlay for detail pages - exclude header area */
+  .venue-page-background::after {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.40); /* Reduced overlay for more background visibility */
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  /* Content wrapper for detail pages with white background - only around text */
+  .venue-page-content {
+    position: relative;
+    z-index: 1;
+    background: rgba(255, 255, 255, 0.95); /* White overlay underneath text */
+    padding: 2rem;
+    border-radius: 0.5rem;
+    /* No negative margins - overlay only covers text content area */
   }
 }
 

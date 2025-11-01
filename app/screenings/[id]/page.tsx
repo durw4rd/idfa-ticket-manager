@@ -2,7 +2,8 @@ import Link from 'next/link';
 import { getAllScreenings } from '@/lib/db';
 import { ArrowLeft, Calendar, MapPin, Clock, QrCode } from 'lucide-react';
 import { parseTicketDateTime } from '@/lib/db';
-import Image from 'next/image';
+import QRCodeDisplay from '@/components/QRCodeDisplay';
+import { getVenueBackground } from '@/lib/venue-backgrounds';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,9 +51,14 @@ export default async function ScreeningDetailPage({
   }
 
   const screeningDateTime = parseTicketDateTime(screening.date, screening.start);
+  const venueBackground = getVenueBackground(screening.location);
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+    <div 
+      className={`max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 ${venueBackground ? 'venue-page-background' : ''}`}
+      style={venueBackground ? ({ '--venue-bg-image': `url(${venueBackground})` } as React.CSSProperties) : undefined}
+    >
+      <div className={venueBackground ? 'venue-page-content' : ''}>
       <Link
         href="/screenings"
         className="inline-flex items-center space-x-2 text-idfa-gray-600 hover:text-idfa-black mb-8"
@@ -86,28 +92,15 @@ export default async function ScreeningDetailPage({
         </h2>
         <div className={`grid gap-6 ${screening.ticketCount === 1 ? 'grid-cols-1' : screening.ticketCount === 2 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
           {screening.tickets.map((ticket, index) => (
-            <div
+            <QRCodeDisplay
               key={ticket.id}
-              className="p-6 border border-idfa-gray-200 rounded-lg bg-white"
-            >
-              {screening.ticketCount > 1 && (
-                <h3 className="text-lg font-semibold mb-4">
-                  Ticket {index + 1}
-                </h3>
-              )}
-              <div className="flex justify-center bg-white p-4 rounded">
-                <Image
-                  src={ticket.qrCodeUrl}
-                  alt={`QR code for ${screening.act} - Ticket ${index + 1}`}
-                  width={300}
-                  height={300}
-                  className="max-w-full h-auto"
-                  unoptimized
-                />
-              </div>
-            </div>
+              qrCodeUrl={ticket.qrCodeUrl}
+              alt={`QR code for ${screening.act} - Ticket ${index + 1}`}
+              ticketLabel={screening.ticketCount > 1 ? `Ticket ${index + 1}` : undefined}
+            />
           ))}
         </div>
+      </div>
       </div>
     </div>
   );
