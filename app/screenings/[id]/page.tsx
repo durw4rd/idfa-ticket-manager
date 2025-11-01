@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { getAllScreenings } from '@/lib/db';
+import { getAllScreenings, getRating, getRatingsByMovie } from '@/lib/db';
 import { ArrowLeft, Calendar, MapPin, Clock, Film, Ticket, Navigation } from 'lucide-react';
 import { parseTicketDateTime } from '@/lib/db';
 import QRCodeDisplay from '@/components/QRCodeDisplay';
@@ -8,6 +8,11 @@ import { getFestivalLinkForScreening } from '@/lib/festival-links';
 import FestivalLinkButton from '@/components/FestivalLinkButton';
 import CoupleIcon from '@/components/CoupleIcon';
 import { getMapSearchUrl } from '@/lib/maps-utils';
+import MovieRating from '@/components/MovieRating';
+import AllRatings from '@/components/AllRatings';
+import CollapsibleQRSection from '@/components/CollapsibleQRSection';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,6 +62,14 @@ export default async function ScreeningDetailPage({
   const screeningDateTime = parseTicketDateTime(screening.date, screening.start);
   const venueBackground = getVenueBackground(screening.location);
   const festivalLink = await getFestivalLinkForScreening(screening);
+
+  // Get user's rating and all ratings for this movie
+  const session = await getServerSession(authOptions);
+  const userEmail = session?.user?.email || null;
+  const userRating = userEmail
+    ? await getRating(userEmail, screening.act)
+    : null;
+  const allRatings = await getRatingsByMovie(screening.act);
 
   return (
     <div 
@@ -119,20 +132,40 @@ export default async function ScreeningDetailPage({
       </div>
 
       <div className="mt-12">
-        <h2 className="text-2xl font-bold mb-6">
-          QR Code{screening.ticketCount > 1 ? 's' : ''}
-        </h2>
-        <div className={`grid gap-6 ${screening.ticketCount === 1 ? 'grid-cols-1' : screening.ticketCount === 2 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
-          {screening.tickets.map((ticket, index) => (
-            <QRCodeDisplay
-              key={ticket.id}
-              qrCodeUrl={ticket.qrCodeUrl}
-              alt={`QR code for ${screening.act} - Ticket ${index + 1}`}
-              ticketLabel={screening.ticketCount > 1 ? `Ticket ${index + 1}` : undefined}
-            />
-          ))}
-        </div>
+        <CollapsibleQRSection
+          title={`QR Code${screening.ticketCount > 1 ? 's' : ''}`}
+          defaultOpen={true}
+        >
+          <div className={`grid gap-6 ${screening.ticketCount === 1 ? 'grid-cols-1' : screening.ticketCount === 2 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
+            {screening.tickets.map((ticket, index) => (
+              <QRCodeDisplay
+                key={ticket.id}
+                qrCodeUrl={ticket.qrCodeUrl}
+                alt={`QR code for ${screening.act} - Ticket ${index + 1}`}
+                ticketLabel={screening.ticketCount > 1 ? `Ticket ${index + 1}` : undefined}
+              />
+            ))}
+          </div>
+        </CollapsibleQRSection>
       </div>
+
+      <div className="mt-12 pt-12 border-t border-idfa-gray-200">
+        <h2 className="text-2xl font-bold mb-6">Rate this movie</h2>
+        <MovieRating
+          movieTitle={screening.act}
+          initialRating={userRating}
+        />
+      </div>
+
+      {allRatings.length > 0 && (
+        <div className="mt-12 pt-12 border-t border-idfa-gray-200">
+          <h2 className="text-2xl font-bold mb-6">All ratings</h2>
+          <AllRatings
+            ratings={allRatings}
+            currentUserEmail={userEmail}
+          />
+        </div>
+      )}
       </div>
     </div>
   );
