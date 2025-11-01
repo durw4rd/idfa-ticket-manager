@@ -4,12 +4,15 @@ A Next.js application for managing IDFA film festival tickets. Upload PDF ticket
 
 ## Features
 
+- Google OAuth authentication with email whitelist
 - Upload single or multi-page PDF tickets
 - AI-powered extraction of ticket information (movie title, date, time, location)
 - Automatic grouping of multiple tickets for the same screening
-- Quick access to QR codes for entry
-- Google OAuth authentication with email whitelist
-- Organized screening overview
+- Quick access to QR codes with fullscreen mode for easy scanning
+- AI-powered automatic detection of a link to the movie details page on the main IDFA website
+- Directions to screening venues via Google Maps
+- Venue-specific background styling for screening cards
+- Date-based styling (highlights today's screenings, dims past screenings)
 
 ## Prerequisites
 
@@ -89,6 +92,7 @@ CREATE TABLE IF NOT EXISTS tickets (
   qr_code_url TEXT NOT NULL,
   pdf_url TEXT NOT NULL,
   transaction_id VARCHAR(50),
+  festival_link TEXT,
   created_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -158,16 +162,33 @@ idfa-manager/
 ├── components/
 │   ├── IDFALogo.tsx              # IDFA logo component
 │   ├── AuthButton.tsx            # Login/logout button
-│   └── UploadTicket.tsx          # Upload component
+│   ├── UploadTicket.tsx          # Upload component
+│   ├── QRCodeDisplay.tsx         # QR code display with fullscreen
+│   ├── FestivalLinkButton.tsx    # Button to view movie description
+│   ├── FestivalLinkModal.tsx     # Modal for movie description iframe
+│   ├── CoupleIcon.tsx            # Icon for 2-ticket screenings
+│   └── Providers.tsx             # NextAuth session provider
 ├── lib/
 │   ├── auth.ts                   # NextAuth configuration
 │   ├── auth-helpers.ts           # Auth utility functions
 │   ├── db.ts                     # Database operations
 │   ├── openai-processor.ts       # AI extraction
 │   ├── qr-extractor.ts           # QR code extraction
-│   └── pdf-client-utils.ts       # Client-side PDF processing
+│   ├── pdf-client-utils.ts       # Client-side PDF processing
+│   ├── pdf-splitter.ts           # PDF page splitting
+│   ├── festival-links.ts         # Festival link mapping
+│   ├── find-festival-link.ts     # AI-powered festival link detection
+│   ├── maps-utils.ts             # Google Maps URL generation
+│   ├── venue-backgrounds.ts      # Venue background image mapping
+│   └── types.ts                  # TypeScript interfaces
+├── public/
+│   ├── bcg-*.png                 # Venue background images
+│   └── favicon files             # App icons
+├── scripts/
+│   ├── backfill-festival-links.js  # Backfill script for existing tickets
+│   └── generate-favicons.js        # Favicon generation
 ├── middleware.ts                 # Route protection
-└── types/                        # TypeScript types
+└── types/                        # Additional TypeScript types
 ```
 
 ## Technology Stack
@@ -184,6 +205,7 @@ idfa-manager/
 - pdfjs-dist - PDF rendering (client-side)
 - jsQR - QR code detection
 - sharp - Image processing
+- lucide-react - Icon library
 
 ## License
 

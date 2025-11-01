@@ -3,6 +3,7 @@ import "./globals.css";
 import Providers from "@/components/Providers";
 import AuthButton from "@/components/AuthButton";
 import IDFALogo from "@/components/IDFALogo";
+import VenueBackgroundLoader from "@/components/VenueBackgroundLoader";
 import { Film } from 'lucide-react';
 
 export const metadata: Metadata = {
@@ -36,6 +37,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased bg-white text-idfa-black">
+        <VenueBackgroundLoader />
         <Providers>
           <header className="border-b border-idfa-gray-200 bg-white relative z-50">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
