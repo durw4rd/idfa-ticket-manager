@@ -13,6 +13,9 @@ A Next.js application for managing IDFA film festival tickets. Upload PDF ticket
 - Directions to screening venues via Google Maps
 - Venue-specific background styling for screening cards
 - Date-based styling (highlights today's screenings, dims past screenings)
+- Visual indicators for date nights (couple icon for 2-ticket screenings)
+- User movie ratings (1-10 scale) with optional comments
+- Average movie ratings displayed on screening cards
 
 ## Prerequisites
 
@@ -100,6 +103,21 @@ CREATE INDEX idx_screening_key ON tickets(act, date, start);
 CREATE INDEX idx_date ON tickets(date);
 CREATE INDEX idx_act ON tickets(act);
 CREATE INDEX idx_location ON tickets(location);
+
+CREATE TABLE IF NOT EXISTS ratings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_email VARCHAR(255) NOT NULL,
+  act VARCHAR(255) NOT NULL,  -- Movie title
+  rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 10),
+  comment TEXT,  -- Optional short comment from user
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(user_email, act)  -- One rating per user per movie
+);
+
+CREATE INDEX idx_ratings_user_email ON ratings(user_email);
+CREATE INDEX idx_ratings_act ON ratings(act);
+CREATE INDEX idx_ratings_user_act ON ratings(user_email, act);
 ```
 
 4. Configure email whitelist:
@@ -153,6 +171,7 @@ idfa-manager/
 │   │   ├── auth/[...nextauth]/  # NextAuth authentication
 │   │   ├── upload/               # PDF upload endpoint
 │   │   ├── process-pdf/          # PDF processing endpoint
+│   │   ├── ratings/              # Movie rating endpoints
 │   │   └── screenings/           # Screenings API
 │   ├── login/                    # Login page
 │   ├── screenings/               # Screening pages
@@ -167,6 +186,10 @@ idfa-manager/
 │   ├── FestivalLinkButton.tsx    # Button to view movie description
 │   ├── FestivalLinkModal.tsx     # Modal for movie description iframe
 │   ├── CoupleIcon.tsx            # Icon for 2-ticket screenings
+│   ├── MovieRating.tsx           # Movie rating input/display component
+│   ├── AverageRating.tsx         # Component to display average rating
+│   ├── AllRatings.tsx            # Component to display all user ratings
+│   ├── CollapsibleQRSection.tsx  # Collapsible QR code section component
 │   └── Providers.tsx             # NextAuth session provider
 ├── lib/
 │   ├── auth.ts                   # NextAuth configuration
