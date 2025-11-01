@@ -1,12 +1,13 @@
 import Link from 'next/link';
 import { getAllScreenings } from '@/lib/db';
-import { ArrowLeft, Calendar, MapPin, Clock, Film, Ticket } from 'lucide-react';
+import { ArrowLeft, Calendar, MapPin, Clock, Film, Ticket, Navigation } from 'lucide-react';
 import { parseTicketDateTime } from '@/lib/db';
 import QRCodeDisplay from '@/components/QRCodeDisplay';
 import { getVenueBackground } from '@/lib/venue-backgrounds';
 import { getFestivalLinkForScreening } from '@/lib/festival-links';
 import FestivalLinkButton from '@/components/FestivalLinkButton';
 import CoupleIcon from '@/components/CoupleIcon';
+import { getMapSearchUrl } from '@/lib/maps-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -94,6 +95,16 @@ export default async function ScreeningDetailPage({
           <div className="flex items-center space-x-3">
             <MapPin className="h-5 w-5 text-idfa-gray-600" />
             <span>{screening.location}</span>
+            <a
+              href={getMapSearchUrl(screening.location)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center space-x-1 px-3 py-1.5 text-sm bg-idfa-black text-white font-medium rounded hover:bg-idfa-gray-800 transition-colors"
+              title="Open in Maps"
+            >
+              <Navigation className="h-4 w-4" />
+              <span>Directions</span>
+            </a>
           </div>
           {screening.ticketCount > 1 && (
             <div className="flex items-center space-x-3">
