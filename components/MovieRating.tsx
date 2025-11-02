@@ -241,7 +241,7 @@ export default function MovieRating({
               Your rating: <span className="font-medium">{initialRating.rating}/10</span>
             </p>
             {initialRating.comment && !isCommentExpanded && (
-              <p className="mt-1 italic">"{initialRating.comment}"</p>
+              <p className="mt-1 italic">&ldquo;{initialRating.comment}&rdquo;</p>
             )}
           </div>
           <button
