@@ -65,7 +65,7 @@ export default function AllRatings({ ratings, currentUserEmail }: AllRatingsProp
             </div>
             {rating.comment && (
               <p className="text-sm text-idfa-gray-600 mt-2 italic">
-                "{rating.comment}"
+                &ldquo;{rating.comment}&rdquo;
               </p>
             )}
           </div>
