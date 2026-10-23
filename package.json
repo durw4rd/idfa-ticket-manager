@@ -9,10 +9,17 @@
     "lint": "next lint",
     "optimize-backgrounds": "node scripts/optimize-backgrounds.js",
     "generate-favicons": "node scripts/generate-favicons.js",
-    "backfill-festival-links": "node scripts/backfill-festival-links.js"
+    "backfill-festival-links": "node scripts/backfill-festival-links.js",
+    "migrate-blobs-private": "node scripts/migrate-blobs-private.js"
   },
   "dependencies": {
-    "@vercel/blob": "^2.0.0",
+    "@anthropic-ai/sdk": "0.103.0",
+    "@launchdarkly/ai-claude-messages": "0.4.0",
+    "@launchdarkly/ai-openai-messages": "0.4.0",
+    "@launchdarkly/ai-otel": "0.2.0",
+    "@launchdarkly/ai-server": "0.4.0",
+    "@launchdarkly/node-server-sdk": "9.15.0",
+    "@vercel/blob": "^2.8.2",
     "@vercel/postgres": "^0.10.0",
     "formidable": "^3.5.1",
     "jsqr": "^1.4.0",
