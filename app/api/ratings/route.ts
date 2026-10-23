@@ -2,21 +2,27 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth-helpers';
 import { getRating, upsertRating, getAverageRating, deleteRating } from '@/lib/db';
 
+function parseYear(value: unknown): number | null {
+  const year = Number(value);
+  return Number.isInteger(year) && year >= 2000 && year <= 2100 ? year : null;
+}
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // GET: Get current user's rating for a specific movie, or aggregate stats
 export async function GET(request: NextRequest) {
-  const { session, error } = await requireAuth();
+  const { viewer, error } = await requireAuth();
   if (error) return error;
 
   const searchParams = request.nextUrl.searchParams;
   const act = searchParams.get('act');
+  const year = parseYear(searchParams.get('year'));
   const aggregate = searchParams.get('aggregate') === 'true';
 
-  if (!act) {
+  if (!act || !year) {
     return NextResponse.json(
-      { error: 'Movie title (act) parameter is required' },
+      { error: 'Movie title (act) and festival year (year) parameters are required' },
       { status: 400 }
     );
   }
@@ -24,14 +30,14 @@ export async function GET(request: NextRequest) {
   try {
     if (aggregate) {
       // Return aggregate stats for the movie
-      const stats = await getAverageRating(act);
+      const stats = await getAverageRating(viewer.visibleEmails, act, year);
       return NextResponse.json({
         average: stats?.average || null,
         count: stats?.count || 0,
       });
     } else {
       // Return current user's rating
-      const rating = await getRating(session.user.email!, act);
+      const rating = await getRating(viewer.email, act, year);
       return NextResponse.json({
         rating: rating || null,
       });
@@ -47,17 +53,25 @@ export async function GET(request: NextRequest) {
 
 // POST: Submit or update rating
 export async function POST(request: NextRequest) {
-  const { session, error } = await requireAuth();
+  const { viewer, error } = await requireAuth();
   if (error) return error;
 
   try {
     const body = await request.json();
     const { act, rating, comment } = body;
+    const year = parseYear(body.festivalYear);
 
     // Validation
     if (!act || typeof act !== 'string') {
       return NextResponse.json(
         { error: 'Movie title (act) is required' },
+        { status: 400 }
+      );
+    }
+
+    if (!year) {
+      return NextResponse.json(
+        { error: 'Festival year (festivalYear) is required' },
         { status: 400 }
       );
     }
@@ -84,10 +98,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const userEmail = session.user.email!;
     const savedRating = await upsertRating(
-      userEmail,
+      viewer.email,
       act,
+      year,
       rating,
       comment || null
     );
@@ -107,22 +121,22 @@ export async function POST(request: NextRequest) {
 
 // DELETE: Remove a rating
 export async function DELETE(request: NextRequest) {
-  const { session, error } = await requireAuth();
+  const { viewer, error } = await requireAuth();
   if (error) return error;
 
   try {
     const body = await request.json();
     const { act } = body;
+    const year = parseYear(body.festivalYear);
 
-    if (!act || typeof act !== 'string') {
+    if (!act || typeof act !== 'string' || !year) {
       return NextResponse.json(
-        { error: 'Movie title (act) is required' },
+        { error: 'Movie title (act) and festival year (festivalYear) are required' },
         { status: 400 }
       );
     }
 
-    const userEmail = session.user.email!;
-    await deleteRating(userEmail, act);
+    await deleteRating(viewer.email, act, year);
 
     return NextResponse.json({
       success: true,
