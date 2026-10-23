@@ -13,6 +13,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type GroupAction =
   | { action: 'create'; name: string }
@@ -41,6 +42,10 @@ export async function POST(request: NextRequest) {
 
   try {
     const body: GroupAction = await request.json();
+
+    if (body.action !== 'create' && !UUID_PATTERN.test(String(body.groupId ?? ''))) {
+      return NextResponse.json({ error: 'A valid groupId is required' }, { status: 400 });
+    }
 
     switch (body.action) {
       case 'create': {

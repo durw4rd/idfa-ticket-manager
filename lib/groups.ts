@@ -94,7 +94,8 @@ async function withGroupLock<T>(groupId: string, change: (query: GroupQuery) => 
   const client = await db.connect();
   try {
     await client.sql`BEGIN`;
-    await client.sql`SELECT pg_advisory_xact_lock(hashtextextended(${groupId}, 0))`;
+    // Hash the canonical uuid text, so every spelling of the same id (e.g. upper case) shares one lock
+    await client.sql`SELECT pg_advisory_xact_lock(hashtextextended(${groupId}::uuid::text, 0))`;
     const result = await change(client.sql.bind(client) as GroupQuery);
     await client.sql`COMMIT`;
     return result;

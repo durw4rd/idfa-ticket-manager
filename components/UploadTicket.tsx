@@ -234,19 +234,19 @@ export default function UploadTicket() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="block text-sm sm:col-span-2">
                     <span className="text-idfa-gray-600">Title</span>
-                    <input className={inputClass} disabled={item.saved} value={item.draft.act} onChange={e => updateDraft(item.ticketId, 'act', e.target.value)} />
+                    <input className={inputClass} disabled={item.saved || saving} value={item.draft.act} onChange={e => updateDraft(item.ticketId, 'act', e.target.value)} />
                   </label>
                   <label className="block text-sm sm:col-span-2">
                     <span className="text-idfa-gray-600">Venue</span>
-                    <input className={inputClass} disabled={item.saved} value={item.draft.location} onChange={e => updateDraft(item.ticketId, 'location', e.target.value)} />
+                    <input className={inputClass} disabled={item.saved || saving} value={item.draft.location} onChange={e => updateDraft(item.ticketId, 'location', e.target.value)} />
                   </label>
                   <label className="block text-sm">
                     <span className="text-idfa-gray-600">Date (DD-MM-YYYY)</span>
-                    <input className={inputClass} disabled={item.saved} value={item.draft.date} onChange={e => updateDraft(item.ticketId, 'date', e.target.value)} />
+                    <input className={inputClass} disabled={item.saved || saving} value={item.draft.date} onChange={e => updateDraft(item.ticketId, 'date', e.target.value)} />
                   </label>
                   <label className="block text-sm">
                     <span className="text-idfa-gray-600">Time (HH:MM AM/PM)</span>
-                    <input className={inputClass} disabled={item.saved} value={item.draft.start} onChange={e => updateDraft(item.ticketId, 'start', e.target.value)} />
+                    <input className={inputClass} disabled={item.saved || saving} value={item.draft.start} onChange={e => updateDraft(item.ticketId, 'start', e.target.value)} />
                   </label>
                 </div>
               </div>
