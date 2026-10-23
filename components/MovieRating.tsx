@@ -6,6 +6,7 @@ import { Rating } from '@/lib/types';
 
 interface MovieRatingProps {
   movieTitle: string;
+  festivalYear: number;
   initialRating?: Rating | null;
   onRatingChange?: (rating: Rating) => void;
 }
@@ -14,6 +15,7 @@ const MAX_COMMENT_LENGTH = 500;
 
 export default function MovieRating({
   movieTitle,
+  festivalYear,
   initialRating,
   onRatingChange,
 }: MovieRatingProps) {
@@ -62,6 +64,7 @@ export default function MovieRating({
         },
         body: JSON.stringify({
           act: movieTitle,
+          festivalYear,
           rating,
           comment: commentText.trim() || null,
         }),
@@ -109,6 +112,7 @@ export default function MovieRating({
         },
         body: JSON.stringify({
           act: movieTitle,
+          festivalYear,
         }),
       });
 
