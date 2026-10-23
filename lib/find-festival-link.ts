@@ -1,22 +1,19 @@
 import OpenAI from 'openai';
+import { config, type LDContext } from '@launchdarkly/ai-server';
+import { createOpenAIHandler } from '@launchdarkly/ai-openai-messages';
+import { createClaudeMessagesHandler } from '@launchdarkly/ai-claude-messages';
+import { evaluateBooleanFlag, getLdClient } from './launchdarkly';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// AgentControl config with the prompt for finding a film's IDFA page.
+// Its messages use the {{movieTitle}} and {{festivalYear}} variables.
+export const FESTIVAL_LINK_CONFIG_KEY = 'festival-link-finder';
+// Kill switch for the AI lookup
+export const FESTIVAL_LINK_FLAG_KEY = 'festival-link-ai';
 
-/**
- * Attempts to find the IDFA festival page URL for a movie title using AI
- * Uses OpenAI's knowledge and reasoning to find the correct festival URL
- * Falls back to null if no link can be determined
- */
-export async function findFestivalLink(movieTitle: string): Promise<string | null> {
-  if (!process.env.OPENAI_API_KEY) {
-    console.warn('OpenAI API key not configured, cannot find festival link');
-    return null;
-  }
+const handlers = [createOpenAIHandler(), createClaudeMessagesHandler()];
 
-  try {
-    const prompt = `Find the exact IDFA (International Documentary Film Festival Amsterdam) festival page URL for this title: "${movieTitle}"
+// Used as the LaunchDarkly config's user message, and by the fallback below
+export const FESTIVAL_LINK_PROMPT = `Find the exact IDFA (International Documentary Film Festival Amsterdam) festival page URL for this title: "{{movieTitle}}", shown at IDFA {{festivalYear}}.
 
 The IDFA festival website uses different URL patterns:
 1. For individual films: https://festival.idfa.nl/en/film/{uuid}/{film-slug}/
@@ -42,65 +39,164 @@ Important:
 - The slug may use URL encoding (e.g., %3A for colon)
 - Always include the trailing slash
 
-If you know the exact URL for "${movieTitle}", respond with ONLY the full URL (including the trailing slash).
+If you know the exact URL for "{{movieTitle}}", respond with ONLY the full URL (including the trailing slash).
 If you cannot find the URL or are uncertain, respond with exactly: null
 
 Return format: Either the full URL or "null" (nothing else).`;
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      max_tokens: 300,
-      temperature: 0,
-    });
+function fillPrompt(movieTitle: string, festivalYear: number): string {
+  return FESTIVAL_LINK_PROMPT.replaceAll('{{movieTitle}}', movieTitle).replaceAll(
+    '{{festivalYear}}',
+    String(festivalYear)
+  );
+}
 
-    const content = response.choices[0]?.message?.content?.trim();
-    if (!content || content.toLowerCase() === 'null') {
-      return null;
+async function findWithAgentControl(movieTitle: string, festivalYear: number, context: LDContext): Promise<string> {
+  const result = await config({ key: FESTIVAL_LINK_CONFIG_KEY, handler: handlers }).invoke(undefined, context, {
+    movieTitle,
+    festivalYear,
+  });
+  return String(result.response ?? '');
+}
+
+async function findWithFallback(movieTitle: string, festivalYear: number): Promise<string> {
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      {
+        role: 'user',
+        content: fillPrompt(movieTitle, festivalYear),
+      },
+    ],
+    max_tokens: 300,
+    temperature: 0,
+  });
+
+  return response.choices[0]?.message?.content ?? '';
+}
+
+const FESTIVAL_HOST = 'festival.idfa.nl';
+// Archived festival pages redirect from festival.idfa.nl to www.idfa.nl
+const ALLOWED_REDIRECT_HOSTS = new Set([FESTIVAL_HOST, 'www.idfa.nl']);
+const MAX_REDIRECTS = 3;
+
+function parseFestivalUrl(content: string): string | null {
+  // Extract URL from response (handle various formats)
+  let url = content.trim();
+  if (!url || url.toLowerCase() === 'null') {
+    return null;
+  }
+
+  // Remove any markdown formatting
+  url = url.replace(/^```[\w]*\n?/, '').replace(/\n?```$/, '');
+  url = url.trim();
+
+  // Only accept an https film or composition page on the IDFA festival site
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (
+    parsed.protocol !== 'https:' ||
+    parsed.hostname !== FESTIVAL_HOST ||
+    parsed.port !== '' ||
+    parsed.username !== '' ||
+    parsed.password !== '' ||
+    !/^\/en\/(film|composition)\/[^/]+\/[^/]+\/?$/.test(parsed.pathname)
+  ) {
+    return null;
+  }
+
+  // Ensure it ends with a slash
+  const normalized = `${parsed.origin}${parsed.pathname}`;
+  return normalized.endsWith('/') ? normalized : `${normalized}/`;
+}
+
+/**
+ * Check that a festival URL leads to a real film page. The IDFA site answers 200 for
+ * made-up film URLs and serves a generic page, so look at the page title as well.
+ * Only IDFA hosts are ever requested: redirects are followed by hand and must stay on them.
+ */
+export async function verifyFestivalLink(url: string): Promise<boolean> {
+  try {
+    let current = new URL(url);
+    let response: Response | null = null;
+
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      if (current.protocol !== 'https:' || !ALLOWED_REDIRECT_HOSTS.has(current.hostname) || current.port !== '') {
+        return false;
+      }
+      response = await fetch(current, {
+        redirect: 'manual',
+        signal: AbortSignal.timeout(5000),
+      });
+      const location = response.headers.get('location');
+      if (response.status >= 300 && response.status < 400 && location) {
+        current = new URL(location, current);
+        continue;
+      }
+      break;
     }
 
-    // Extract URL from response (handle various formats)
-    let url = content.trim();
-    
-    // Remove any markdown formatting
-    url = url.replace(/^```[\w]*\n?/, '').replace(/\n?```$/, '');
-    url = url.trim();
-    
-    // Check if it's a valid IDFA festival URL (film or composition)
-    if (url.startsWith('http') && 
-        (url.includes('festival.idfa.nl/en/film/') || url.includes('festival.idfa.nl/en/composition/'))) {
-      // Ensure it ends with a slash
-      return url.endsWith('/') ? url : `${url}/`;
+    if (!response || !response.ok) {
+      return false;
+    }
+    const html = await response.text();
+    const title = html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim() ?? '';
+    return title.length > 0 && !/^IDFA (Festival|Institute)\b/i.test(title);
+  } catch (error) {
+    console.warn(`Could not verify festival link ${url}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Attempts to find the IDFA festival page URL for a movie title using AI.
+ * The model comes from the LaunchDarkly AgentControl config, with a hardcoded
+ * OpenAI fallback. Only links that resolve to a real film page are returned.
+ */
+export async function findFestivalLink(
+  movieTitle: string,
+  festivalYear: number,
+  context: LDContext
+): Promise<string | null> {
+  const enabled = await evaluateBooleanFlag(FESTIVAL_LINK_FLAG_KEY, context, true);
+  if (!enabled.value) {
+    return null;
+  }
+
+  try {
+    let content: string | undefined;
+
+    if (await getLdClient()) {
+      try {
+        content = await findWithAgentControl(movieTitle, festivalYear, context);
+      } catch (error) {
+        console.warn(`AgentControl config "${FESTIVAL_LINK_CONFIG_KEY}" unavailable, using fallback model:`, error);
+      }
     }
 
+    if (content === undefined) {
+      if (!process.env.OPENAI_API_KEY) {
+        console.warn('OpenAI API key not configured, cannot find festival link');
+        return null;
+      }
+      content = await findWithFallback(movieTitle, festivalYear);
+    }
+
+    const url = parseFestivalUrl(content);
+    if (url && (await verifyFestivalLink(url))) {
+      return url;
+    }
     return null;
   } catch (error) {
     console.error('Error finding festival link with AI:', error);
     return null;
   }
 }
-
-/**
- * Searches the IDFA website for a movie title and attempts to find the URL
- * This is a fallback method that tries to construct the URL pattern
- */
-export async function searchFestivalWebsite(movieTitle: string): Promise<string | null> {
-  // Convert title to slug format
-  const slug = movieTitle
-    .toLowerCase()
-    .trim()
-    .replace(/[^\w\s+-]/g, '') // Remove special chars except + and -
-    .replace(/\s+/g, '-') // Replace spaces with hyphens
-    .replace(/-+/g, '-') // Replace multiple hyphens with single
-    .replace(/^-|-$/g, ''); // Remove leading/trailing hyphens
-
-  // We can't actually fetch and parse the website in serverless without additional setup
-  // So we'll return null and let the AI/hardcoded mapping handle it
-  return null;
-}
-

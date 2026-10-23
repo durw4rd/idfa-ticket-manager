@@ -1,11 +1,36 @@
 import { NextAuthOptions } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
+import { evaluateBooleanFlag, userContext } from './launchdarkly';
+import { isKnownMember, normalizeEmail } from './groups';
 
-// Email whitelist
-const ALLOWED_EMAILS = [
-  'misa.fasa@gmail.com',
-  'martina.chylkova@gmail.com',
-];
+// LaunchDarkly flag that controls who may sign in (target the `allowed-users` segment)
+const APP_ACCESS_FLAG_KEY = 'app-access';
+
+// Comma-separated fallback allowlist, used only when LaunchDarkly can't be reached
+const ALLOWED_EMAILS = (process.env.ALLOWED_EMAILS || '')
+  .split(',')
+  .map((email) => normalizeEmail(email))
+  .filter(Boolean);
+
+async function canSignIn(rawEmail: string): Promise<boolean> {
+  const email = normalizeEmail(rawEmail);
+
+  // Anyone invited to (or already in) a group can sign in
+  try {
+    if (await isKnownMember(email)) {
+      return true;
+    }
+  } catch (error) {
+    console.error('Failed to check group membership during sign-in:', error);
+  }
+
+  const access = await evaluateBooleanFlag(APP_ACCESS_FLAG_KEY, userContext(email), false);
+  if (access.available) {
+    return access.value;
+  }
+
+  return ALLOWED_EMAILS.includes(email);
+}
 
 // Auto-detect NEXTAUTH_URL if not explicitly set
 // Priority: explicit env var > Vercel's VERCEL_URL > hardcoded production URL > localhost
@@ -32,13 +57,9 @@ export const authOptions: NextAuthOptions = {
     signIn: '/login',
   },
   callbacks: {
-    async signIn({ user, account }) {
-      // Check if user email is in whitelist
-      if (user.email && ALLOWED_EMAILS.includes(user.email)) {
-        return true;
-      }
-      // Block sign in if email not in whitelist
-      return false;
+    async signIn({ user }) {
+      // Block sign in unless the user is invited, or allowed by LaunchDarkly (or the fallback allowlist)
+      return !!user.email && (await canSignIn(user.email));
     },
     async session({ session, token }) {
       // Add user ID to session
