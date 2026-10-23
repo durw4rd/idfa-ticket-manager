@@ -160,8 +160,13 @@ export async function leaveGroup(userEmail: string, groupId: string): Promise<vo
 
 /**
  * Remove another member (or a pending invite). Only group owners can do this.
+ * Removing yourself is treated as leaving, so ownership is handed over properly.
  */
 export async function removeMember(ownerEmail: string, groupId: string, memberEmail: string): Promise<boolean> {
+  if (normalizeEmail(memberEmail) === normalizeEmail(ownerEmail)) {
+    await leaveGroup(ownerEmail, groupId);
+    return true;
+  }
   const result = await sql`
     SELECT 1 FROM group_members
     WHERE group_id = ${groupId} AND user_email = ${normalizeEmail(ownerEmail)} AND role = 'owner' AND status = 'active'

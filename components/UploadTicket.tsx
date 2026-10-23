@@ -153,7 +153,8 @@ export default function UploadTicket() {
     );
   };
 
-  const handleFinish = async () => {
+  // Save corrections from the review step. Returns false (and shows the error) if saving failed.
+  const saveReview = async (): Promise<boolean> => {
     setSaving(true);
     setError(null);
 
@@ -174,14 +175,32 @@ export default function UploadTicket() {
           throw new Error(`${item.draft.act}: ${data.error || 'Failed to save changes'}`);
         }
       }
-
-      const year = reviewItems[0]?.draft.date.split('-')[2];
-      router.push(year ? `/screenings?year=${year}` : '/screenings');
-      router.refresh();
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save changes');
+      return false;
+    } finally {
       setSaving(false);
     }
+  };
+
+  const handleFinish = async () => {
+    if (!(await saveReview())) {
+      return;
+    }
+    const year = reviewItems[0]?.draft.date.split('-')[2];
+    router.push(year ? `/screenings?year=${year}` : '/screenings');
+    router.refresh();
+  };
+
+  // Save the reviewed tickets first, so edits aren't lost when starting another upload
+  const handleUploadMore = async () => {
+    if (!(await saveReview())) {
+      return;
+    }
+    setResults([]);
+    setReviewItems([]);
+    setStep('select');
   };
 
   const failed = results.filter(r => !r.success && !r.duplicate);
@@ -282,15 +301,11 @@ export default function UploadTicket() {
             </button>
           )}
           <button
-            onClick={() => {
-              setResults([]);
-              setReviewItems([]);
-              setStep('select');
-            }}
+            onClick={handleUploadMore}
             disabled={saving}
             className="px-6 py-3 border border-idfa-gray-300 font-medium rounded hover:border-idfa-black transition-colors"
           >
-            Upload more
+            {reviewItems.length > 0 ? 'Save and upload more' : 'Upload more'}
           </button>
         </div>
       </div>
