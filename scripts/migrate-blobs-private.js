@@ -100,8 +100,12 @@ function loadJournal() {
   return JSON.parse(fs.readFileSync(JOURNAL_PATH, 'utf8'));
 }
 
+// Write to a temporary file and rename it over the journal, so an interrupted write can never
+// leave a half-written journal behind (rename replaces the file in one step)
 function saveJournal(journal) {
-  fs.writeFileSync(JOURNAL_PATH, JSON.stringify(journal, null, 2));
+  const tempPath = `${JOURNAL_PATH}.tmp`;
+  fs.writeFileSync(tempPath, JSON.stringify(journal, null, 2));
+  fs.renameSync(tempPath, JOURNAL_PATH);
 }
 
 async function pointTicketsAt(publicUrl, privateUrl) {
