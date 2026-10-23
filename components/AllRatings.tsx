@@ -1,5 +1,6 @@
 import { Star } from 'lucide-react';
 import { Rating } from '@/lib/types';
+import { getDisplayName } from '@/lib/display';
 
 interface AllRatingsProps {
   ratings: Rating[];
@@ -12,13 +13,6 @@ export default function AllRatings({ ratings, currentUserEmail }: AllRatingsProp
       <p className="text-sm text-idfa-gray-500 italic">No ratings yet</p>
     );
   }
-
-  // Helper to get display name from email
-  const getDisplayName = (email: string): string => {
-    const username = email.split('@')[0];
-    // Capitalize first letter of username
-    return username.charAt(0).toUpperCase() + username.slice(1);
-  };
 
   // Sort ratings: current user's rating first, then by date (newest first)
   const sortedRatings = [...ratings].sort((a, b) => {

@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { put } from '@vercel/blob';
 import { requireAuth } from '@/lib/auth-helpers';
+import { uploadTicketFile } from '@/lib/storage';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   // Check authentication
-  const { session, error } = await requireAuth();
+  const { viewer, error } = await requireAuth();
   if (error) return error;
 
   try {
@@ -23,14 +23,11 @@ export async function POST(request: NextRequest) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    
-    // Upload to Vercel Blob
-    const blob = await put(`tickets/${Date.now()}-${file.name}`, buffer, {
-      access: 'public',
-      contentType: 'application/pdf',
-    });
 
-    return NextResponse.json({ url: blob.url, filename: file.name });
+    // Upload to Vercel Blob (private store when configured)
+    const url = await uploadTicketFile(viewer.email, 'tickets', buffer, 'application/pdf');
+
+    return NextResponse.json({ url, filename: file.name });
   } catch (error) {
     console.error('Upload error:', error);
     return NextResponse.json(
@@ -39,4 +36,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

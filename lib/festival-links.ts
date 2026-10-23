@@ -1,7 +1,10 @@
 /**
  * Maps movie titles to their IDFA festival page URLs
  * The slug is extracted from the URL path
+ * These links are for IDFA 2025 only; film pages change every edition
  */
+const FESTIVAL_URLS_YEAR = 2025;
+
 // URL to movie title mapping
 const FESTIVAL_URLS: { url: string; titles: string[] }[] = [
   {
@@ -86,7 +89,7 @@ function normalizeTitle(title: string): string {
  * Gets the festival page URL for a movie title from a screening
  * Checks the database first (from tickets), then falls back to hardcoded mapping
  */
-export async function getFestivalLinkForScreening(screening: { act: string; tickets: Array<{ festivalLink?: string }> }): Promise<string | null> {
+export async function getFestivalLinkForScreening(screening: { act: string; festivalYear: number; tickets: Array<{ festivalLink?: string }> }): Promise<string | null> {
   // First check if any ticket in this screening has a festival link
   for (const ticket of screening.tickets) {
     if (ticket.festivalLink) {
@@ -95,14 +98,18 @@ export async function getFestivalLinkForScreening(screening: { act: string; tick
   }
   
   // Fall back to hardcoded mapping
-  return getFestivalLink(screening.act);
+  return getFestivalLink(screening.act, screening.festivalYear);
 }
 
 /**
  * Gets the festival page URL for a movie title from hardcoded mapping
- * Returns null if no match is found
+ * Returns null if no match is found, or if the screening is not from the mapped festival year
  */
-export function getFestivalLink(movieTitle: string): string | null {
+export function getFestivalLink(movieTitle: string, festivalYear: number): string | null {
+  if (festivalYear !== FESTIVAL_URLS_YEAR) {
+    return null;
+  }
+
   const normalized = normalizeTitle(movieTitle);
   
   // Try exact match first with all title variations

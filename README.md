@@ -4,15 +4,20 @@ A Next.js application for managing IDFA film festival tickets. Upload PDF ticket
 
 ## Features
 
-- Google OAuth authentication with email whitelist
-- Upload single or multi-page PDF tickets
-- AI-powered extraction of ticket information (movie title, date, time, location)
+- Google OAuth authentication, with access controlled by a LaunchDarkly flag and group invites
+- Multiple users with private data; users in the same group share screenings, tickets, and ratings
+- Multiple festival years: each year has its own view, past years become a recap with your ratings
+- Upload single or multi-page PDF tickets, with a review step to fix anything the AI misread
+- Duplicate detection (the same ticket uploaded twice, by you or someone in your group, is skipped)
+- AI-powered extraction of ticket information (movie title, date, time, location), with the model and prompt managed in LaunchDarkly AgentControl (OpenAI or Anthropic)
 - Automatic grouping of multiple tickets for the same screening
 - Quick access to QR codes with fullscreen mode for easy scanning
 - AI-powered automatic detection of a link to the movie details page on the main IDFA website
 - Directions to screening venues via Google Maps
 - Venue-specific background styling for screening cards
-- Date-based styling (highlights today's screenings, dims past screenings)
+- "Up next" card, screenings grouped by day, and Amsterdam-time "today"/"past" styling
+- Add a screening to your calendar (.ics), fix ticket details, delete tickets
+- QR codes stored privately and only served to signed-in users who can see the ticket
 - Visual indicators for date nights (couple icon for 2-ticket screenings)
 - User movie ratings (1-10 scale) with optional comments
 - Average movie ratings displayed on screening cards
@@ -22,7 +27,8 @@ A Next.js application for managing IDFA film festival tickets. Upload PDF ticket
 - Node.js 22+ (required for `pdfjs-dist` compatibility)
 - npm
 - Vercel account (for Postgres and Blob storage)
-- OpenAI API key
+- OpenAI API key (and an Anthropic API key to use Claude models)
+- LaunchDarkly account with a project for this app
 - Google Cloud Console account (for OAuth)
 
 **Note:** If you use `nvm`, the project includes a `.nvmrc` file. Run `nvm use` in the project directory to switch to the correct Node.js version.
@@ -49,9 +55,18 @@ DATABASE_URL=your-postgres-connection-string
 
 # Storage
 BLOB_READ_WRITE_TOKEN=your-vercel-blob-token
+PRIVATE_BLOB_READ_WRITE_TOKEN=your-private-vercel-blob-token  # optional but recommended
 
 # AI Processing
 OPENAI_API_KEY=your-openai-api-key
+ANTHROPIC_API_KEY=your-anthropic-api-key  # needed when a LaunchDarkly variation serves a Claude model
+
+# LaunchDarkly
+LD_SDK_KEY=your-launchdarkly-server-sdk-key
+LD_SERVICE_NAME=idfa-manager  # optional, labels AI traces
+
+# Sign-in fallback, used only when LaunchDarkly can't be reached
+ALLOWED_EMAILS=you@gmail.com,partner@gmail.com
 ```
 
 ### Environment Variables Details
@@ -74,7 +89,15 @@ OPENAI_API_KEY=your-openai-api-key
 2. Create a Blob storage instance
 3. Copy the read/write token
 
-**OPENAI_API_KEY**: From OpenAI platform (required for PDF ticket data extraction)
+**PRIVATE_BLOB_READ_WRITE_TOKEN**: Read/write token of a second Blob store created with **private** access (Vercel sets access per store). When set, new QR codes and PDFs are stored privately. Move existing files with `npm run migrate-blobs-private` (safe to re-run). Tickets uploaded before migration 002 need `npm run backfill-qr-hashes` for duplicate detection.
+
+**OPENAI_API_KEY**: From OpenAI platform (required for PDF ticket data extraction, and used as the fallback model)
+
+**ANTHROPIC_API_KEY**: From the Anthropic Console. Required only if a LaunchDarkly config variation serves a Claude model.
+
+**LD_SDK_KEY**: Server-side SDK key of your LaunchDarkly environment (Project settings → Environments). `LAUNCHDARKLY_SDK_KEY` is accepted as an alias.
+
+**ALLOWED_EMAILS**: Comma-separated emails allowed to sign in when LaunchDarkly is unreachable. Members of a group (and invited users) can always sign in.
 
 **NEXTAUTH_URL**: Auto-detected based on environment:
 - Development: `http://localhost:3000`
@@ -83,7 +106,9 @@ OPENAI_API_KEY=your-openai-api-key
 
 3. Set up database:
 
-Run this SQL in your Postgres database:
+For an existing database, run the migrations in `migrations/` in order (`add-festival-link.sql`, then `002-multi-user-multi-year.sql`). `002` assigns existing tickets to one owner and seeds a group; edit the emails in it before running it.
+
+For a new database, run this SQL, then `migrations/002-multi-user-multi-year.sql`:
 
 ```sql
 CREATE TABLE IF NOT EXISTS tickets (
@@ -120,15 +145,7 @@ CREATE INDEX idx_ratings_act ON ratings(act);
 CREATE INDEX idx_ratings_user_act ON ratings(user_email, act);
 ```
 
-4. Configure email whitelist:
-
-Update the email whitelist in `lib/auth.ts` (currently hardcoded):
-```typescript
-const ALLOWED_EMAILS = [
-  'your-email@gmail.com',
-  // Add more emails as needed
-];
-```
+4. Set up LaunchDarkly (see [LaunchDarkly setup](#launchdarkly-setup))
 
 5. Run development server:
 ```bash
@@ -136,6 +153,22 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+## LaunchDarkly setup
+
+The app uses the LaunchDarkly Node.js AI SDK (`@launchdarkly/ai-server`, beta, versions pinned) with OpenAI and Anthropic handlers. Which provider and model runs is decided by the variation LaunchDarkly serves, so you can switch models without a deploy. If a config is off, missing, or LaunchDarkly is unreachable, the app falls back to the hardcoded OpenAI `gpt-4o` call.
+
+Create these in your LaunchDarkly project:
+
+| Key | Type | Setup |
+|---|---|---|
+| `ticket-extraction` | AgentControl config, completion mode | System message: `TICKET_EXTRACTION_PROMPT` from `lib/ticket-extractor.ts`. Parameters: temperature 0, max tokens 500. Add one variation per model you want to try (e.g. OpenAI gpt-4o, an Anthropic Claude model). |
+| `festival-link-finder` | AgentControl config, completion mode | User message: `FESTIVAL_LINK_PROMPT` from `lib/find-festival-link.ts` (uses `{{movieTitle}}` and `{{festivalYear}}`). Parameters: temperature 0, max tokens 300. |
+| `festival-link-ai` | Boolean flag | Kill switch for the AI festival-link lookup. Serve `true` by default. |
+| `app-access` | Boolean flag | Who may sign in. Serve `true` to a segment of allowed emails (context kind `user`, key = email), `false` otherwise. |
+| `ticket-extraction-corrected` | Numeric custom metric | Sent from the upload review step: `1` when a user had to fix AI-extracted fields, `0` when they were right. Use it to compare model variations. |
+
+AI metrics (tokens, latency, errors) appear on each config's **Monitoring** tab 1–2 minutes after the first call.
 
 ## Deployment
 
@@ -171,10 +204,13 @@ idfa-manager/
 │   │   ├── auth/[...nextauth]/  # NextAuth authentication
 │   │   ├── upload/               # PDF upload endpoint
 │   │   ├── process-pdf/          # PDF processing endpoint
+│   │   ├── groups/               # Sharing groups (create, invite, join, leave)
 │   │   ├── ratings/              # Movie rating endpoints
-│   │   └── screenings/           # Screenings API
+│   │   ├── screenings/           # Screenings API
+│   │   └── tickets/[id]/         # Edit/delete a ticket, serve its QR code
 │   ├── login/                    # Login page
-│   ├── screenings/               # Screening pages
+│   ├── screenings/               # Screening pages (per festival year)
+│   ├── settings/                 # Sharing groups page
 │   ├── upload/                   # Upload page
 │   ├── layout.tsx                # Root layout with auth
 │   └── page.tsx                  # Home page (redirects)
@@ -195,7 +231,11 @@ idfa-manager/
 │   ├── auth.ts                   # NextAuth configuration
 │   ├── auth-helpers.ts           # Auth utility functions
 │   ├── db.ts                     # Database operations
-│   ├── openai-processor.ts       # AI extraction
+│   ├── ticket-extractor.ts       # AI extraction via LaunchDarkly AgentControl
+│   ├── launchdarkly.ts           # LaunchDarkly client, flags, and events
+│   ├── groups.ts                 # Sharing groups and data visibility
+│   ├── storage.ts                # Private/public Blob storage for ticket files
+│   ├── dates.ts                  # Amsterdam-time date parsing and formatting
 │   ├── qr-extractor.ts           # QR code extraction
 │   ├── pdf-client-utils.ts       # Client-side PDF processing
 │   ├── pdf-splitter.ts           # PDF page splitting
@@ -209,6 +249,7 @@ idfa-manager/
 │   └── favicon files             # App icons
 ├── scripts/
 │   ├── backfill-festival-links.js  # Backfill script for existing tickets
+│   ├── migrate-blobs-private.js    # Move existing files to the private Blob store
 │   └── generate-favicons.js        # Favicon generation
 ├── middleware.ts                 # Route protection
 └── types/                        # Additional TypeScript types
@@ -223,7 +264,8 @@ idfa-manager/
 - NextAuth.js v4 - Authentication
 - Vercel Postgres / Neon - Database
 - Vercel Blob - File storage
-- OpenAI GPT-4o - PDF data extraction
+- LaunchDarkly AgentControl + Node.js AI SDK - Model and prompt management
+- OpenAI / Anthropic - PDF data extraction
 - pdf-lib - PDF manipulation
 - pdfjs-dist - PDF rendering (client-side)
 - jsQR - QR code detection
