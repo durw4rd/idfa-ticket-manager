@@ -17,6 +17,7 @@ interface ReviewItem {
   ticketId: string;
   original: ExtractedTicketFields;
   draft: ExtractedTicketFields;
+  saved: boolean; // Review sent, so a retry doesn't record the correction metric twice
 }
 
 function fieldsChanged(a: ExtractedTicketFields, b: ExtractedTicketFields): boolean {
@@ -137,7 +138,7 @@ export default function UploadTicket() {
       setReviewItems(
         pageResults
           .filter(r => r.success && r.extracted)
-          .map(r => ({ ticketId: r.ticketId, original: r.extracted!, draft: { ...r.extracted! } }))
+          .map(r => ({ ticketId: r.ticketId, original: r.extracted!, draft: { ...r.extracted! }, saved: false }))
       );
       setFiles([]);
       setStep('review');
@@ -161,6 +162,9 @@ export default function UploadTicket() {
     try {
       // Save corrections, and tell LaunchDarkly whether the AI got each ticket right
       for (const item of reviewItems) {
+        if (item.saved) {
+          continue;
+        }
         const corrected = fieldsChanged(item.original, item.draft);
         const response = await fetch(`/api/tickets/${item.ticketId}`, {
           method: 'PATCH',
@@ -174,6 +178,7 @@ export default function UploadTicket() {
           const data = await response.json().catch(() => ({}));
           throw new Error(`${item.draft.act}: ${data.error || 'Failed to save changes'}`);
         }
+        setReviewItems(items => items.map(i => (i.ticketId === item.ticketId ? { ...i, saved: true } : i)));
       }
       return true;
     } catch (err) {
@@ -222,24 +227,26 @@ export default function UploadTicket() {
               <div key={item.ticketId} className="p-4 border border-idfa-gray-200 rounded-lg">
                 <div className="flex items-center gap-2 mb-3 text-sm text-green-700">
                   <CheckCircle2 className="h-4 w-4" />
-                  <span>{fieldsChanged(item.original, item.draft) ? 'Edited' : 'Read successfully'}</span>
+                  <span>
+                    {item.saved ? 'Saved' : fieldsChanged(item.original, item.draft) ? 'Edited' : 'Read successfully'}
+                  </span>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="block text-sm sm:col-span-2">
                     <span className="text-idfa-gray-600">Title</span>
-                    <input className={inputClass} value={item.draft.act} onChange={e => updateDraft(item.ticketId, 'act', e.target.value)} />
+                    <input className={inputClass} disabled={item.saved} value={item.draft.act} onChange={e => updateDraft(item.ticketId, 'act', e.target.value)} />
                   </label>
                   <label className="block text-sm sm:col-span-2">
                     <span className="text-idfa-gray-600">Venue</span>
-                    <input className={inputClass} value={item.draft.location} onChange={e => updateDraft(item.ticketId, 'location', e.target.value)} />
+                    <input className={inputClass} disabled={item.saved} value={item.draft.location} onChange={e => updateDraft(item.ticketId, 'location', e.target.value)} />
                   </label>
                   <label className="block text-sm">
                     <span className="text-idfa-gray-600">Date (DD-MM-YYYY)</span>
-                    <input className={inputClass} value={item.draft.date} onChange={e => updateDraft(item.ticketId, 'date', e.target.value)} />
+                    <input className={inputClass} disabled={item.saved} value={item.draft.date} onChange={e => updateDraft(item.ticketId, 'date', e.target.value)} />
                   </label>
                   <label className="block text-sm">
                     <span className="text-idfa-gray-600">Time (HH:MM AM/PM)</span>
-                    <input className={inputClass} value={item.draft.start} onChange={e => updateDraft(item.ticketId, 'start', e.target.value)} />
+                    <input className={inputClass} disabled={item.saved} value={item.draft.start} onChange={e => updateDraft(item.ticketId, 'start', e.target.value)} />
                   </label>
                 </div>
               </div>

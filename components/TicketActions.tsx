@@ -29,12 +29,12 @@ export default function TicketActions({ ticketId, fields }: TicketActionsProps) 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fields: draft }),
       });
+      const data = await response.json();
       if (!response.ok) {
-        const data = await response.json();
         throw new Error(data.error || 'Failed to update ticket');
       }
-      // The screening key changes with the details, so go back to the list
-      router.push('/screenings');
+      // The screening key changes with the details, so go back to that festival year's list
+      router.push(`/screenings?year=${data.ticket.festivalYear}`);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update ticket');
@@ -54,7 +54,7 @@ export default function TicketActions({ ticketId, fields }: TicketActionsProps) 
         const data = await response.json();
         throw new Error(data.error || 'Failed to delete ticket');
       }
-      router.push('/screenings');
+      router.push(`/screenings?year=${fields.date.split('-')[2]}`);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete ticket');

@@ -83,35 +83,21 @@ export async function createGroup(userEmail: string, name: string): Promise<stri
   return groupId;
 }
 
-/**
- * Invite someone to a group. Any active member can invite.
- * Returns false if the inviter is not an active member of the group.
- * The inviter's membership row stays locked until the invite is saved, so a concurrent
- * removal can't slip in between the check and the insert.
- */
-export async function inviteMember(inviterEmail: string, groupId: string, inviteeEmail: string): Promise<boolean> {
-  const inviter = normalizeEmail(inviterEmail);
-  const invitee = normalizeEmail(inviteeEmail);
+type GroupQuery = typeof sql;
 
+/**
+ * Run a group membership change in one transaction holding a per-group lock. Invites, joins,
+ * leaves, and removals for the same group then happen one at a time, so every authorization
+ * check sees the membership as it is when the change is written.
+ */
+async function withGroupLock<T>(groupId: string, change: (query: GroupQuery) => Promise<T>): Promise<T> {
   const client = await db.connect();
   try {
     await client.sql`BEGIN`;
-    const membership = await client.sql`
-      SELECT 1 FROM group_members
-      WHERE group_id = ${groupId} AND user_email = ${inviter} AND status = 'active'
-      FOR SHARE
-    `;
-    if (membership.rows.length === 0) {
-      await client.sql`ROLLBACK`;
-      return false;
-    }
-    await client.sql`
-      INSERT INTO group_members (group_id, user_email, role, status, invited_by)
-      VALUES (${groupId}, ${invitee}, 'member', 'invited', ${inviter})
-      ON CONFLICT (group_id, user_email) DO NOTHING
-    `;
+    await client.sql`SELECT pg_advisory_xact_lock(hashtextextended(${groupId}, 0))`;
+    const result = await change(client.sql.bind(client) as GroupQuery);
     await client.sql`COMMIT`;
-    return true;
+    return result;
   } catch (error) {
     await client.sql`ROLLBACK`.catch(() => {});
     throw error;
@@ -120,25 +106,52 @@ export async function inviteMember(inviterEmail: string, groupId: string, invite
   }
 }
 
+/**
+ * Invite someone to a group. Any active member can invite.
+ * Returns false if the inviter is not an active member of the group.
+ */
+export async function inviteMember(inviterEmail: string, groupId: string, inviteeEmail: string): Promise<boolean> {
+  const inviter = normalizeEmail(inviterEmail);
+  const invitee = normalizeEmail(inviteeEmail);
+
+  return withGroupLock(groupId, async (query) => {
+    const membership = await query`
+      SELECT 1 FROM group_members
+      WHERE group_id = ${groupId} AND user_email = ${inviter} AND status = 'active'
+    `;
+    if (membership.rows.length === 0) {
+      return false;
+    }
+    await query`
+      INSERT INTO group_members (group_id, user_email, role, status, invited_by)
+      VALUES (${groupId}, ${invitee}, 'member', 'invited', ${inviter})
+      ON CONFLICT (group_id, user_email) DO NOTHING
+    `;
+    return true;
+  });
+}
+
 export async function acceptInvite(userEmail: string, groupId: string): Promise<boolean> {
-  const result = await sql`
-    UPDATE group_members SET status = 'active'
-    WHERE group_id = ${groupId} AND user_email = ${normalizeEmail(userEmail)} AND status = 'invited'
-    RETURNING group_id
-  `;
-  return result.rows.length > 0;
+  return withGroupLock(groupId, async (query) => {
+    const result = await query`
+      UPDATE group_members SET status = 'active'
+      WHERE group_id = ${groupId} AND user_email = ${normalizeEmail(userEmail)} AND status = 'invited'
+      RETURNING group_id
+    `;
+    return result.rows.length > 0;
+  });
 }
 
 /**
- * Leave a group, or decline an invite. If the last owner leaves, the longest-standing
- * active member becomes owner. A group with no active members left is deleted,
- * together with its pending invites.
+ * Remove a membership, then make sure the group still has an owner: if the last owner is gone,
+ * the longest-standing active member becomes owner. A group with no active members left is
+ * deleted, together with its pending invites. Must run inside withGroupLock.
  */
-export async function leaveGroup(userEmail: string, groupId: string): Promise<void> {
-  await sql`
-    DELETE FROM group_members WHERE group_id = ${groupId} AND user_email = ${normalizeEmail(userEmail)}
+async function removeMembership(query: GroupQuery, groupId: string, email: string): Promise<void> {
+  await query`
+    DELETE FROM group_members WHERE group_id = ${groupId} AND user_email = ${email}
   `;
-  await sql`
+  await query`
     UPDATE group_members SET role = 'owner'
     WHERE group_id = ${groupId}
       AND user_email = (
@@ -151,7 +164,7 @@ export async function leaveGroup(userEmail: string, groupId: string): Promise<vo
         SELECT 1 FROM group_members WHERE group_id = ${groupId} AND role = 'owner' AND status = 'active'
       )
   `;
-  await sql`
+  await query`
     DELETE FROM groups g
     WHERE g.id = ${groupId}
       AND NOT EXISTS (SELECT 1 FROM group_members m WHERE m.group_id = g.id AND m.status = 'active')
@@ -159,23 +172,29 @@ export async function leaveGroup(userEmail: string, groupId: string): Promise<vo
 }
 
 /**
- * Remove another member (or a pending invite). Only group owners can do this.
- * Removing yourself is treated as leaving, so ownership is handed over properly.
+ * Leave a group, or decline an invite. Ownership is handed over if needed.
+ */
+export async function leaveGroup(userEmail: string, groupId: string): Promise<void> {
+  await withGroupLock(groupId, (query) => removeMembership(query, groupId, normalizeEmail(userEmail)));
+}
+
+/**
+ * Remove a member (or a pending invite). Only active group owners can do this, and the
+ * owner check holds until the removal is written. Removing yourself is treated as leaving.
  */
 export async function removeMember(ownerEmail: string, groupId: string, memberEmail: string): Promise<boolean> {
-  if (normalizeEmail(memberEmail) === normalizeEmail(ownerEmail)) {
-    await leaveGroup(ownerEmail, groupId);
+  const owner = normalizeEmail(ownerEmail);
+  const member = normalizeEmail(memberEmail);
+
+  return withGroupLock(groupId, async (query) => {
+    const result = await query`
+      SELECT 1 FROM group_members
+      WHERE group_id = ${groupId} AND user_email = ${owner} AND role = 'owner' AND status = 'active'
+    `;
+    if (member !== owner && result.rows.length === 0) {
+      return false;
+    }
+    await removeMembership(query, groupId, member);
     return true;
-  }
-  const result = await sql`
-    SELECT 1 FROM group_members
-    WHERE group_id = ${groupId} AND user_email = ${normalizeEmail(ownerEmail)} AND role = 'owner' AND status = 'active'
-  `;
-  if (result.rows.length === 0) {
-    return false;
-  }
-  await sql`
-    DELETE FROM group_members WHERE group_id = ${groupId} AND user_email = ${normalizeEmail(memberEmail)}
-  `;
-  return true;
+  });
 }
