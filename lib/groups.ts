@@ -1,3 +1,4 @@
+import { db } from '@vercel/postgres';
 import { sql } from './db';
 import { Group, GroupMember } from './types';
 
@@ -82,28 +83,41 @@ export async function createGroup(userEmail: string, name: string): Promise<stri
   return groupId;
 }
 
-async function isActiveMember(userEmail: string, groupId: string): Promise<boolean> {
-  const result = await sql`
-    SELECT 1 FROM group_members
-    WHERE group_id = ${groupId} AND user_email = ${normalizeEmail(userEmail)} AND status = 'active'
-  `;
-  return result.rows.length > 0;
-}
-
 /**
  * Invite someone to a group. Any active member can invite.
  * Returns false if the inviter is not an active member of the group.
+ * The inviter's membership row stays locked until the invite is saved, so a concurrent
+ * removal can't slip in between the check and the insert.
  */
 export async function inviteMember(inviterEmail: string, groupId: string, inviteeEmail: string): Promise<boolean> {
-  if (!(await isActiveMember(inviterEmail, groupId))) {
-    return false;
+  const inviter = normalizeEmail(inviterEmail);
+  const invitee = normalizeEmail(inviteeEmail);
+
+  const client = await db.connect();
+  try {
+    await client.sql`BEGIN`;
+    const membership = await client.sql`
+      SELECT 1 FROM group_members
+      WHERE group_id = ${groupId} AND user_email = ${inviter} AND status = 'active'
+      FOR SHARE
+    `;
+    if (membership.rows.length === 0) {
+      await client.sql`ROLLBACK`;
+      return false;
+    }
+    await client.sql`
+      INSERT INTO group_members (group_id, user_email, role, status, invited_by)
+      VALUES (${groupId}, ${invitee}, 'member', 'invited', ${inviter})
+      ON CONFLICT (group_id, user_email) DO NOTHING
+    `;
+    await client.sql`COMMIT`;
+    return true;
+  } catch (error) {
+    await client.sql`ROLLBACK`.catch(() => {});
+    throw error;
+  } finally {
+    client.release();
   }
-  await sql`
-    INSERT INTO group_members (group_id, user_email, role, status, invited_by)
-    VALUES (${groupId}, ${normalizeEmail(inviteeEmail)}, 'member', 'invited', ${normalizeEmail(inviterEmail)})
-    ON CONFLICT (group_id, user_email) DO NOTHING
-  `;
-  return true;
 }
 
 export async function acceptInvite(userEmail: string, groupId: string): Promise<boolean> {

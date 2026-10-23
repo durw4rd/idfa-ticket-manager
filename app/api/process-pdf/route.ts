@@ -8,7 +8,7 @@ import { requireAuth } from '@/lib/auth-helpers';
 import { findFestivalLink } from '@/lib/find-festival-link';
 import { getFestivalLink } from '@/lib/festival-links';
 import { flushLdEvents, userContext } from '@/lib/launchdarkly';
-import { deleteTicketFiles, uploadTicketFile } from '@/lib/storage';
+import { deleteTicketFiles, isOwnTicketPdfUrl, uploadTicketFile } from '@/lib/storage';
 import { getFestivalYear, normalizeStartTime } from '@/lib/dates';
 
 export const runtime = 'nodejs';
@@ -118,7 +118,8 @@ export async function POST(request: NextRequest) {
           date: extractedData.date,
           start,
           qrCodeUrl,
-          pdfUrl: pageImage.pdfUrl || '',
+          // Only keep a PDF link this app stored for this user (the client sends it back to us)
+          pdfUrl: pageImage.pdfUrl && isOwnTicketPdfUrl(viewer.email, pageImage.pdfUrl) ? pageImage.pdfUrl : '',
           festivalLink: festivalLink || undefined,
           ownerEmail: viewer.email,
           qrHash,
