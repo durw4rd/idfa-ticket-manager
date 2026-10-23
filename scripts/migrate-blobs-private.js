@@ -4,6 +4,10 @@
  *
  * Requires PRIVATE_BLOB_READ_WRITE_TOKEN (private store) and BLOB_READ_WRITE_TOKEN (public store).
  * Run migrations/002-multi-user-multi-year.sql first.
+ *
+ * Safe to re-run: every public -> private copy is recorded in a journal file before the database
+ * is updated, and public copies are only deleted once no ticket points at them. A later run
+ * finishes anything an earlier run left behind, including deletions skipped with --keep-public.
  */
 
 const fs = require('fs');
@@ -74,61 +78,92 @@ async function copyToPrivate(url, ownerEmail, kind) {
   return blob.url;
 }
 
-async function main() {
-  const { rows: tickets } = await sql`
-    SELECT id, owner_email, qr_code_url, pdf_url FROM tickets ORDER BY created_at ASC
+const JOURNAL_PATH = path.join(process.cwd(), 'scripts', '.blob-migration-journal.json');
+
+function loadJournal() {
+  if (!fs.existsSync(JOURNAL_PATH)) {
+    return {};
+  }
+  return JSON.parse(fs.readFileSync(JOURNAL_PATH, 'utf8'));
+}
+
+function saveJournal(journal) {
+  fs.writeFileSync(JOURNAL_PATH, JSON.stringify(journal, null, 2));
+}
+
+async function pointTicketsAt(publicUrl, privateUrl) {
+  await sql`UPDATE tickets SET qr_code_url = ${privateUrl} WHERE qr_code_url = ${publicUrl}`;
+  await sql`UPDATE tickets SET pdf_url = ${privateUrl} WHERE pdf_url = ${publicUrl}`;
+}
+
+async function stillReferenced(publicUrl) {
+  const { rows } = await sql`
+    SELECT 1 FROM tickets WHERE qr_code_url = ${publicUrl} OR pdf_url = ${publicUrl} LIMIT 1
   `;
+  return rows.length > 0;
+}
 
-  console.log(`Found ${tickets.length} tickets${dryRun ? ' (dry run)' : ''}`);
+async function main() {
+  // journal: { [publicUrl]: { privateUrl, deleted } }
+  const journal = dryRun ? {} : loadJournal();
 
-  // One PDF can hold several tickets, so map each public URL to its private copy once
-  const migrated = new Map();
-  let moved = 0;
-
-  for (const ticket of tickets) {
-    const updates = {};
-
-    for (const [column, kind] of [['qr_code_url', 'qr-codes'], ['pdf_url', 'tickets']]) {
-      const url = ticket[column];
-      if (!url || isPrivateBlobUrl(url)) {
-        continue;
-      }
-      if (!migrated.has(url)) {
-        if (dryRun) {
-          migrated.set(url, '(dry run)');
-        } else {
-          migrated.set(url, await copyToPrivate(url, ticket.owner_email, kind));
-        }
-        moved++;
-      }
-      updates[column] = migrated.get(url);
+  // Every public file still referenced by a ticket, with an owner for the private path
+  const { rows } = await sql`
+    SELECT qr_code_url AS url, owner_email, 'qr-codes' AS kind FROM tickets
+    UNION ALL
+    SELECT pdf_url AS url, owner_email, 'tickets' AS kind FROM tickets
+  `;
+  const pending = new Map();
+  for (const row of rows) {
+    if (row.url && !isPrivateBlobUrl(row.url) && !pending.has(row.url)) {
+      pending.set(row.url, row);
     }
+  }
 
-    if (Object.keys(updates).length === 0) {
+  console.log(`${pending.size} public files to move${dryRun ? ' (dry run)' : ''}`);
+  if (dryRun) {
+    for (const [url, row] of pending) {
+      console.log(`  ${row.kind}: ${url}`);
+    }
+    const leftovers = Object.entries(loadJournal()).filter(([, entry]) => !entry.deleted);
+    console.log(`${leftovers.length} already-copied public files waiting to be deleted`);
+    return;
+  }
+
+  let copied = 0;
+  for (const [publicUrl, row] of pending) {
+    let entry = journal[publicUrl];
+    if (!entry) {
+      entry = { privateUrl: await copyToPrivate(publicUrl, row.owner_email, row.kind), deleted: false };
+      journal[publicUrl] = entry;
+      // Record the copy before touching the database, so a failure below can be resumed
+      saveJournal(journal);
+      copied++;
+    }
+    await pointTicketsAt(publicUrl, entry.privateUrl);
+  }
+  console.log(`Copied ${copied} files to the private store and updated their tickets`);
+
+  if (keepPublic) {
+    console.log('Kept public copies (--keep-public); run again without it to delete them');
+    return;
+  }
+
+  let deleted = 0;
+  for (const [publicUrl, entry] of Object.entries(journal)) {
+    if (entry.deleted) {
       continue;
     }
-
-    console.log(`Ticket ${ticket.id}: ${Object.keys(updates).join(', ')}`);
-    if (!dryRun) {
-      await sql`
-        UPDATE tickets
-        SET qr_code_url = ${updates.qr_code_url || ticket.qr_code_url},
-            pdf_url = ${updates.pdf_url || ticket.pdf_url}
-        WHERE id = ${ticket.id}
-      `;
+    if (await stillReferenced(publicUrl)) {
+      // A previous run copied the file but didn't finish updating its tickets
+      await pointTicketsAt(publicUrl, entry.privateUrl);
     }
+    await del(publicUrl);
+    entry.deleted = true;
+    saveJournal(journal);
+    deleted++;
   }
-
-  console.log(`${dryRun ? 'Would copy' : 'Copied'} ${moved} files to the private store`);
-
-  if (!dryRun && !keepPublic && migrated.size > 0) {
-    const publicUrls = Array.from(migrated.keys());
-    // Delete in batches to stay within request limits
-    for (let i = 0; i < publicUrls.length; i += 100) {
-      await del(publicUrls.slice(i, i + 100));
-    }
-    console.log(`Deleted ${publicUrls.length} public copies`);
-  }
+  console.log(`Deleted ${deleted} public copies`);
 }
 
 main()

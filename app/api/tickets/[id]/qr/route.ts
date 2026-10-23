@@ -30,8 +30,9 @@ export async function GET(
     return new NextResponse(file.stream, {
       headers: {
         'Content-Type': file.contentType,
-        // Cache in the user's browser only, so the QR code opens instantly at the venue
-        'Cache-Control': 'private, max-age=604800, immutable',
+        // Never serve from cache: every request must pass the auth and visibility checks above,
+        // so signing out or leaving a group immediately hides the QR code
+        'Cache-Control': 'private, no-store',
       },
     });
   } catch (error) {

@@ -53,6 +53,15 @@ export function parseTicketDateTime(date: string, start: string): Date {
   const minutes = parseInt(timeMatch[2]);
   const ampm = timeMatch[3].toUpperCase();
 
+  // Reject impossible values instead of letting Date roll them into another day or time
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth) {
+    throw new Error(`Invalid date: ${date}`);
+  }
+  if (hours < 1 || hours > 12 || minutes > 59) {
+    throw new Error(`Invalid time: ${start}`);
+  }
+
   if (ampm === 'PM' && hours !== 12) {
     hours += 12;
   } else if (ampm === 'AM' && hours === 12) {

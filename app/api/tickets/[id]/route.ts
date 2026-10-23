@@ -3,7 +3,7 @@ import { requireAuth } from '@/lib/auth-helpers';
 import { deleteTicket, updateTicketDetails } from '@/lib/db';
 import { deleteTicketFiles } from '@/lib/storage';
 import { flushLdEvents, trackEvent, userContext } from '@/lib/launchdarkly';
-import { normalizeStartTime } from '@/lib/dates';
+import { normalizeStartTime, parseTicketDateTime } from '@/lib/dates';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -46,6 +46,14 @@ export async function PATCH(
       if (!DATE_PATTERN.test(date) || !START_PATTERN.test(start)) {
         return NextResponse.json(
           { error: 'Date must be DD-MM-YYYY and time must be HH:MM AM/PM' },
+          { status: 400 }
+        );
+      }
+      try {
+        parseTicketDateTime(date, start);
+      } catch (parseError) {
+        return NextResponse.json(
+          { error: parseError instanceof Error ? parseError.message : 'Invalid date or time' },
           { status: 400 }
         );
       }

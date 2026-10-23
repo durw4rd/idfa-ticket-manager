@@ -1,4 +1,4 @@
-import { sql as vercelSql } from '@vercel/postgres';
+import { sql as vercelSql, db } from '@vercel/postgres';
 import { Ticket, Screening, Rating } from './types';
 import { getFestivalYear, parseTicketDateTime } from './dates';
 
@@ -18,19 +18,61 @@ export const sql = vercelSql;
 // Every read below is scoped to `visibleEmails`: the viewer plus their active group members
 // (see getVisibleEmails in lib/groups.ts). Writes are scoped to the owner's own email.
 
-export async function createTicket(
-  ticket: Omit<Ticket, 'id' | 'createdAt' | 'festivalYear' | 'startsAt'>
-): Promise<Ticket> {
+type NewTicket = Omit<Ticket, 'id' | 'createdAt' | 'festivalYear' | 'startsAt'>;
+
+async function insertTicket(query: typeof sql, ticket: NewTicket): Promise<Ticket> {
   const festivalYear = getFestivalYear(ticket.date);
   const startsAt = parseTicketDateTime(ticket.date, ticket.start);
 
-  const result = await sql`
+  const result = await query`
     INSERT INTO tickets (act, location, date, start, qr_code_url, pdf_url, transaction_id, festival_link, owner_email, festival_year, starts_at, qr_hash)
     VALUES (${ticket.act}, ${ticket.location}, ${ticket.date}, ${ticket.start}, ${ticket.qrCodeUrl}, ${ticket.pdfUrl}, ${ticket.transactionId || null}, ${ticket.festivalLink || null}, ${ticket.ownerEmail}, ${festivalYear}, ${startsAt.toISOString()}, ${ticket.qrHash || null})
     RETURNING id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", festival_link as "festivalLink", owner_email as "ownerEmail", festival_year as "festivalYear", starts_at as "startsAt", qr_hash as "qrHash", created_at as "createdAt"
   `;
 
   return result.rows[0] as Ticket;
+}
+
+export async function createTicket(ticket: NewTicket): Promise<Ticket> {
+  return insertTicket(sql, ticket);
+}
+
+/**
+ * Insert a ticket unless someone in `visibleEmails` already has one with the same QR code.
+ * The check and insert run in one transaction under an advisory lock on the QR hash, so two
+ * group members uploading the same ticket at the same time can't both save it.
+ */
+export async function createTicketUnlessDuplicate(
+  visibleEmails: string[],
+  ticket: NewTicket
+): Promise<{ ticket: Ticket; duplicate?: undefined } | { ticket?: undefined; duplicate: Ticket }> {
+  if (!ticket.qrHash) {
+    return { ticket: await createTicket(ticket) };
+  }
+
+  const client = await db.connect();
+  try {
+    await client.sql`BEGIN`;
+    await client.sql`SELECT pg_advisory_xact_lock(hashtextextended(${ticket.qrHash}, 0))`;
+    const existing = await client.sql`
+      SELECT id, act, date, start, owner_email as "ownerEmail"
+      FROM tickets
+      WHERE qr_hash = ${ticket.qrHash} AND owner_email = ANY(${visibleEmails as any}::text[])
+      LIMIT 1
+    `;
+    if (existing.rows[0]) {
+      await client.sql`ROLLBACK`;
+      return { duplicate: existing.rows[0] as Ticket };
+    }
+    const inserted = await insertTicket(client.sql.bind(client) as typeof sql, ticket);
+    await client.sql`COMMIT`;
+    return { ticket: inserted };
+  } catch (error) {
+    await client.sql`ROLLBACK`.catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function getTicketsForYear(visibleEmails: string[], year: number): Promise<Ticket[]> {
@@ -104,10 +146,13 @@ export async function updateTicketDetails(
   const festivalYear = getFestivalYear(fields.date);
   const startsAt = parseTicketDateTime(fields.date, fields.start);
 
+  // A stored festival link belongs to the old title and year, so drop it when either changes
+  // (the right-hand side of SET sees the row's values before the update)
   const result = await sql`
     UPDATE tickets
     SET act = ${fields.act}, location = ${fields.location}, date = ${fields.date}, start = ${fields.start},
-        festival_year = ${festivalYear}, starts_at = ${startsAt.toISOString()}
+        festival_year = ${festivalYear}, starts_at = ${startsAt.toISOString()},
+        festival_link = CASE WHEN act = ${fields.act} AND festival_year = ${festivalYear} THEN festival_link ELSE NULL END
     WHERE id = ${id} AND owner_email = ${ownerEmail}
     RETURNING id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", festival_link as "festivalLink", owner_email as "ownerEmail", festival_year as "festivalYear", starts_at as "startsAt", qr_hash as "qrHash", created_at as "createdAt"
   `;

@@ -116,15 +116,31 @@ export async function acceptInvite(userEmail: string, groupId: string): Promise<
 }
 
 /**
- * Leave a group, or decline an invite. A group with no members left is deleted.
+ * Leave a group, or decline an invite. If the last owner leaves, the longest-standing
+ * active member becomes owner. A group with no active members left is deleted,
+ * together with its pending invites.
  */
 export async function leaveGroup(userEmail: string, groupId: string): Promise<void> {
   await sql`
     DELETE FROM group_members WHERE group_id = ${groupId} AND user_email = ${normalizeEmail(userEmail)}
   `;
   await sql`
+    UPDATE group_members SET role = 'owner'
+    WHERE group_id = ${groupId}
+      AND user_email = (
+        SELECT user_email FROM group_members
+        WHERE group_id = ${groupId} AND status = 'active'
+        ORDER BY created_at ASC, user_email ASC
+        LIMIT 1
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM group_members WHERE group_id = ${groupId} AND role = 'owner' AND status = 'active'
+      )
+  `;
+  await sql`
     DELETE FROM groups g
-    WHERE g.id = ${groupId} AND NOT EXISTS (SELECT 1 FROM group_members m WHERE m.group_id = g.id)
+    WHERE g.id = ${groupId}
+      AND NOT EXISTS (SELECT 1 FROM group_members m WHERE m.group_id = g.id AND m.status = 'active')
   `;
 }
 
