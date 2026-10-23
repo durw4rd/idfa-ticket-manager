@@ -1,13 +1,18 @@
 import jsQR from 'jsqr';
 import sharp from 'sharp';
 
+export interface ExtractedQRCode {
+  image: Buffer; // Cropped PNG of the QR code
+  payload: string; // Decoded QR content, used to detect duplicate tickets
+}
+
 /**
  * Extract QR code from a base64-encoded image
  * The image should be a PNG image of a single ticket page
  */
 export async function extractQRCodeFromImage(
   base64Image: string
-): Promise<Buffer | null> {
+): Promise<ExtractedQRCode | null> {
   try {
     // Convert base64 to buffer
     // Handle both "data:image/png;base64,..." and plain base64 strings
@@ -57,7 +62,7 @@ export async function extractQRCodeFromImage(
       .png()
       .toBuffer();
 
-    return qrCodeImage;
+    return { image: qrCodeImage, payload: qrCode.data };
   } catch (error) {
     console.error('Error extracting QR code:', error);
     return null;
@@ -68,7 +73,7 @@ async function tryFindQRCodeInRegions(
   imageBuffer: Buffer,
   width: number,
   height: number
-): Promise<Buffer | null> {
+): Promise<ExtractedQRCode | null> {
   const regions = [
     // Top-left region
     { left: 0, top: 0, regionWidth: width / 2, regionHeight: height / 2 },
@@ -98,10 +103,11 @@ async function tryFindQRCodeInRegions(
 
     if (qrCode) {
       // Found QR code in this region, return the cropped region with padding
-      return await sharp(croppedBuffer)
+      const image = await sharp(croppedBuffer)
         .resize(500, 500, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 1 } })
         .png()
         .toBuffer();
+      return { image, payload: qrCode.data };
     }
   }
 
