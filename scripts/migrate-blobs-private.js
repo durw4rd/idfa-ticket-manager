@@ -62,11 +62,24 @@ function ownerFolder(ownerEmail) {
 }
 
 function isPrivateBlobUrl(url) {
-  return url.includes('.private.blob.vercel-storage.com');
+  try {
+    return new URL(url).hostname.endsWith('.private.blob.vercel-storage.com');
+  } catch {
+    return false;
+  }
+}
+
+// Only download from public Vercel Blob storage; stored URLs are not trusted to point anywhere else
+function assertPublicBlobUrl(url) {
+  const parsed = new URL(url);
+  if (parsed.protocol !== 'https:' || parsed.port !== '' || !parsed.hostname.endsWith('.public.blob.vercel-storage.com')) {
+    throw new Error(`Refusing to download a non-Blob URL: ${url}`);
+  }
 }
 
 async function copyToPrivate(url, ownerEmail, kind) {
-  const response = await fetch(url);
+  assertPublicBlobUrl(url);
+  const response = await fetch(url, { redirect: 'error' });
   if (!response.ok) {
     throw new Error(`Failed to download ${url}: ${response.status}`);
   }
@@ -116,6 +129,12 @@ async function main() {
   const pending = new Map();
   for (const row of rows) {
     if (row.url && !isPrivateBlobUrl(row.url) && !pending.has(row.url)) {
+      try {
+        assertPublicBlobUrl(row.url);
+      } catch (error) {
+        console.warn(`  Skipping: ${error.message}`);
+        continue;
+      }
       pending.set(row.url, row);
     }
   }
