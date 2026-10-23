@@ -89,7 +89,7 @@ ALLOWED_EMAILS=you@gmail.com,partner@gmail.com
 2. Create a Blob storage instance
 3. Copy the read/write token
 
-**PRIVATE_BLOB_READ_WRITE_TOKEN**: Read/write token of a second Blob store created with **private** access (Vercel sets access per store). When set, new QR codes and PDFs are stored privately. Move existing files with `npm run migrate-blobs-private`.
+**PRIVATE_BLOB_READ_WRITE_TOKEN**: Read/write token of a second Blob store created with **private** access (Vercel sets access per store). When set, new QR codes and PDFs are stored privately. Move existing files with `npm run migrate-blobs-private` (safe to re-run). Tickets uploaded before migration 002 need `npm run backfill-qr-hashes` for duplicate detection.
 
 **OPENAI_API_KEY**: From OpenAI platform (required for PDF ticket data extraction, and used as the fallback model)
 

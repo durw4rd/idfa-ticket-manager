@@ -79,6 +79,11 @@ async function findWithFallback(movieTitle: string, festivalYear: number): Promi
   return response.choices[0]?.message?.content ?? '';
 }
 
+const FESTIVAL_HOST = 'festival.idfa.nl';
+// Archived festival pages redirect from festival.idfa.nl to www.idfa.nl
+const ALLOWED_REDIRECT_HOSTS = new Set([FESTIVAL_HOST, 'www.idfa.nl']);
+const MAX_REDIRECTS = 3;
+
 function parseFestivalUrl(content: string): string | null {
   // Extract URL from response (handle various formats)
   let url = content.trim();
@@ -90,27 +95,56 @@ function parseFestivalUrl(content: string): string | null {
   url = url.replace(/^```[\w]*\n?/, '').replace(/\n?```$/, '');
   url = url.trim();
 
-  // Check if it's a valid IDFA festival URL (film or composition)
-  if (url.startsWith('http') &&
-      (url.includes('festival.idfa.nl/en/film/') || url.includes('festival.idfa.nl/en/composition/'))) {
-    // Ensure it ends with a slash
-    return url.endsWith('/') ? url : `${url}/`;
+  // Only accept an https film or composition page on the IDFA festival site
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (
+    parsed.protocol !== 'https:' ||
+    parsed.hostname !== FESTIVAL_HOST ||
+    parsed.port !== '' ||
+    parsed.username !== '' ||
+    parsed.password !== '' ||
+    !/^\/en\/(film|composition)\/[^/]+\/[^/]+\/?$/.test(parsed.pathname)
+  ) {
+    return null;
   }
 
-  return null;
+  // Ensure it ends with a slash
+  const normalized = `${parsed.origin}${parsed.pathname}`;
+  return normalized.endsWith('/') ? normalized : `${normalized}/`;
 }
 
 /**
  * Check that a festival URL leads to a real film page. The IDFA site answers 200 for
  * made-up film URLs and serves a generic page, so look at the page title as well.
+ * Only IDFA hosts are ever requested: redirects are followed by hand and must stay on them.
  */
 export async function verifyFestivalLink(url: string): Promise<boolean> {
   try {
-    const response = await fetch(url, {
-      redirect: 'follow',
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!response.ok) {
+    let current = new URL(url);
+    let response: Response | null = null;
+
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      if (current.protocol !== 'https:' || !ALLOWED_REDIRECT_HOSTS.has(current.hostname) || current.port !== '') {
+        return false;
+      }
+      response = await fetch(current, {
+        redirect: 'manual',
+        signal: AbortSignal.timeout(5000),
+      });
+      const location = response.headers.get('location');
+      if (response.status >= 300 && response.status < 400 && location) {
+        current = new URL(location, current);
+        continue;
+      }
+      break;
+    }
+
+    if (!response || !response.ok) {
       return false;
     }
     const html = await response.text();

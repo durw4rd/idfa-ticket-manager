@@ -2,13 +2,13 @@ import { NextRequest, NextResponse, after } from 'next/server';
 import { createHash } from 'crypto';
 import { extractTicketDataFromImage } from '@/lib/ticket-extractor';
 import { extractQRCodeFromImage } from '@/lib/qr-extractor';
-import { createTicket, findTicketByQrHash, getTicketsForYear } from '@/lib/db';
+import { createTicketUnlessDuplicate, findTicketByQrHash, getTicketsForYear } from '@/lib/db';
 import { PDFProcessingSummary, ProcessedTicketResult } from '@/lib/types';
 import { requireAuth } from '@/lib/auth-helpers';
 import { findFestivalLink } from '@/lib/find-festival-link';
 import { getFestivalLink } from '@/lib/festival-links';
 import { flushLdEvents, userContext } from '@/lib/launchdarkly';
-import { uploadTicketFile } from '@/lib/storage';
+import { deleteTicketFiles, uploadTicketFile } from '@/lib/storage';
 import { getFestivalYear, normalizeStartTime } from '@/lib/dates';
 
 export const runtime = 'nodejs';
@@ -50,6 +50,7 @@ export async function POST(request: NextRequest) {
         const pageImage = pageImages[i];
 
         // Extract the QR code first: it's cheap, and lets us skip tickets we already have
+        // before paying for the AI calls (the insert below re-checks atomically)
         const qrCode = await extractQRCodeFromImage(pageImage.imageData);
 
         if (!qrCode) {
@@ -110,8 +111,8 @@ export async function POST(request: NextRequest) {
           festivalLink = getFestivalLink(extractedData.act, festivalYear);
         }
 
-        // Create ticket in database
-        const ticket = await createTicket({
+        // Create ticket in database, unless a group member saved the same ticket in the meantime
+        const created = await createTicketUnlessDuplicate(viewer.visibleEmails, {
           act: extractedData.act,
           location: extractedData.location,
           date: extractedData.date,
@@ -123,6 +124,21 @@ export async function POST(request: NextRequest) {
           qrHash,
         });
 
+        if (created.duplicate) {
+          await deleteTicketFiles([qrCodeUrl]);
+          const existingTicket = created.duplicate;
+          results.push({
+            ticketId: existingTicket.id,
+            screeningKey: `${existingTicket.act}|${existingTicket.date}|${existingTicket.start}`,
+            success: false,
+            duplicate: true,
+            error: `Already uploaded: ${existingTicket.act} on ${existingTicket.date}`,
+          });
+          duplicates++;
+          continue;
+        }
+
+        const ticket = created.ticket;
         results.push({
           ticketId: ticket.id,
           screeningKey,
