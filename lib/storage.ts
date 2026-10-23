@@ -1,12 +1,17 @@
 import { createHash, randomUUID } from 'crypto';
 import { put, get, del } from '@vercel/blob';
 
-// Ticket files (QR codes, PDFs) go to a private Blob store when PRIVATE_BLOB_READ_WRITE_TOKEN
-// is set. Vercel sets access per store, so private files need their own store.
-// Without it, files go to the existing public store under unguessable names.
-// Either way the app never hands blob URLs to the browser; files are served through
+// Ticket files (QR codes, PDFs) live in a private Vercel Blob store (Vercel sets access per
+// store). The app never hands blob URLs to the browser; files are served through
 // authenticated routes such as /api/tickets/[id]/qr.
 const PRIVATE_TOKEN = process.env.PRIVATE_BLOB_READ_WRITE_TOKEN;
+
+function requirePrivateToken(): string {
+  if (!PRIVATE_TOKEN) {
+    throw new Error('PRIVATE_BLOB_READ_WRITE_TOKEN is not set; ticket files cannot be stored');
+  }
+  return PRIVATE_TOKEN;
+}
 
 export function isPrivateBlobUrl(url: string): boolean {
   try {
@@ -51,49 +56,35 @@ export async function uploadTicketFile(
   const extension = contentType === 'application/pdf' ? 'pdf' : 'png';
   const pathname = `users/${ownerFolder(ownerEmail)}/${kind}/${randomUUID()}.${extension}`;
 
-  const blob = PRIVATE_TOKEN
-    ? await put(pathname, body, { access: 'private', contentType, token: PRIVATE_TOKEN })
-    : await put(pathname, body, { access: 'public', contentType });
+  const blob = await put(pathname, body, { access: 'private', contentType, token: requirePrivateToken() });
 
   return blob.url;
 }
 
 /**
- * Read a stored file, private or public. Returns null if it doesn't exist.
+ * Read a stored file. Returns null if it doesn't exist.
  */
 export async function readTicketFile(
   url: string
 ): Promise<{ stream: ReadableStream<Uint8Array>; contentType: string } | null> {
-  // Only ever read from Vercel Blob, never from an arbitrary stored URL
-  if (!parseBlobUrl(url)) {
+  // Only ever read from the private Blob store, never from an arbitrary stored URL
+  if (!parseBlobUrl(url) || !isPrivateBlobUrl(url)) {
     return null;
   }
 
-  if (isPrivateBlobUrl(url)) {
-    const result = await get(url, { access: 'private', token: PRIVATE_TOKEN });
-    if (!result || result.statusCode !== 200) {
-      return null;
-    }
-    return { stream: result.stream, contentType: result.blob.contentType };
-  }
-
-  const response = await fetch(url, { redirect: 'error' });
-  if (!response.ok || !response.body) {
+  const result = await get(url, { access: 'private', token: requirePrivateToken() });
+  if (!result || result.statusCode !== 200) {
     return null;
   }
-  return { stream: response.body, contentType: response.headers.get('content-type') || 'application/octet-stream' };
+  return { stream: result.stream, contentType: result.blob.contentType };
 }
 
 export async function deleteTicketFiles(urls: string[]): Promise<void> {
   const privateUrls = urls.filter((url) => url && isPrivateBlobUrl(url));
-  const publicUrls = urls.filter((url) => url && !isPrivateBlobUrl(url));
 
   try {
     if (privateUrls.length > 0) {
-      await del(privateUrls, { token: PRIVATE_TOKEN });
-    }
-    if (publicUrls.length > 0) {
-      await del(publicUrls);
+      await del(privateUrls, { token: requirePrivateToken() });
     }
   } catch (error) {
     // A leftover file is harmless; don't fail the request over it
