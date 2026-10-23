@@ -131,7 +131,12 @@ async function ArchiveView({
 }) {
   const ratings = await getRatingsForYear(visibleEmails, year);
   const myRatings = new Map(ratings.filter((r) => r.userEmail === viewerEmail).map((r) => [r.act, r.rating]));
-  const films = Array.from(new Map(screenings.map((s) => [s.act, s])).values());
+  // One entry per film, keeping every screening of it (group members may have seen it at different times)
+  const filmScreenings = new Map<string, Screening[]>();
+  for (const screening of screenings) {
+    filmScreenings.set(screening.act, [...(filmScreenings.get(screening.act) ?? []), screening]);
+  }
+  const films = Array.from(filmScreenings, ([act, filmShowings]) => ({ act, screenings: filmShowings }));
   const myAverage =
     myRatings.size > 0 ? Array.from(myRatings.values()).reduce((sum, r) => sum + r, 0) / myRatings.size : null;
 
@@ -156,20 +161,27 @@ async function ArchiveView({
       </div>
 
       <ol className="divide-y divide-idfa-gray-200 border-y border-idfa-gray-200">
-        {sortedFilms.map((screening) => {
-          const myRating = myRatings.get(screening.act);
-          const groupAverage = averageRatings.get(screening.act);
+        {sortedFilms.map((film) => {
+          const myRating = myRatings.get(film.act);
+          const groupAverage = averageRatings.get(film.act);
           return (
-            <li key={screening.id}>
-              <Link
-                href={`/screenings/${encodeURIComponent(screening.id)}`}
-                className="flex items-center justify-between gap-4 py-4 hover:bg-idfa-gray-50 -mx-2 px-2 rounded"
-              >
+            <li key={film.act} className="py-4">
+              <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="font-semibold truncate">{screening.act}</p>
-                  <p className="text-sm text-idfa-gray-600">
-                    {formatDate(screening.dateTime)} · {screening.location}
-                  </p>
+                  <p className="font-semibold truncate">{film.act}</p>
+                  <ul className="mt-1 space-y-1">
+                    {film.screenings.map((screening) => (
+                      <li key={screening.id}>
+                        <Link
+                          href={`/screenings/${encodeURIComponent(screening.id)}`}
+                          className="text-sm text-idfa-gray-600 hover:text-idfa-black hover:underline"
+                        >
+                          {formatDate(screening.dateTime)} · {formatTime(screening.dateTime)} · {screening.location}
+                          {screening.ticketCount > 1 ? ` · ${screening.ticketCount} tickets` : ''}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
                 <div className="text-right flex-shrink-0">
                   {myRating ? (
@@ -184,7 +196,7 @@ async function ArchiveView({
                     <p className="text-xs text-idfa-gray-500">group avg {groupAverage.average.toFixed(1)}</p>
                   )}
                 </div>
-              </Link>
+              </div>
             </li>
           );
         })}
