@@ -4,6 +4,8 @@ import Providers from "@/components/Providers";
 import AuthButton from "@/components/AuthButton";
 import IDFALogo from "@/components/IDFALogo";
 import VenueBackgroundLoader from "@/components/VenueBackgroundLoader";
+import AppNav from "@/components/AppNav";
+import { getCurrentFestivalYear } from "@/lib/dates";
 import { Film } from 'lucide-react';
 
 export const metadata: Metadata = {
@@ -41,16 +43,20 @@ export default function RootLayout({
         <Providers>
           <header className="border-b border-idfa-gray-200 bg-white relative z-50">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-4">
                 <IDFALogo />
-                <AuthButton />
+                <div className="flex items-center gap-4">
+                  <AppNav variant="header" />
+                  <AuthButton />
+                </div>
               </div>
             </div>
           </header>
           <main className="min-h-screen">
             {children}
           </main>
-          <footer className="border-t border-idfa-gray-200 bg-white mt-auto relative z-50">
+          <AppNav variant="bottom" />
+          <footer className="border-t border-idfa-gray-200 bg-white mt-auto relative z-40 pb-20 sm:pb-0">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
               <div className="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-3">
                 <Film className="h-4 w-4 text-idfa-gray-500" />
@@ -58,7 +64,7 @@ export default function RootLayout({
                   International Documentary Film Festival Manager
                 </p>
                 <p className="text-idfa-gray-600 text-sm">
-                  Amsterdam | 2025
+                  Amsterdam | {getCurrentFestivalYear()}
                 </p>
                 <span className="hidden sm:inline text-idfa-gray-300">·</span>
                 <a
