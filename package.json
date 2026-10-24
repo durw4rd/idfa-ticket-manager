@@ -10,7 +10,6 @@
     "optimize-backgrounds": "node scripts/optimize-backgrounds.js",
     "generate-favicons": "node scripts/generate-favicons.js",
     "backfill-festival-links": "tsx --env-file-if-exists=.env.local scripts/backfill-festival-links.ts",
-    "migrate-blobs-private": "node scripts/migrate-blobs-private.js",
     "backfill-qr-hashes": "node scripts/backfill-qr-hashes.js"
   },
   "dependencies": {
