@@ -15,33 +15,38 @@ export interface ExtractedTicketData {
   location: string;
   date: string;
   start: string;
-  qrCodePosition?: {
-    description: string;
-  };
 }
 
 // Used as the system message of the LaunchDarkly config, and by the fallback below
-export const TICKET_EXTRACTION_PROMPT = `You are analyzing an IDFA (International Documentary Film Festival Amsterdam) ticket PDF.
-Extract the following information and return it as JSON:
+export const TICKET_EXTRACTION_PROMPT = `You are reading one page of an IDFA (International Documentary Film Festival Amsterdam) ticket. Each page is exactly one ticket.
 
-{
-  "act": "The exact movie/film title as shown (e.g., 'Cutting Through Rocks')",
-  "location": "The cinema or venue name (e.g., 'Kriterion 1')",
-  "date": "The date in DD-MM-YYYY format (e.g., '15-11-2025')",
-  "start": "The start time in HH:MM AM/PM format (e.g., '06:45 PM')",
-  "qrCodePosition": {
-    "description": "Describe the approximate position of the QR code on the page (e.g., 'top left, large square below the IDFA logo')"
-  }
-}
+Return a JSON object with these fields:
+- "act": the film or program title exactly as printed (e.g. "Cutting Through Rocks")
+- "location": the cinema or venue, including the screen number if shown (e.g. "Kriterion 1")
+- "date": the screening date as DD-MM-YYYY (e.g. "15-11-2025")
+- "start": the start time as HH:MM AM/PM (e.g. "06:45 PM")
 
-Important notes:
-- Look for fields labeled "Act", "Location", "Date", and "Start"
-- The date format is DD-MM-YYYY (day-month-year)
-- The time format uses 12-hour clock with AM/PM
-- Each PAGE represents exactly ONE ticket (you are analyzing a single page)
-- Find the QR code (usually a large square code) and describe its position
+How to read the ticket:
+- The fields are usually labeled "Act", "Location", "Date" and "Start". Tickets may also use Dutch labels such as "Voorstelling", "Locatie", "Datum" and "Aanvang".
+- Dates on the ticket are day first. Convert written dates (e.g. "Sat 15 Nov 2025") to DD-MM-YYYY.
+- Convert 24-hour times to the 12-hour clock: "18:45" becomes "06:45 PM", "00:15" becomes "12:15 AM".
+- Copy the title as printed. Don't translate it or correct its spelling.
+- If a field is missing or unreadable, use an empty string. Never guess.
 
-Return ONLY valid JSON, no additional text or markdown formatting.`;
+Return only the JSON object, with no other text or markdown.`;
+
+// JSON Schema for the response, also set as the output format of the LaunchDarkly config
+export const TICKET_EXTRACTION_SCHEMA = {
+  type: 'object',
+  properties: {
+    act: { type: 'string', description: 'Film or program title as printed' },
+    location: { type: 'string', description: 'Cinema or venue, with screen number' },
+    date: { type: 'string', description: 'Screening date as DD-MM-YYYY' },
+    start: { type: 'string', description: 'Start time as HH:MM AM/PM' },
+  },
+  required: ['act', 'location', 'date', 'start'],
+  additionalProperties: false,
+};
 
 function splitDataUrl(base64Image: string): { mediaType: string; data: string } {
   const match = base64Image.match(/^data:([^;]+);base64,(.*)$/);
@@ -106,7 +111,7 @@ async function extractWithFallback(base64Image: string): Promise<unknown> {
   });
 
   const response = await openai.chat.completions.create({
-    model: 'gpt-4o',
+    model: 'gpt-5.4-mini',
     messages: [
       {
         role: 'user',
@@ -121,7 +126,12 @@ async function extractWithFallback(base64Image: string): Promise<unknown> {
         ],
       },
     ],
-    max_tokens: 500,
+    response_format: {
+      type: 'json_schema',
+      json_schema: { name: 'ticket', schema: TICKET_EXTRACTION_SCHEMA, strict: true },
+    },
+    // GPT-5 models reject max_tokens; temperature 0 only works at the default reasoning effort (none)
+    max_completion_tokens: 500,
     temperature: 0,
   });
 
