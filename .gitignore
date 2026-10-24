@@ -36,7 +36,4 @@ yarn-error.log*
 next-env.d.ts
 
 .env*
-
-# Blob migration progress (scripts/migrate-blobs-private.js)
-scripts/.blob-migration-journal.json
-scripts/.blob-migration-journal.json.tmp
+!.env.example
