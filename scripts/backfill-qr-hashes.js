@@ -49,28 +49,17 @@ if (!process.env.POSTGRES_URL && !process.env.DATABASE_URL) {
 const sql = vercelSql;
 const dryRun = process.argv.includes('--dry-run');
 
-// Only download from public Vercel Blob storage; stored URLs are not trusted to point anywhere else
-function assertPublicBlobUrl(url) {
-  const parsed = new URL(url);
-  if (parsed.protocol !== 'https:' || parsed.port !== '' || !parsed.hostname.endsWith('.public.blob.vercel-storage.com')) {
-    throw new Error(`Refusing to download a non-Blob URL: ${url}`);
-  }
-}
-
+// Only download from the private Vercel Blob store; stored URLs are not trusted to point anywhere else
 async function downloadImage(url) {
-  if (new URL(url).hostname.endsWith('.private.blob.vercel-storage.com')) {
-    const result = await get(url, { access: 'private', token: process.env.PRIVATE_BLOB_READ_WRITE_TOKEN });
-    if (!result || result.statusCode !== 200) {
-      throw new Error(`Failed to download ${url}`);
-    }
-    return Buffer.from(await new Response(result.stream).arrayBuffer());
+  const parsed = new URL(url);
+  if (parsed.protocol !== 'https:' || parsed.port !== '' || !parsed.hostname.endsWith('.private.blob.vercel-storage.com')) {
+    throw new Error(`Refusing to download a URL outside the private Blob store: ${url}`);
   }
-  assertPublicBlobUrl(url);
-  const response = await fetch(url, { redirect: 'error' });
-  if (!response.ok) {
-    throw new Error(`Failed to download ${url}: ${response.status}`);
+  const result = await get(url, { access: 'private', token: process.env.PRIVATE_BLOB_READ_WRITE_TOKEN });
+  if (!result || result.statusCode !== 200) {
+    throw new Error(`Failed to download ${url}`);
   }
-  return Buffer.from(await response.arrayBuffer());
+  return Buffer.from(await new Response(result.stream).arrayBuffer());
 }
 
 async function decodeQrPayload(imageBuffer) {
