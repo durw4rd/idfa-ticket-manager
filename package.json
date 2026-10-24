@@ -10,7 +10,6 @@
     "optimize-backgrounds": "node scripts/optimize-backgrounds.js",
     "generate-favicons": "node scripts/generate-favicons.js",
     "backfill-festival-links": "node scripts/backfill-festival-links.js",
-    "migrate-blobs-private": "node scripts/migrate-blobs-private.js",
     "backfill-qr-hashes": "node scripts/backfill-qr-hashes.js"
   },
   "dependencies": {
