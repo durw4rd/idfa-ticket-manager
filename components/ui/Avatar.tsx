@@ -5,6 +5,19 @@ import { getInitials } from '@/lib/display';
 const CREW_BG = ['bg-crew-0', 'bg-crew-1', 'bg-crew-2', 'bg-crew-3', 'bg-crew-4', 'bg-crew-5'];
 const CREW_TEXT = ['text-crew-0', 'text-crew-1', 'text-crew-2', 'text-crew-3', 'text-crew-4', 'text-crew-5'];
 
+const CREW_BORDER = [
+  'border-crew-0',
+  'border-crew-1',
+  'border-crew-2',
+  'border-crew-3',
+  'border-crew-4',
+  'border-crew-5',
+];
+
+export function crewBorder(color: number) {
+  return CREW_BORDER[color % CREW_BORDER.length];
+}
+
 export function crewBg(color: number) {
   return CREW_BG[color % CREW_BG.length];
 }

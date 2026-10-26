@@ -6,7 +6,7 @@ import { ChevronRight } from 'lucide-react';
 import type { AgendaScreening, CrewMember } from '@/lib/types';
 import { DEFAULT_SCREENING_MINUTES, formatDate, formatTime, hourOfDay } from '@/lib/dates';
 import { type AgendaDay, holdersOf, screeningHref } from '@/lib/agenda';
-import { Avatar, crewBg } from '@/components/ui/Avatar';
+import { Avatar, crewBg, crewBorder } from '@/components/ui/Avatar';
 import type { RowMarks } from './AgendaList';
 
 const LENGTH_HOURS = DEFAULT_SCREENING_MINUTES / 60;
@@ -133,8 +133,12 @@ export default function DayTimeline({
                           onClick={() => setSelectedId(selectedId === screening.id ? null : screening.id)}
                           aria-pressed={selectedId === screening.id}
                           aria-label={`${formatTime(start)} ${screening.act}, ${screening.location}`}
-                          className={`absolute h-8 overflow-hidden rounded px-1.5 text-left text-[11px] font-semibold leading-8 text-on-crew
-                              ${crewBg(person.color)} ${past ? 'opacity-50' : ''}
+                          className={`absolute h-8 overflow-hidden rounded px-1.5 text-left text-[11px] font-semibold leading-8
+                              ${
+                                past
+                                  ? `border-l-4 bg-surface text-ink-2 ring-1 ring-inset ring-line ${crewBorder(person.color)}`
+                                  : `text-on-crew ${crewBg(person.color)}`
+                              }
                               ${clash ? 'ring-2 ring-danger ring-offset-1 ring-offset-paper' : ''}
                               ${selectedId === screening.id ? 'outline outline-2 outline-offset-1 outline-ink' : ''}`}
                           style={{

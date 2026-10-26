@@ -43,6 +43,12 @@ export default function TicketWallet({
   const [scope, setScope] = usePersistentState<Scope>('tickets.scope', 'mine', (v) => ['mine', 'crew'].includes(v));
   const [overlayIndex, setOverlayIndex] = useState<number | null>(null);
 
+  // Also when the crew is just you: tickets can still be held by someone who has left
+  const othersHoldTickets = screenings.some((screening) =>
+    screening.tickets.some((ticket) => ticket.holderEmail !== me.email),
+  );
+  const showScope = crew.length > 1 || othersHoldTickets;
+
   const passes: Pass[] = screenings.flatMap((screening) => {
     const tickets = screening.tickets.filter((ticket) => scope === 'crew' || ticket.holderEmail === me.email);
     return tickets.map((ticket, index) => ({
@@ -67,7 +73,7 @@ export default function TicketWallet({
 
   return (
     <>
-      {crew.length > 1 && (
+      {showScope && (
         <div className="mb-4">
           <SegmentedControl
             label="Whose tickets"
@@ -91,7 +97,7 @@ export default function TicketWallet({
             </ButtonLink>
           }
         >
-          {scope === 'mine' && crew.length > 1
+          {scope === 'mine' && showScope
             ? 'Tickets a crew-mate hands to you show up here.'
             : 'Upload the PDFs from your IDFA order.'}
         </EmptyState>
@@ -100,8 +106,7 @@ export default function TicketWallet({
           {passes.map((pass, position) => {
             const start = new Date(pass.screening.startsAt);
             const first = position === 0;
-            const when =
-              dayKey(start) === dayKey(now) ? `Today · ${formatTimeUntil(start, now)}` : formatDate(start);
+            const when = dayKey(start) === dayKey(now) ? `Today · ${formatTimeUntil(start, now)}` : formatDate(start);
             return (
               <li
                 key={pass.ticketId}
@@ -124,7 +129,11 @@ export default function TicketWallet({
                     <p className="mt-2 flex items-center gap-1.5 text-sm text-ink-2">
                       <Avatar member={pass.holder} size="xs" />
                       {pass.holder.isMe ? 'You' : pass.holder.name}
-                      {pass.of > 1 && <span className="text-ink-3">· {pass.index + 1} of {pass.of}</span>}
+                      {pass.of > 1 && (
+                        <span className="text-ink-3">
+                          · {pass.index + 1} of {pass.of}
+                        </span>
+                      )}
                     </p>
                   </div>
 
@@ -138,7 +147,11 @@ export default function TicketWallet({
                   >
                     {first ? (
                       // eslint-disable-next-line @next/next/no-img-element -- private, uncached image
-                      <img src={`/api/tickets/${pass.ticketId}/qr`} alt="" className="aspect-square w-full object-contain" />
+                      <img
+                        src={`/api/tickets/${pass.ticketId}/qr`}
+                        alt=""
+                        className="aspect-square w-full object-contain"
+                      />
                     ) : (
                       <QrCode className="m-auto h-8 w-8 text-[#111]" />
                     )}

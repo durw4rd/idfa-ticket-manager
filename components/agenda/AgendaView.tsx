@@ -133,7 +133,7 @@ export default function AgendaView({
             {crew.length > 1 && (
               <PersonFilter crew={crew} value={who} onChange={setWho} counts={counts} total={screenings.length} />
             )}
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
               <YearSwitcher years={years} selectedYear={year} />
               <SegmentedControl
                 label="Agenda view"

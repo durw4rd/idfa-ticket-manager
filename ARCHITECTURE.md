@@ -20,7 +20,7 @@ Browser ──► middleware.ts (NextAuth JWT check; redirects to /login)
 - **Screening**: not a table. Tickets with the same `act|date|start` are grouped in memory (`groupTicketsIntoScreenings` in `lib/db.ts`). The screening id in URLs is that key, URL-encoded; `parseScreeningKey` splits from the right because titles can contain `|`.
 - **Rating**: one per `(user_email, act, festival_year)`, 1–10 plus optional comment.
 - **Group / group_members**: sharing groups. Members are `owner` or `member`, `invited` or `active`.
-- **Crew**: the viewer plus everyone in `visibleEmails`, with a display name and a colour (`getCrew` in `lib/groups.ts`). Colours follow join order in the shared group, so everyone sees the same colour for the same person.
+- **Crew**: the viewer plus everyone in `visibleEmails`, with a display name and a colour (`getCrew` in `lib/groups.ts`). Colours are derived from the email, so everyone sees the same colour for the same person.
 - **Profile**: `profiles(email, name)`, an optional display name a user sets on the Crew page. Without one, `getDisplayName` derives it from the email ("misa.fasa@…" → "Misa").
 - **Festival year**: derived from the ticket's date. `/screenings?year=YYYY` picks the year; years before the current one render as a recap.
 
