@@ -158,7 +158,7 @@ export default function ScreeningTickets({
                   {tickets.length > 1 ? `Ticket ${index + 1} of ${tickets.length}` : 'Ticket'}
                   {!isOwner && ` · from ${lookup(ticket.ownerEmail).name}`}
                 </p>
-                {canPassOn && crew.length > 1 && (
+                {canPassOn && (crew.length > 1 || ticket.holderEmail !== meEmail) && (
                   <button
                     type="button"
                     onClick={() => setPanel({ kind: 'holder', ticket })}

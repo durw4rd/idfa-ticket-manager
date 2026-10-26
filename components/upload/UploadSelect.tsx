@@ -31,7 +31,13 @@ export default function UploadSelect({ onFiles, error }: { onFiles: (files: File
         <p className="mt-1 max-w-xs text-sm text-ink-2">
           Choose the PDFs from your order confirmation. Each page becomes a ticket; you can check the details next.
         </p>
-        <label className={buttonClasses('primary', 'md', 'mt-6 cursor-pointer')}>
+        <label
+          className={buttonClasses(
+            'primary',
+            'md',
+            'mt-6 cursor-pointer focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ink',
+          )}
+        >
           Choose PDFs
           <input
             type="file"

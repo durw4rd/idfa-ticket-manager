@@ -82,7 +82,7 @@ export interface GroupMember {
 export interface CrewMember {
   email: string;
   name: string;
-  color: number; // Index into the crew colour palette, the same for every viewer of a group
+  color: number; // Index into the crew colour palette, derived from the email (see getCrew)
   isMe: boolean;
 }
 

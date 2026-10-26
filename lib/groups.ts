@@ -28,9 +28,33 @@ export async function getVisibleEmails(userEmail: string): Promise<string[]> {
 }
 
 /**
- * The viewer plus everyone in `visibleEmails`, with display names and colours. Colours follow the
- * order people joined their shared groups, so every member of a group sees the same colour for
- * the same person. The viewer comes first.
+ * A person's colour comes from their email, not from where they sit in someone's crew list, so
+ * everyone sees the same colour for the same person. When two people in one crew hash to the same
+ * colour, the one whose email sorts later moves to the next free colour; that only depends on who
+ * is in the crew, so viewers with the same crew still agree.
+ */
+function assignColors(emails: string[]): Map<string, number> {
+  const colors = new Map<string, number>();
+  const taken = new Set<number>();
+  for (const email of [...emails].sort()) {
+    // FNV-1a: small, stable, and spreads similar emails apart
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < email.length; i++) {
+      hash = Math.imul(hash ^ email.charCodeAt(i), 0x01000193) >>> 0;
+    }
+    let color = hash % CREW_COLOR_COUNT;
+    for (let step = 0; step < CREW_COLOR_COUNT && taken.has(color); step++) {
+      color = (color + 1) % CREW_COLOR_COUNT;
+    }
+    taken.add(color);
+    colors.set(email, color);
+  }
+  return colors;
+}
+
+/**
+ * The viewer plus everyone in `visibleEmails`, with display names and colours (see assignColors).
+ * The viewer comes first, then crew-mates in the order they joined.
  */
 export async function getCrew(viewer: { email: string; visibleEmails: string[] }): Promise<CrewMember[]> {
   const result = await sql`
@@ -45,10 +69,11 @@ export async function getCrew(viewer: { email: string; visibleEmails: string[] }
   `;
 
   const rows = result.rows.length > 0 ? result.rows : [{ email: viewer.email, name: await getProfileName(viewer.email) }];
-  const crew: CrewMember[] = rows.map((row, index) => ({
+  const colors = assignColors(rows.map((row) => row.email as string));
+  const crew: CrewMember[] = rows.map((row) => ({
     email: row.email as string,
     name: (row.name as string | null) || getDisplayName(row.email as string),
-    color: index % CREW_COLOR_COUNT,
+    color: colors.get(row.email as string)!,
     isMe: row.email === viewer.email,
   }));
   return crew.sort((a, b) => Number(b.isMe) - Number(a.isMe));
