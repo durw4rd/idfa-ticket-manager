@@ -170,6 +170,11 @@ function parsePick(content: string, candidates: FestivalCandidate[]): FestivalCa
   return candidates[Number(match[1]) - 1] ?? null;
 }
 
+// The model's deliberate "no match" answer, as opposed to a response in some other format
+function isNullAnswer(content: string): boolean {
+  return /^["'`]?null["'`]?\.?$/i.test(content.trim());
+}
+
 function slugify(title: string): string {
   const slug = title
     .normalize('NFKD')
@@ -255,6 +260,12 @@ export async function findFestivalLink(
     if (await getLdClient()) {
       try {
         content = await pickWithAgentControl(movieTitle, festivalYear, candidateList, context);
+        // A variation still on the old prompt answers with a URL; treat any answer that is
+        // neither a valid pick nor "null" as unavailable, so the fallback model picks instead
+        if (!parsePick(content, candidates) && !isNullAnswer(content)) {
+          console.warn(`AgentControl config "${FESTIVAL_LINK_CONFIG_KEY}" gave an unexpected answer, using fallback model`);
+          content = undefined;
+        }
       } catch (error) {
         console.warn(`AgentControl config "${FESTIVAL_LINK_CONFIG_KEY}" unavailable, using fallback model:`, error);
       }
