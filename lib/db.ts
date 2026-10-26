@@ -164,7 +164,8 @@ export async function updateTicketDetails(
 /**
  * Hand a ticket to someone else in the group. Unlike other ticket writes, the current holder may
  * do this as well as the owner, so a crew-mate can pass on a ticket they were given. The caller
- * checks that `holderEmail` is in the viewer's visible emails.
+ * checks that `holderEmail` is in the viewer's visible emails; this also requires the new holder
+ * to see the owner's tickets (visibility isn't transitive across groups), or they couldn't open it.
  */
 export async function updateTicketHolder(
   viewer: { email: string; visibleEmails: string[] },
@@ -177,6 +178,15 @@ export async function updateTicketHolder(
     WHERE id = ${id}
       AND (owner_email = ${viewer.email} OR holder_email = ${viewer.email})
       AND owner_email = ANY(${viewer.visibleEmails as any}::text[])
+      AND (
+        owner_email = ${holderEmail}
+        OR EXISTS (
+          SELECT 1 FROM group_members owner_m
+          JOIN group_members holder_m ON holder_m.group_id = owner_m.group_id
+          WHERE owner_m.user_email = tickets.owner_email AND owner_m.status = 'active'
+            AND holder_m.user_email = ${holderEmail} AND holder_m.status = 'active'
+        )
+      )
     RETURNING id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", festival_link as "festivalLink", owner_email as "ownerEmail", holder_email as "holderEmail", festival_year as "festivalYear", starts_at as "startsAt", qr_hash as "qrHash", created_at as "createdAt"
   `;
 

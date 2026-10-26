@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import type { AgendaScreening } from '@/lib/types';
+import { useModal } from '@/lib/use-modal';
 import { formatDate, formatTime } from '@/lib/dates';
 
 export interface QrTicket {
@@ -30,40 +31,51 @@ export default function QrOverlay({
 }) {
   const [index, setIndex] = useState(startIndex);
   const swipeStart = useRef<number | null>(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModal(true, dialogRef, onClose);
 
   const count = tickets.length;
   const ticket = tickets[index];
   const go = (step: number) => setIndex((current) => (current + step + count) % count);
 
   useEffect(() => {
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-
-    let wakeLock: WakeLockSentinel | null = null;
-    navigator.wakeLock
-      ?.request('screen')
-      .then((lock) => {
-        wakeLock = lock;
-      })
-      .catch(() => {
-        // Not supported or not allowed (e.g. low battery); the QR still works
-      });
-
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onCloseRef.current();
       if (event.key === 'ArrowRight') setIndex((current) => (current + 1) % count);
       if (event.key === 'ArrowLeft') setIndex((current) => (current - 1 + count) % count);
     };
     window.addEventListener('keydown', onKey);
-
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      document.body.style.overflow = overflow;
-      wakeLock?.release().catch(() => {});
-    };
+    return () => window.removeEventListener('keydown', onKey);
   }, [count]);
+
+  // Keep the screen awake while the QR is up. Browsers drop the lock when the page is hidden,
+  // so take it again on return; a lock granted after closing is released straight away.
+  useEffect(() => {
+    let lock: WakeLockSentinel | null = null;
+    let closed = false;
+    const acquire = async () => {
+      if (!navigator.wakeLock || document.visibilityState !== 'visible') return;
+      try {
+        const granted = await navigator.wakeLock.request('screen');
+        if (closed) {
+          granted.release().catch(() => {});
+        } else {
+          lock = granted;
+        }
+      } catch {
+        // Not supported or not allowed (e.g. low battery); the QR still works
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') acquire();
+    };
+    acquire();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      closed = true;
+      document.removeEventListener('visibilitychange', onVisibility);
+      lock?.release().catch(() => {});
+    };
+  }, []);
 
   if (!ticket || typeof document === 'undefined') {
     return null;
@@ -72,10 +84,12 @@ export default function QrOverlay({
   return createPortal(
     // Always white: scanners read dark-on-light best, whatever the colour scheme
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
+      tabIndex={-1}
       aria-label={`QR code for ${ticket.title}`}
-      className="fixed inset-0 z-[70] flex flex-col bg-white text-[#111] animate-[fade_150ms_ease-out]"
+      className="fixed inset-0 z-[70] flex flex-col bg-white text-[#111] outline-none animate-[fade_150ms_ease-out]"
       onPointerDown={(event) => {
         swipeStart.current = event.clientX;
       }}

@@ -3,13 +3,32 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
-import type { CrewMember } from '@/lib/types';
+import type { AgendaScreening, CrewMember } from '@/lib/types';
 import { DEFAULT_SCREENING_MINUTES, formatDate, formatTime, hourOfDay } from '@/lib/dates';
 import { type AgendaDay, holdersOf, screeningHref } from '@/lib/agenda';
 import { Avatar, crewBg } from '@/components/ui/Avatar';
 import type { RowMarks } from './AgendaList';
 
 const LENGTH_HOURS = DEFAULT_SCREENING_MINUTES / 60;
+const ROW_PX = 36;
+
+/**
+ * A person's screenings for one day, each on the first row where it doesn't overlap the one
+ * before, so clashing screenings sit on separate rows instead of covering each other.
+ */
+function layoutLane(screenings: AgendaScreening[]): { rows: Map<string, number>; count: number } {
+  const rowEnds: number[] = [];
+  const rows = new Map<string, number>();
+  const length = LENGTH_HOURS * 3600000;
+  for (const screening of [...screenings].sort((a, b) => a.startsAt.localeCompare(b.startsAt))) {
+    const start = new Date(screening.startsAt).getTime();
+    let row = rowEnds.findIndex((end) => end <= start);
+    if (row === -1) row = rowEnds.length;
+    rowEnds[row] = start + length;
+    rows.set(screening.id, row);
+  }
+  return { rows, count: Math.max(rowEnds.length, 1) };
+}
 
 // Hour on the festival-day axis: a 00:30 show sits after 23:00, not before 10:00
 function axisHour(date: Date): number {
@@ -53,9 +72,12 @@ export default function DayTimeline({
         const isToday = day.key === marks.todayKey;
         const dayPast = day.key < marks.todayKey;
         // Lanes only for people with something that day, so quiet days stay short
-        const lanes = people.filter((person) =>
-          day.screenings.some((screening) => holdersOf(screening).includes(person.email))
-        );
+        const lanes = people
+          .map((person) => {
+            const own = day.screenings.filter((screening) => holdersOf(screening).includes(person.email));
+            return { person, own, ...layoutLane(own) };
+          })
+          .filter((lane) => lane.own.length > 0);
 
         return (
           <section key={day.key} ref={isToday ? todayRef : undefined} aria-label={formatDate(day.date)}>
@@ -71,8 +93,8 @@ export default function DayTimeline({
 
             <div className="flex gap-1.5">
               <div className="w-6 shrink-0 pt-4">
-                {lanes.map((person) => (
-                  <div key={person.email} className="flex h-9 items-center">
+                {lanes.map(({ person, count }) => (
+                  <div key={person.email} className="flex items-start pt-2" style={{ height: count * ROW_PX }}>
                     <Avatar member={person} size="xs" />
                   </div>
                 ))}
@@ -89,39 +111,42 @@ export default function DayTimeline({
                 </div>
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 top-4" aria-hidden>
                   {ticks.map((hour) => (
-                    <span key={hour} className="absolute inset-y-0 w-px bg-line" style={{ left: pct(hour - firstHour) }} />
+                    <span
+                      key={hour}
+                      className="absolute inset-y-0 w-px bg-line"
+                      style={{ left: pct(hour - firstHour) }}
+                    />
                   ))}
                 </div>
 
-                {lanes.map((person) => (
-                  <div key={person.email} className="relative h-9 py-0.5">
+                {lanes.map(({ person, own, rows, count }) => (
+                  <div key={person.email} className="relative" style={{ height: count * ROW_PX }}>
                     <div className="absolute inset-x-0 inset-y-0.5 rounded bg-ink/[0.04]" />
-                    {day.screenings
-                      .filter((screening) => holdersOf(screening).includes(person.email))
-                      .map((screening) => {
-                        const start = new Date(screening.startsAt);
-                        const clash = marks.clashes.get(screening.id)?.includes(person.email);
-                        const past = start < marks.now;
-                        return (
-                          <button
-                            type="button"
-                            key={screening.id}
-                            onClick={() => setSelectedId(selectedId === screening.id ? null : screening.id)}
-                            aria-pressed={selectedId === screening.id}
-                            aria-label={`${formatTime(start)} ${screening.act}, ${screening.location}`}
-                            className={`absolute inset-y-0.5 overflow-hidden rounded px-1.5 text-left text-[11px] font-semibold leading-8 text-on-crew
+                    {own.map((screening) => {
+                      const start = new Date(screening.startsAt);
+                      const clash = marks.clashes.get(screening.id)?.includes(person.email);
+                      const past = start < marks.now;
+                      return (
+                        <button
+                          type="button"
+                          key={screening.id}
+                          onClick={() => setSelectedId(selectedId === screening.id ? null : screening.id)}
+                          aria-pressed={selectedId === screening.id}
+                          aria-label={`${formatTime(start)} ${screening.act}, ${screening.location}`}
+                          className={`absolute h-8 overflow-hidden rounded px-1.5 text-left text-[11px] font-semibold leading-8 text-on-crew
                               ${crewBg(person.color)} ${past ? 'opacity-50' : ''}
                               ${clash ? 'ring-2 ring-danger ring-offset-1 ring-offset-paper' : ''}
                               ${selectedId === screening.id ? 'outline outline-2 outline-offset-1 outline-ink' : ''}`}
-                            style={{
-                              left: pct(axisHour(start) - firstHour),
-                              width: `calc(${pct(LENGTH_HOURS)} - 2px)`,
-                            }}
-                          >
-                            <span className="block truncate [font-stretch:75%]">{screening.act}</span>
-                          </button>
-                        );
-                      })}
+                          style={{
+                            top: (rows.get(screening.id) || 0) * ROW_PX + 2,
+                            left: pct(axisHour(start) - firstHour),
+                            width: `calc(${pct(LENGTH_HOURS)} - 2px)`,
+                          }}
+                        >
+                          <span className="block truncate [font-stretch:75%]">{screening.act}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 ))}
 
