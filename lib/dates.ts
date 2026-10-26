@@ -97,32 +97,50 @@ export function isPast(date: Date): boolean {
   return date < getNow();
 }
 
+// Festival-local formats: 24h times and day-month order, as on the tickets and the IDFA site
+
+/** "Sun 15 Nov" ("short") or "Sunday 15 November 2026" ("long") */
 export function formatDate(date: Date, style: 'short' | 'long' = 'short'): string {
-  return date.toLocaleDateString('en-US', {
+  return date.toLocaleDateString('en-GB', {
     timeZone: FESTIVAL_TIME_ZONE,
     weekday: style,
-    year: 'numeric',
-    month: style,
     day: 'numeric',
+    month: style,
+    ...(style === 'long' ? { year: 'numeric' } : {}),
   });
 }
 
+/** "Sunday 15 November", for day section headings */
 export function formatDayHeading(date: Date): string {
-  return date.toLocaleDateString('en-US', {
+  return date.toLocaleDateString('en-GB', {
     timeZone: FESTIVAL_TIME_ZONE,
     weekday: 'long',
-    month: 'long',
     day: 'numeric',
+    month: 'long',
   });
 }
 
+/** "16:00" */
 export function formatTime(date: Date): string {
-  return date.toLocaleTimeString('en-US', {
+  return date.toLocaleTimeString('en-GB', {
     timeZone: FESTIVAL_TIME_ZONE,
-    hour: 'numeric',
+    hour: '2-digit',
     minute: '2-digit',
-    hour12: true,
+    hourCycle: 'h23',
   });
+}
+
+/** Amsterdam hour of day with minutes as a fraction, e.g. 16:30 → 16.5. For timeline layout. */
+export function hourOfDay(date: Date): number {
+  const p = zonedParts(date);
+  return p.hour + p.minute / 60;
+}
+
+// Typical IDFA screening length; tickets don't carry the film's runtime
+export const DEFAULT_SCREENING_MINUTES = 120;
+
+export function screeningEnd(start: Date): Date {
+  return new Date(start.getTime() + DEFAULT_SCREENING_MINUTES * 60000);
 }
 
 /** Normalize an AI-extracted start time ("6:45 pm") to the stored "06:45 PM" format */
@@ -132,4 +150,36 @@ export function normalizeStartTime(start: string): string {
     return start.trim();
   }
   return `${match[1].padStart(2, '0')}:${match[2]} ${match[3].toUpperCase()}`;
+}
+
+// Conversions between the stored ticket formats and HTML date/time inputs
+
+/** "15-11-2026" → "2026-11-15" (input type=date) */
+export function ticketDateToInput(date: string): string {
+  const [day, month, year] = date.split('-');
+  return year && month && day ? `${year}-${month}-${day}` : '';
+}
+
+/** "2026-11-15" → "15-11-2026" */
+export function inputToTicketDate(value: string): string {
+  const [year, month, day] = value.split('-');
+  return year && month && day ? `${day}-${month}-${year}` : '';
+}
+
+/** "04:00 PM" → "16:00" (input type=time) */
+export function ticketStartToInput(start: string): string {
+  const match = start.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+  if (!match) return '';
+  let hours = Number(match[1]) % 12;
+  if (match[3].toUpperCase() === 'PM') hours += 12;
+  return `${String(hours).padStart(2, '0')}:${match[2]}`;
+}
+
+/** "16:00" → "04:00 PM" */
+export function inputToTicketStart(value: string): string {
+  const match = value.match(/^(\d{2}):(\d{2})/);
+  if (!match) return '';
+  const hours = Number(match[1]);
+  const twelve = hours % 12 === 0 ? 12 : hours % 12;
+  return `${String(twelve).padStart(2, '0')}:${match[2]} ${hours < 12 ? 'AM' : 'PM'}`;
 }

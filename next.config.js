@@ -1,31 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    serverActions: {
-      bodySizeLimit: '10mb',
-    },
-  },
-  webpack: (config, { isServer }) => {
-    // Copy pdfjs worker to public directory during build
-    if (!isServer) {
-      config.resolve.alias = {
-        ...config.resolve.alias,
-      };
-    }
-    return config;
+  async redirects() {
+    // The sharing page became Crew in the 2026 redesign
+    return [{ source: '/settings', destination: '/crew', permanent: true }];
   },
   async headers() {
     // Match all background images
     const backgroundPatterns = [
-      '/bcg-carre.png',
-      '/bcg-debalie.png',
-      '/bcg-eye.png',
-      '/bcg-ketelhuis.png',
-      '/bcg-kriterion.png',
-      '/bcg-pulse.png',
-      '/bcg-rialto.png',
-      '/bcg-spiegel.png',
-      '/bcg-tuschinski.png',
       '/bcg-carre.webp',
       '/bcg-debalie.webp',
       '/bcg-eye.webp',

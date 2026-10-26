@@ -1,6 +1,8 @@
 'use client';
 
 import { CalendarPlus } from 'lucide-react';
+import { screeningEnd } from '@/lib/dates';
+import { Button } from '@/components/ui/Button';
 
 interface AddToCalendarButtonProps {
   title: string;
@@ -8,9 +10,6 @@ interface AddToCalendarButtonProps {
   startsAt: string; // ISO timestamp
   url?: string | null;
 }
-
-// Typical IDFA screening length when the film's runtime is unknown
-const DEFAULT_DURATION_MINUTES = 120;
 
 function toIcsTimestamp(date: Date): string {
   return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
@@ -23,7 +22,7 @@ function escapeIcsText(text: string): string {
 export default function AddToCalendarButton({ title, location, startsAt, url }: AddToCalendarButtonProps) {
   const handleClick = () => {
     const start = new Date(startsAt);
-    const end = new Date(start.getTime() + DEFAULT_DURATION_MINUTES * 60000);
+    const end = screeningEnd(start);
 
     const lines = [
       'BEGIN:VCALENDAR',
@@ -55,13 +54,8 @@ export default function AddToCalendarButton({ title, location, startsAt, url }: 
   };
 
   return (
-    <button
-      type="button"
-      onClick={handleClick}
-      className="inline-flex items-center space-x-1 px-3 py-1.5 text-sm border border-idfa-gray-300 font-medium rounded hover:border-idfa-black transition-colors"
-    >
-      <CalendarPlus className="h-4 w-4" />
-      <span>Add to calendar</span>
-    </button>
+    <Button variant="secondary" size="sm" onClick={handleClick} icon={<CalendarPlus className="h-4 w-4" />}>
+      Calendar
+    </Button>
   );
 }
