@@ -89,6 +89,19 @@ export function dayKey(date: Date): string {
   return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
 }
 
+// A 00:30 show is part of the previous night's programme, so festival days start at 05:00
+const FESTIVAL_DAY_START_HOURS = 5;
+
+/** The festival day a moment belongs to, as YYYY-MM-DD: like dayKey, but the day starts at 05:00 */
+export function festivalDayKey(date: Date): string {
+  return dayKey(festivalDayStart(date));
+}
+
+/** A moment on the calendar day of its festival day, for headings (00:30 Sunday → Saturday) */
+export function festivalDayStart(date: Date): Date {
+  return new Date(date.getTime() - FESTIVAL_DAY_START_HOURS * 3600000);
+}
+
 export function isToday(date: Date): boolean {
   return dayKey(date) === dayKey(getNow());
 }

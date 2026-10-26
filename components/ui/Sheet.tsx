@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
+import { useModal } from '@/lib/use-modal';
 
 /**
- * Bottom sheet for pickers, menus and confirmations. Closes on backdrop tap and Escape,
- * locks page scroll while open, and moves focus into the sheet.
+ * Bottom sheet for pickers, menus and confirmations. Closes on backdrop tap and Escape, and
+ * keeps focus inside while open (see useModal).
  */
 export function Sheet({
   open,
@@ -20,27 +21,7 @@ export function Sheet({
   children: ReactNode;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
-  // Kept in a ref so an inline onClose doesn't re-run the open/close effect on every render
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-
-  useEffect(() => {
-    if (!open) return;
-    const previous = document.activeElement as HTMLElement | null;
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    panelRef.current?.focus();
-
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onCloseRef.current();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      document.body.style.overflow = overflow;
-      previous?.focus();
-    };
-  }, [open]);
+  useModal(open, panelRef, onClose);
 
   if (!open || typeof document === 'undefined') {
     return null;

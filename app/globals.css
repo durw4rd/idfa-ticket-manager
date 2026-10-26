@@ -20,12 +20,13 @@
   --danger: 198 45 31;
   --ok: 31 122 58;
 
-  --crew-0: 232 69 44;
+  /* Each at least 4.5:1 against --on-crew, since they carry small initials and timeline titles */
+  --crew-0: 221 50 24;
   --crew-1: 46 98 240;
-  --crew-2: 15 143 107;
+  --crew-2: 14 131 98;
   --crew-3: 155 75 224;
-  --crew-4: 214 58 127;
-  --crew-5: 11 143 161;
+  --crew-4: 212 50 122;
+  --crew-5: 10 128 144;
   /* Text on a crew colour: white on the deeper light-mode hues, ink on the brighter dark-mode ones */
   --on-crew: 255 255 255;
 

@@ -27,7 +27,11 @@ export async function PUT(
 
     const ticket = await updateTicketHolder(viewer, id, holderEmail);
     if (!ticket) {
-      return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
+      // Also the answer when the new holder isn't in a group with the ticket's uploader
+      return NextResponse.json(
+        { error: "Ticket not found, or that person can't see tickets from whoever uploaded it" },
+        { status: 404 }
+      );
     }
 
     return NextResponse.json({ success: true, holderEmail: ticket.holderEmail });

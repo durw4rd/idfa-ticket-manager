@@ -1,7 +1,7 @@
 // Agenda logic shared by server pages and client components. Pure functions, no database access.
 
 import type { AgendaScreening, CrewMember, Rating, Screening } from './types';
-import { dayKey, DEFAULT_SCREENING_MINUTES } from './dates';
+import { DEFAULT_SCREENING_MINUTES, festivalDayKey, festivalDayStart } from './dates';
 import { CREW_COLOR_COUNT, getDisplayName } from './display';
 
 /** Strip a screening down to what the browser may see: no blob URLs, no QR hashes */
@@ -40,8 +40,8 @@ export function isTogether(screening: AgendaScreening): boolean {
 }
 
 export interface AgendaDay {
-  key: string; // YYYY-MM-DD in Amsterdam
-  date: Date;
+  key: string; // Festival day as YYYY-MM-DD in Amsterdam; after-midnight shows count as the night before
+  date: Date; // A moment on that day, for headings
   screenings: AgendaScreening[];
 }
 
@@ -49,9 +49,9 @@ export function groupByDay(screenings: AgendaScreening[]): AgendaDay[] {
   const days = new Map<string, AgendaDay>();
   for (const screening of screenings) {
     const date = new Date(screening.startsAt);
-    const key = dayKey(date);
+    const key = festivalDayKey(date);
     if (!days.has(key)) {
-      days.set(key, { key, date, screenings: [] });
+      days.set(key, { key, date: festivalDayStart(date), screenings: [] });
     }
     days.get(key)!.screenings.push(screening);
   }

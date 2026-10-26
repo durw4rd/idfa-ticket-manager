@@ -26,6 +26,9 @@ export default function SharePosterButton({ year, crew }: { year: number; crew: 
     if (!open) return;
     let cancelled = false;
     let objectUrl: string | null = null;
+    // Drop the previous export first, so a failed request can't share or save someone else's poster
+    setFile(null);
+    setPreview(null);
     setLoading(true);
     setError(null);
 
