@@ -1,16 +1,21 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { Archivo } from "next/font/google";
 import "./globals.css";
 import Providers from "@/components/Providers";
-import AuthButton from "@/components/AuthButton";
-import IDFALogo from "@/components/IDFALogo";
-import VenueBackgroundLoader from "@/components/VenueBackgroundLoader";
 import AppNav from "@/components/AppNav";
-import { getCurrentFestivalYear } from "@/lib/dates";
-import { Film } from 'lucide-react';
+
+// Variable weight and width: UI text at normal width, film titles semi-condensed (.font-display)
+const archivo = Archivo({
+  subsets: ["latin", "latin-ext"],
+  axes: ["wdth"],
+  style: ["normal", "italic"],
+  variable: "--font-archivo",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "IDFA Ticket Manager",
-  description: "Manage your IDFA film festival tickets",
+  description: "Your IDFA agenda, tickets and ratings, shared with your crew",
   icons: {
     icon: [
       { url: '/favicon.ico', sizes: 'any' },
@@ -27,8 +32,19 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'IDFA Ticket Manager',
+    title: 'IDFA',
   },
+};
+
+// viewport-fit=cover makes env(safe-area-inset-*) work, so the tab bar clears the iPhone home indicator
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#FAFAF7' },
+    { media: '(prefers-color-scheme: dark)', color: '#0E0E0D' },
+  ],
 };
 
 export default function RootLayout({
@@ -37,50 +53,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className="antialiased bg-white text-idfa-black">
-        <VenueBackgroundLoader />
+    <html lang="en" className={archivo.variable}>
+      <body className="min-h-dvh font-sans">
         <Providers>
-          <header className="border-b border-idfa-gray-200 bg-white relative z-50">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-              <div className="flex items-center justify-between gap-4">
-                <IDFALogo />
-                <div className="flex items-center gap-4">
-                  <AppNav variant="header" />
-                  <AuthButton />
-                </div>
-              </div>
-            </div>
-          </header>
-          <main className="min-h-screen">
+          <main className="mx-auto max-w-xl px-4 pb-[calc(theme(spacing.tabbar)+env(safe-area-inset-bottom)+2rem)]">
             {children}
           </main>
-          <AppNav variant="bottom" />
-          <footer className="border-t border-idfa-gray-200 bg-white mt-auto relative z-40 pb-20 sm:pb-0">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-3">
-                <Film className="h-4 w-4 text-idfa-gray-500" />
-                <p className="text-idfa-gray-600 text-sm">
-                  International Documentary Film Festival Manager
-                </p>
-                <p className="text-idfa-gray-600 text-sm">
-                  Amsterdam | {getCurrentFestivalYear()}
-                </p>
-                <span className="hidden sm:inline text-idfa-gray-300">·</span>
-                <a
-                  href="https://festival.idfa.nl/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-idfa-gray-600 hover:text-idfa-black text-sm transition-colors"
-                >
-                  Visit IDFA Website
-                </a>
-              </div>
-            </div>
-          </footer>
+          <AppNav />
         </Providers>
       </body>
     </html>
   );
 }
-

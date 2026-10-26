@@ -8,7 +8,8 @@ export interface Ticket {
   pdfUrl: string;
   transactionId?: string;
   festivalLink?: string; // URL to IDFA festival page
-  ownerEmail: string;
+  ownerEmail: string; // Who uploaded the ticket; only they can edit or delete it
+  holderEmail: string; // Who will use the ticket; the owner or the holder can reassign it
   festivalYear: number;
   startsAt: Date;
   qrHash?: string | null; // SHA-256 of the decoded QR payload, used to detect duplicates
@@ -75,4 +76,29 @@ export interface GroupMember {
   userEmail: string;
   role: 'owner' | 'member';
   status: 'invited' | 'active';
+}
+
+// Someone whose tickets the viewer can see: the viewer or an active member of a shared group
+export interface CrewMember {
+  email: string;
+  name: string;
+  color: number; // Index into the crew colour palette, the same for every viewer of a group
+  isMe: boolean;
+}
+
+// A screening as sent to client components: plain JSON, no blob URLs
+export interface AgendaTicket {
+  id: string;
+  ownerEmail: string;
+  holderEmail: string;
+}
+
+export interface AgendaScreening {
+  id: string; // act|date|start, see screeningKey in lib/db.ts
+  act: string;
+  location: string;
+  festivalYear: number;
+  startsAt: string; // ISO timestamp
+  festivalLink: string | null;
+  tickets: AgendaTicket[];
 }

@@ -1,6 +1,7 @@
 import { db } from '@vercel/postgres';
 import { sql } from './db';
-import { Group, GroupMember } from './types';
+import { CrewMember, Group, GroupMember } from './types';
+import { CREW_COLOR_COUNT, getDisplayName } from './display';
 
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -24,6 +25,51 @@ export async function getVisibleEmails(userEmail: string): Promise<string[]> {
     emails.add(row.email as string);
   }
   return Array.from(emails);
+}
+
+/**
+ * The viewer plus everyone in `visibleEmails`, with display names and colours. Colours follow the
+ * order people joined their shared groups, so every member of a group sees the same colour for
+ * the same person. The viewer comes first.
+ */
+export async function getCrew(viewer: { email: string; visibleEmails: string[] }): Promise<CrewMember[]> {
+  const result = await sql`
+    SELECT m.user_email as "email", MIN(g.created_at) as "groupCreated", MIN(m.created_at) as "joined", p.name
+    FROM group_members m
+    JOIN groups g ON g.id = m.group_id
+    LEFT JOIN profiles p ON p.email = m.user_email
+    WHERE m.status = 'active' AND m.user_email = ANY(${viewer.visibleEmails as any}::text[])
+      AND m.group_id IN (SELECT group_id FROM group_members WHERE user_email = ${viewer.email} AND status = 'active')
+    GROUP BY m.user_email, p.name
+    ORDER BY MIN(g.created_at) ASC, MIN(m.created_at) ASC, m.user_email ASC
+  `;
+
+  const rows = result.rows.length > 0 ? result.rows : [{ email: viewer.email, name: await getProfileName(viewer.email) }];
+  const crew: CrewMember[] = rows.map((row, index) => ({
+    email: row.email as string,
+    name: (row.name as string | null) || getDisplayName(row.email as string),
+    color: index % CREW_COLOR_COUNT,
+    isMe: row.email === viewer.email,
+  }));
+  return crew.sort((a, b) => Number(b.isMe) - Number(a.isMe));
+}
+
+async function getProfileName(email: string): Promise<string | null> {
+  const result = await sql`SELECT name FROM profiles WHERE email = ${email}`;
+  return (result.rows[0]?.name as string) || null;
+}
+
+/** Set your own display name; an empty name goes back to the default from your email. */
+export async function setProfileName(email: string, name: string): Promise<void> {
+  const me = normalizeEmail(email);
+  if (!name) {
+    await sql`DELETE FROM profiles WHERE email = ${me}`;
+    return;
+  }
+  await sql`
+    INSERT INTO profiles (email, name) VALUES (${me}, ${name})
+    ON CONFLICT (email) DO UPDATE SET name = ${name}, updated_at = NOW()
+  `;
 }
 
 /**

@@ -6,19 +6,19 @@ export function getVenueBackground(location: string): string | null {
   
   // Map common location name variations to background files
   const venueMap: { [key: string]: string } = {
-    'carre': 'bcg-carre.png',
-    'carré': 'bcg-carre.png',
-    'debalie': 'bcg-debalie.png',
-    'de balie': 'bcg-debalie.png',
-    'eye': 'bcg-eye.png',
-    'ketelhuis': 'bcg-ketelhuis.png',
-    'ketel huis': 'bcg-ketelhuis.png',
-    'kriterion': 'bcg-kriterion.png',
-    'pulse': 'bcg-pulse.png',
-    'the pulse': 'bcg-pulse.png',
-    'rialto': 'bcg-rialto.png',
-    'spiegel': 'bcg-spiegel.png',
-    'tuschinski': 'bcg-tuschinski.png',
+    'carre': 'bcg-carre.webp',
+    'carré': 'bcg-carre.webp',
+    'debalie': 'bcg-debalie.webp',
+    'de balie': 'bcg-debalie.webp',
+    'eye': 'bcg-eye.webp',
+    'ketelhuis': 'bcg-ketelhuis.webp',
+    'ketel huis': 'bcg-ketelhuis.webp',
+    'kriterion': 'bcg-kriterion.webp',
+    'pulse': 'bcg-pulse.webp',
+    'the pulse': 'bcg-pulse.webp',
+    'rialto': 'bcg-rialto.webp',
+    'spiegel': 'bcg-spiegel.webp',
+    'tuschinski': 'bcg-tuschinski.webp',
   };
 
   // Check for exact matches first
