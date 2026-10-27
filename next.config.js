@@ -1,5 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  experimental: {
+    // Keep visited pages in the client router cache for 30s, so flipping between tabs is instant.
+    // router.refresh() after a save clears it, so your own changes still show straight away.
+    staleTimes: { dynamic: 30 },
+  },
   async redirects() {
     // The sharing page became Crew in the 2026 redesign
     return [{ source: '/settings', destination: '/crew', permanent: true }];
