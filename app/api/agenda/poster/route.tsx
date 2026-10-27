@@ -1,3 +1,5 @@
+import { createElement, type ReactElement } from 'react';
+import type { LucideIcon, LucideProps } from 'lucide-react';
 import { NextRequest, NextResponse } from 'next/server';
 import { ImageResponse } from 'next/og';
 import { requireAuth } from '@/lib/auth-helpers';
@@ -6,6 +8,7 @@ import { getCrew } from '@/lib/groups';
 import { getCurrentFestivalYear, formatDate, formatTime } from '@/lib/dates';
 import { filterByPerson, groupByDay, holdersOf, makeCrewLookup, toAgendaScreening } from '@/lib/agenda';
 import { getPosterFonts } from '@/lib/poster-fonts';
+import { BADGE_ICONS } from '@/components/ui/Avatar';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -37,6 +40,19 @@ function titleLines(title: string): 1 | 2 {
 
 function rowHeight(title: string): number {
   return ROW_PADDING + titleLines(title) * TITLE_LINE + VENUE_LINE + 1;
+}
+
+/**
+ * Satori draws nothing for forwardRef components, and lucide icons are two of them wrapped around a
+ * plain <svg>. Unwrap down to that <svg> (lucide's render functions use no hooks, so calling them is safe).
+ */
+function plainIcon(Icon: LucideIcon, props: LucideProps): ReactElement {
+  let element = createElement(Icon, props) as ReactElement<Record<string, unknown>>;
+  while (typeof element.type === 'object' && element.type && 'render' in element.type) {
+    const render = (element.type as { render: (props: unknown, ref: null) => ReactElement }).render;
+    element = render(element.props, null) as ReactElement<Record<string, unknown>>;
+  }
+  return element;
 }
 
 // Single line with an ellipsis
@@ -166,6 +182,8 @@ export async function GET(request: NextRequest) {
                     <div style={{ display: 'flex', gap: 8, marginLeft: 24, paddingTop: 10 }}>
                       {holdersOf(screening).map((email) => {
                         const member = lookup(email);
+                        const hex = CREW_HEX[member.color % CREW_HEX.length];
+                        const Icon = member.badge ? BADGE_ICONS[member.badge] : null;
                         return (
                           <div
                             key={email}
@@ -176,13 +194,16 @@ export async function GET(request: NextRequest) {
                               width: 40,
                               height: 40,
                               borderRadius: 40,
-                              background: CREW_HEX[member.color % CREW_HEX.length],
-                              color: INK,
+                              // The tint the app's Avatar uses, mixed onto the ink background
+                              background: `${hex}33`,
+                              color: hex,
                               fontSize: 22,
                               fontFamily: display,
                             }}
                           >
-                            {member.name.charAt(0).toUpperCase()}
+                            {Icon
+                              ? plainIcon(Icon, { size: 24, color: hex, strokeWidth: 2.25 })
+                              : member.name.charAt(0).toUpperCase()}
                           </div>
                         );
                       })}

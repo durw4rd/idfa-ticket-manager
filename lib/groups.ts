@@ -1,7 +1,7 @@
 import { db } from '@vercel/postgres';
 import { sql } from './db';
 import { CrewMember, Group, GroupMember } from './types';
-import { CREW_COLOR_COUNT, getDisplayName } from './display';
+import { assignCrewLooks, type Badge, getDisplayName } from './display';
 
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -28,73 +28,73 @@ export async function getVisibleEmails(userEmail: string): Promise<string[]> {
 }
 
 /**
- * A person's colour comes from their email, not from where they sit in someone's crew list, so
- * everyone sees the same colour for the same person. When two people in one crew hash to the same
- * colour, the one whose email sorts later moves to the next free colour; that only depends on who
- * is in the crew, so viewers with the same crew still agree.
- */
-function assignColors(emails: string[]): Map<string, number> {
-  const colors = new Map<string, number>();
-  const taken = new Set<number>();
-  for (const email of [...emails].sort()) {
-    // FNV-1a: small, stable, and spreads similar emails apart
-    let hash = 0x811c9dc5;
-    for (let i = 0; i < email.length; i++) {
-      hash = Math.imul(hash ^ email.charCodeAt(i), 0x01000193) >>> 0;
-    }
-    let color = hash % CREW_COLOR_COUNT;
-    for (let step = 0; step < CREW_COLOR_COUNT && taken.has(color); step++) {
-      color = (color + 1) % CREW_COLOR_COUNT;
-    }
-    taken.add(color);
-    colors.set(email, color);
-  }
-  return colors;
-}
-
-/**
- * The viewer plus everyone in `visibleEmails`, with display names and colours (see assignColors).
- * The viewer comes first, then crew-mates in the order they joined.
+ * The viewer plus everyone in `visibleEmails`, with display names, badges and colours (see
+ * assignCrewLooks; earlier joiners win badge clashes). The viewer comes first, then crew-mates in
+ * the order they joined.
  */
 export async function getCrew(viewer: { email: string; visibleEmails: string[] }): Promise<CrewMember[]> {
   const result = await sql`
-    SELECT m.user_email as "email", MIN(g.created_at) as "groupCreated", MIN(m.created_at) as "joined", p.name
+    SELECT m.user_email as "email", MIN(g.created_at) as "groupCreated", MIN(m.created_at) as "joined",
+           p.name, p.badge
     FROM group_members m
     JOIN groups g ON g.id = m.group_id
     LEFT JOIN profiles p ON p.email = m.user_email
     WHERE m.status = 'active' AND m.user_email = ANY(${viewer.visibleEmails as any}::text[])
       AND m.group_id IN (SELECT group_id FROM group_members WHERE user_email = ${viewer.email} AND status = 'active')
-    GROUP BY m.user_email, p.name
+    GROUP BY m.user_email, p.name, p.badge
     ORDER BY MIN(g.created_at) ASC, MIN(m.created_at) ASC, m.user_email ASC
   `;
 
-  const rows = result.rows.length > 0 ? result.rows : [{ email: viewer.email, name: await getProfileName(viewer.email) }];
-  const colors = assignColors(rows.map((row) => row.email as string));
+  const rows = result.rows.length > 0 ? result.rows : [{ email: viewer.email, ...(await getProfile(viewer.email)) }];
+  const looks = assignCrewLooks(rows.map((row) => ({ email: row.email as string, badge: row.badge })));
   const crew: CrewMember[] = rows.map((row) => ({
     email: row.email as string,
     name: (row.name as string | null) || getDisplayName(row.email as string),
-    color: colors.get(row.email as string)!,
+    ...looks.get(row.email as string)!,
     isMe: row.email === viewer.email,
   }));
   return crew.sort((a, b) => Number(b.isMe) - Number(a.isMe));
 }
 
-async function getProfileName(email: string): Promise<string | null> {
-  const result = await sql`SELECT name FROM profiles WHERE email = ${email}`;
-  return (result.rows[0]?.name as string) || null;
+async function getProfile(email: string): Promise<{ name: string | null; badge: string | null }> {
+  const result = await sql`SELECT name, badge FROM profiles WHERE email = ${email}`;
+  return { name: result.rows[0]?.name ?? null, badge: result.rows[0]?.badge ?? null };
 }
 
 /** Set your own display name; an empty name goes back to the default from your email. */
 export async function setProfileName(email: string, name: string): Promise<void> {
   const me = normalizeEmail(email);
-  if (!name) {
-    await sql`DELETE FROM profiles WHERE email = ${me}`;
-    return;
+  const value = name || null;
+  await sql`
+    INSERT INTO profiles (email, name) VALUES (${me}, ${value})
+    ON CONFLICT (email) DO UPDATE SET name = ${value}, updated_at = NOW()
+  `;
+}
+
+/**
+ * Set your own badge, or null to show your initial. Returns false if someone in your crew already
+ * has it. Two people picking the same badge at once can both get through; getCrew settles that.
+ */
+export async function setProfileBadge(
+  viewer: { email: string; visibleEmails: string[] },
+  badge: Badge | null
+): Promise<boolean> {
+  const me = normalizeEmail(viewer.email);
+  if (badge) {
+    const taken = await sql`
+      SELECT 1 FROM profiles
+      WHERE badge = ${badge} AND email <> ${me} AND email = ANY(${viewer.visibleEmails as any}::text[])
+      LIMIT 1
+    `;
+    if (taken.rows.length > 0) {
+      return false;
+    }
   }
   await sql`
-    INSERT INTO profiles (email, name) VALUES (${me}, ${name})
-    ON CONFLICT (email) DO UPDATE SET name = ${name}, updated_at = NOW()
+    INSERT INTO profiles (email, badge) VALUES (${me}, ${badge})
+    ON CONFLICT (email) DO UPDATE SET badge = ${badge}, updated_at = NOW()
   `;
+  return true;
 }
 
 /**
@@ -203,15 +203,44 @@ export async function inviteMember(inviterEmail: string, groupId: string, invite
   });
 }
 
+/**
+ * Join a group you were invited to. If someone there already has your badge, you lose yours and
+ * pick another, so the people already in the crew keep looking the same.
+ */
 export async function acceptInvite(userEmail: string, groupId: string): Promise<boolean> {
+  const me = normalizeEmail(userEmail);
   return withGroupLock(groupId, async (query) => {
     const result = await query`
       UPDATE group_members SET status = 'active'
-      WHERE group_id = ${groupId} AND user_email = ${normalizeEmail(userEmail)} AND status = 'invited'
+      WHERE group_id = ${groupId} AND user_email = ${me} AND status = 'invited'
       RETURNING group_id
     `;
-    return result.rows.length > 0;
+    if (result.rows.length === 0) {
+      return false;
+    }
+    await query`
+      UPDATE profiles SET badge = NULL, updated_at = NOW()
+      WHERE email = ${me} AND badge IN (
+        SELECT p.badge FROM group_members m
+        JOIN profiles p ON p.email = m.user_email
+        WHERE m.group_id = ${groupId} AND m.status = 'active' AND m.user_email <> ${me} AND p.badge IS NOT NULL
+      )
+    `;
+    return true;
   });
+}
+
+/** Rename a group. Any active member can, like inviting. Returns false if you aren't one. */
+export async function renameGroup(userEmail: string, groupId: string, name: string): Promise<boolean> {
+  const result = await sql`
+    UPDATE groups SET name = ${name}
+    WHERE id = ${groupId} AND EXISTS (
+      SELECT 1 FROM group_members
+      WHERE group_id = ${groupId} AND user_email = ${normalizeEmail(userEmail)} AND status = 'active'
+    )
+    RETURNING id
+  `;
+  return result.rows.length > 0;
 }
 
 /**

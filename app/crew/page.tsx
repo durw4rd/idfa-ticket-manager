@@ -34,7 +34,7 @@ export default async function CrewPage() {
         }
       />
       <div className="space-y-10 pt-2">
-        <ProfileCard me={me} email={viewer.email} />
+        <ProfileCard me={me} crew={crew} email={viewer.email} />
         <GroupManager initialGroups={groups} crew={crew} />
       </div>
     </>

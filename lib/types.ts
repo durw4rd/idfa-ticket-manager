@@ -1,3 +1,5 @@
+import type { Badge } from './display';
+
 export interface Ticket {
   id: string;
   act: string;
@@ -82,7 +84,8 @@ export interface GroupMember {
 export interface CrewMember {
   email: string;
   name: string;
-  color: number; // Index into the crew colour palette, derived from the email (see getCrew)
+  color: number; // Index into the crew colour palette: the badge's colour, else derived from the email (see getCrew)
+  badge: Badge | null; // The avatar icon they picked; null shows their initial
   isMe: boolean;
 }
 
