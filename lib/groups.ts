@@ -29,13 +29,17 @@ export async function getVisibleEmails(userEmail: string): Promise<string[]> {
 
 /**
  * The viewer plus everyone in `visibleEmails`, with display names, badges and colours (see
- * assignCrewLooks; earlier joiners win badge clashes). The viewer comes first, then crew-mates in
- * the order they joined.
+ * assignCrewLooks). The viewer comes first, then crew-mates in the order they joined.
+ *
+ * A badge clash goes to whoever joined any group first, then by email. That doesn't depend on which
+ * groups the viewer shares with them, so viewers with the same crew agree on who has the badge.
  */
 export async function getCrew(viewer: { email: string; visibleEmails: string[] }): Promise<CrewMember[]> {
   const result = await sql`
     SELECT m.user_email as "email", MIN(g.created_at) as "groupCreated", MIN(m.created_at) as "joined",
-           p.name, p.badge
+           p.name, p.badge,
+           (SELECT MIN(x.created_at) FROM group_members x
+            WHERE x.user_email = m.user_email AND x.status = 'active') as "firstJoined"
     FROM group_members m
     JOIN groups g ON g.id = m.group_id
     LEFT JOIN profiles p ON p.email = m.user_email
@@ -46,7 +50,12 @@ export async function getCrew(viewer: { email: string; visibleEmails: string[] }
   `;
 
   const rows = result.rows.length > 0 ? result.rows : [{ email: viewer.email, ...(await getProfile(viewer.email)) }];
-  const looks = assignCrewLooks(rows.map((row) => ({ email: row.email as string, badge: row.badge })));
+  const byPrecedence = [...rows].sort(
+    (a, b) =>
+      new Date(a.firstJoined ?? 0).getTime() - new Date(b.firstJoined ?? 0).getTime() ||
+      String(a.email).localeCompare(String(b.email))
+  );
+  const looks = assignCrewLooks(byPrecedence.map((row) => ({ email: row.email as string, badge: row.badge })));
   const crew: CrewMember[] = rows.map((row) => ({
     email: row.email as string,
     name: (row.name as string | null) || getDisplayName(row.email as string),

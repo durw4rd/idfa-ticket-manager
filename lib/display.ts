@@ -29,7 +29,7 @@ export function badgeColor(badge: Badge): number {
 }
 
 /**
- * Badges and colours for everyone in a crew, given in join order.
+ * Badges and colours for everyone in a crew, given in order of precedence for badge clashes.
  *
  * Badges are unique within a crew, but crews overlap: two people in different groups can share a
  * badge and both be in the viewer's crew (or two people picked one at the same moment). Then
