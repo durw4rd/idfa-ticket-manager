@@ -41,7 +41,7 @@ Open http://localhost:3000. To pull env vars from the linked Vercel project inst
 | `ANTHROPIC_API_KEY` | if used | Only needed when a LaunchDarkly variation serves a Claude model |
 | `LD_SDK_KEY` | recommended | LaunchDarkly server SDK key. Without it the app uses hardcoded fallbacks |
 | `ALLOWED_EMAILS` | optional | Comma-separated sign-in allowlist, used only when LaunchDarkly is unreachable |
-| `NEXTAUTH_URL` | optional | Auto-detected (localhost in dev, `VERCEL_URL` on Vercel) |
+| `NEXTAUTH_URL` | optional | Leave unset on Vercel (NextAuth uses the request's host); defaults to `http://localhost:3000` locally |
 | `LD_SERVICE_NAME` | optional | Labels AI traces in LaunchDarkly (default `idfa-manager`) |
 | `TEST_DATE` | optional | Pretend "now" is this ISO date, to test today/past styling |
 
