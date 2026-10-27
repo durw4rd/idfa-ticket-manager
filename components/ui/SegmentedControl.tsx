@@ -1,6 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import { handleRadioKeys } from '@/lib/radio-keys';
 
 interface Option<T extends string> {
   value: T;
@@ -21,7 +22,7 @@ export function SegmentedControl<T extends string>({
 }) {
   return (
     <div role="radiogroup" aria-label={label} className="inline-flex rounded-full bg-ink/5 p-1">
-      {options.map((option) => {
+      {options.map((option, index) => {
         const selected = option.value === value;
         return (
           <button
@@ -29,7 +30,11 @@ export function SegmentedControl<T extends string>({
             type="button"
             role="radio"
             aria-checked={selected}
+            tabIndex={selected ? 0 : -1}
             onClick={() => onChange(option.value)}
+            onKeyDown={(event) =>
+              handleRadioKeys(event, index, options.length, (next) => onChange(options[next].value))
+            }
             className={`inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-sm font-semibold transition ${
               selected ? 'bg-surface text-ink shadow-sm' : 'text-ink-2 hover:text-ink'
             }`}
