@@ -15,12 +15,12 @@ export const BADGE_ICONS: Record<Badge, LucideIcon> = {
 const CREW_BG = ['bg-crew-0', 'bg-crew-1', 'bg-crew-2', 'bg-crew-3', 'bg-crew-4', 'bg-crew-5'];
 const CREW_TEXT = ['text-crew-0', 'text-crew-1', 'text-crew-2', 'text-crew-3', 'text-crew-4', 'text-crew-5'];
 const CREW_TINT = [
-  'bg-crew-0/15',
-  'bg-crew-1/15',
-  'bg-crew-2/15',
-  'bg-crew-3/15',
-  'bg-crew-4/15',
-  'bg-crew-5/15',
+  'bg-crew-0/[0.15]',
+  'bg-crew-1/[0.15]',
+  'bg-crew-2/[0.15]',
+  'bg-crew-3/[0.15]',
+  'bg-crew-4/[0.15]',
+  'bg-crew-5/[0.15]',
 ];
 
 const CREW_BORDER = [
@@ -59,7 +59,8 @@ const ICON_SIZES = {
 };
 
 /**
- * A person: their badge (or initial) in their crew colour on a tint of it. The tint sits on an
+ * A person: their badge in their crew colour on a tint of it, or their initial in ink on the tint
+ * (crew colour on its own tint is under 4.5:1, too faint for small text). The tint sits on an
  * opaque surface, so stacked avatars don't show through each other.
  */
 export function Avatar({
@@ -76,7 +77,7 @@ export function Avatar({
     <span
       title={member.name}
       className={`relative inline-flex shrink-0 items-center justify-center rounded-full bg-surface font-bold
-        ${crewText(member.color)} ${SIZES[size]} ${className}`}
+        ${Icon ? crewText(member.color) : 'text-ink'} ${SIZES[size]} ${className}`}
     >
       <span className={`absolute inset-0 rounded-full ${CREW_TINT[member.color % CREW_TINT.length]}`} aria-hidden />
       {Icon ? (

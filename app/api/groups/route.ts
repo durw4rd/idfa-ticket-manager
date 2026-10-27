@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
 
     switch (body.action) {
       case 'create': {
-        const name = body.name?.trim();
+        const name = typeof body.name === 'string' ? body.name.trim() : '';
         if (!name || name.length > 100) {
           return NextResponse.json({ error: 'Group name is required (max 100 characters)' }, { status: 400 });
         }
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
         break;
       }
       case 'rename': {
-        const name = body.name?.trim();
+        const name = typeof body.name === 'string' ? body.name.trim() : '';
         if (!name || name.length > 100) {
           return NextResponse.json({ error: 'Group name is required (max 100 characters)' }, { status: 400 });
         }

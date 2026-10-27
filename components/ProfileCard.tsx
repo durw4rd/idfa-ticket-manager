@@ -51,7 +51,9 @@ export default function ProfileCard({ me, crew, email }: { me: CrewMember; crew:
   };
 
   const pickBadge = (next: Badge | null) => {
-    if (!busy && next !== badge) {
+    // "Your initial" always saves: a badge lost in a crew clash shows as null here but is still
+    // stored, and would come back when the clash goes away
+    if (!busy && (next !== badge || next === null)) {
       setPendingBadge(next);
       save({ badge: next });
     }
