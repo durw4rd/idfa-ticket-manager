@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { signOut } from 'next-auth/react';
 import { Loader2, LogOut } from 'lucide-react';
@@ -14,13 +14,18 @@ import { inputClasses, Notice } from '@/components/ui/Field';
 /** Your display name and badge (what the crew sees on avatars and ratings) and sign out */
 export default function ProfileCard({ me, crew, email }: { me: CrewMember; crew: CrewMember[]; email: string }) {
   const router = useRouter();
+  const [refreshing, startTransition] = useTransition();
   const [name, setName] = useState(me.name);
-  const [badge, setBadge] = useState<Badge | null>(me.badge);
-  const [busy, setBusy] = useState(false);
+  // A badge being saved, shown until the refreshed `me` arrives. Otherwise the badge is the server's,
+  // which can change under us (joining a group where someone has yours clears it).
+  const [pendingBadge, setPendingBadge] = useState<Badge | null | undefined>(undefined);
+  const badge = pendingBadge === undefined ? me.badge : pendingBadge;
+  const [saving, setSaving] = useState(false);
+  const busy = saving || refreshing;
   const [error, setError] = useState<string | null>(null);
 
   const save = async (change: { name: string } | { badge: Badge | null }) => {
-    setBusy(true);
+    setSaving(true);
     setError(null);
     try {
       const response = await fetch('/api/profile', {
@@ -32,20 +37,22 @@ export default function ProfileCard({ me, crew, email }: { me: CrewMember; crew:
         const data = await response.json();
         throw new Error(data.error || 'Could not save your profile');
       }
-      router.refresh();
+      // In one transition, so the pending badge gives way to the refreshed one without a flash
+      startTransition(() => {
+        setPendingBadge(undefined);
+        router.refresh();
+      });
     } catch (err) {
-      if ('badge' in change) {
-        setBadge(me.badge);
-      }
+      setPendingBadge(undefined);
       setError(err instanceof Error ? err.message : 'Could not save your profile');
     } finally {
-      setBusy(false);
+      setSaving(false);
     }
   };
 
   const pickBadge = (next: Badge | null) => {
-    if (next !== badge) {
-      setBadge(next);
+    if (!busy && next !== badge) {
+      setPendingBadge(next);
       save({ badge: next });
     }
   };
@@ -63,6 +70,8 @@ export default function ProfileCard({ me, crew, email }: { me: CrewMember; crew:
   });
   const options: (Badge | null)[] = [null, ...BADGES];
   const available = options.filter((option) => !option || !takenBy.has(option));
+  // The group's one Tab stop: the selected option, or the first if the selected one is taken
+  const tabStop = available.includes(badge) ? badge : available[0];
 
   return (
     <section className="rounded border border-line bg-surface p-4">
@@ -129,11 +138,12 @@ export default function ProfileCard({ me, crew, email }: { me: CrewMember; crew:
               aria-checked={selected}
               aria-label={label}
               title={label}
-              tabIndex={selected ? 0 : -1}
-              disabled={busy}
+              tabIndex={option === tabStop ? 0 : -1}
+              // Not `disabled`: that would drop focus from the radio arrow keys just moved to
+              aria-disabled={busy}
               onClick={() => pickBadge(option)}
               onKeyDown={(event) =>
-                handleRadioKeys(event, index, available.length, (next) => pickBadge(available[next]))
+                !busy && handleRadioKeys(event, index, available.length, (next) => pickBadge(available[next]))
               }
               className={`rounded-full p-0.5 ring-offset-surface transition focus-visible:outline-none
                 focus-visible:ring-2 focus-visible:ring-ink/40 ${selected ? 'ring-2 ring-ink' : 'hover:ring-1 hover:ring-line-strong'}`}

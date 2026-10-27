@@ -16,21 +16,26 @@ export async function PATCH(request: NextRequest) {
 
   try {
     const body = await request.json();
-
-    if (body && 'badge' in body) {
-      if (body.badge !== null && !isBadge(body.badge)) {
-        return NextResponse.json({ error: 'Unknown badge' }, { status: 400 });
-      }
-      if (!(await setProfileBadge(viewer, body.badge))) {
-        return NextResponse.json({ error: 'Someone in your crew already has that badge' }, { status: 409 });
-      }
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
     }
 
-    if (body && 'name' in body) {
-      const name = typeof body.name === 'string' ? body.name.trim() : '';
-      if (name.length > MAX_NAME_LENGTH) {
-        return NextResponse.json({ error: `Name must be ${MAX_NAME_LENGTH} characters or fewer` }, { status: 400 });
-      }
+    // Validate every field before writing any, so a rejected request changes nothing
+    const hasName = 'name' in body;
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    if (hasName && name.length > MAX_NAME_LENGTH) {
+      return NextResponse.json({ error: `Name must be ${MAX_NAME_LENGTH} characters or fewer` }, { status: 400 });
+    }
+    const hasBadge = 'badge' in body;
+    if (hasBadge && body.badge !== null && !isBadge(body.badge)) {
+      return NextResponse.json({ error: 'Unknown badge' }, { status: 400 });
+    }
+
+    // The badge goes first: it's the one that can still be refused (taken), and then nothing is written
+    if (hasBadge && !(await setProfileBadge(viewer, body.badge))) {
+      return NextResponse.json({ error: 'Someone in your crew already has that badge' }, { status: 409 });
+    }
+    if (hasName) {
       await setProfileName(viewer.email, name);
     }
 
