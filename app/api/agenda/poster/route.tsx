@@ -202,7 +202,8 @@ export async function GET(request: NextRequest) {
     {
       width: WIDTH,
       height,
-      fonts,
+      // Passing [] would replace next/og's built-in font rather than fall back to it
+      ...(fonts.length > 0 ? { fonts } : {}),
       headers: { 'Cache-Control': 'private, no-store' },
     }
   );

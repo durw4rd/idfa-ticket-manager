@@ -12,12 +12,19 @@ const FACES = [
 let cached: Promise<PosterFont[]> | null = null;
 
 async function loadFace(query: string): Promise<ArrayBuffer> {
-  const css = await fetch(`https://fonts.googleapis.com/css2?family=${query}`).then((res) => res.text());
+  const css = await fetch(`https://fonts.googleapis.com/css2?family=${query}`).then((res) => {
+    if (!res.ok) throw new Error(`Google Fonts CSS returned ${res.status} for ${query}`);
+    return res.text();
+  });
   const url = css.match(/src: url\((https:[^)]+\.ttf)\)/)?.[1];
   if (!url) {
     throw new Error(`No TTF in Google Fonts response for ${query}`);
   }
-  return fetch(url).then((res) => res.arrayBuffer());
+  return fetch(url).then((res) => {
+    // An error page would otherwise be cached as font bytes
+    if (!res.ok) throw new Error(`Font download returned ${res.status} for ${query}`);
+    return res.arrayBuffer();
+  });
 }
 
 export function getPosterFonts(): Promise<PosterFont[]> {
@@ -28,7 +35,7 @@ export function getPosterFonts(): Promise<PosterFont[]> {
         data: await loadFace(face.query),
         weight: face.weight,
         style: 'normal' as const,
-      }))
+      })),
     ).catch((error) => {
       console.error('Poster fonts unavailable, using the default font:', error);
       cached = null; // Try again on the next request

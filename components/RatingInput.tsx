@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { handleRadioKeys } from '@/lib/radio-keys';
 import { Notice } from '@/components/ui/Field';
 
 const MAX_COMMENT_LENGTH = 500;
@@ -92,7 +93,10 @@ export default function RatingInput({
               aria-checked={chosen}
               aria-label={`${value}`}
               disabled={busy}
+              // One Tab stop for the scale: the chosen score, or 1 when unrated
+              tabIndex={chosen || (rating === null && value === 1) ? 0 : -1}
               onClick={() => setRating(value)}
+              onKeyDown={(event) => handleRadioKeys(event, value - 1, SCALE.length, (next) => setRating(SCALE[next]))}
               className={`h-11 min-w-0 flex-1 rounded text-sm font-bold tabular-nums transition-colors
                 ${chosen ? 'bg-spark text-[#111]' : filled ? 'bg-ink text-paper' : 'bg-ink/[0.06] text-ink-2 hover:bg-ink/10'}`}
             >
