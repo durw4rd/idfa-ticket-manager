@@ -15,10 +15,10 @@ There are no tests. Verify with typecheck, lint, and build, and run the app for 
 
 ## Rules that matter
 
-- **Visibility.** Every DB read takes `visibleEmails` (from `getViewer()`/`requireAuth()` in `lib/auth-helpers.ts`) and filters on it. Every update or delete filters on the caller's own `owner_email`. New queries must follow this; it is the app's only access control between users.
+- **Visibility.** Every DB read takes `visibleEmails` (from `getViewer()`/`requireAuth()` in `lib/auth-helpers.ts`) and filters on it. Every update or delete filters on the caller's own `owner_email`. The one exception is `updateTicketHolder`: the owner *or* the current holder may hand a ticket to someone in their `visibleEmails`. New queries must follow this; it is the app's only access control between users.
 - **Auth in routes.** Route handlers start with `const { viewer, error } = await requireAuth(); if (error) return error;` and set `export const runtime = 'nodejs'` and `export const dynamic = 'force-dynamic'`.
-- **Never expose Blob URLs.** `qrCodeUrl`/`pdfUrl` stay server-side; the browser gets `/api/tickets/[id]/qr`. See how `app/api/screenings/route.ts` strips them.
-- **Dates.** Ticket `date` is a `DD-MM-YYYY` string and `start` is `HH:MM AM/PM`, both Amsterdam time. Use `lib/dates.ts` for parsing, formatting, and "now" (`getNow()`), never raw `new Date()` math.
+- **Never expose Blob URLs.** `qrCodeUrl`/`pdfUrl` stay server-side; the browser gets `/api/tickets/[id]/qr`. Client components get screenings through `toAgendaScreening` in `lib/agenda.ts`, which strips them. Keep emails out of URLs too (the poster route takes a crew index).
+- **Dates.** Ticket `date` is a `DD-MM-YYYY` string and `start` is `HH:MM AM/PM`, both Amsterdam time. Use `lib/dates.ts` for parsing, formatting, and "now" (`getNow()`), never raw `new Date()` math. Client components can't see `TEST_DATE`, so pages pass `getNow()` down as a `now` prop.
 - **Emails** go through `normalizeEmail` before storage or comparison.
 - **LaunchDarkly is optional at runtime.** Every flag and AgentControl call has a code fallback. Keep it that way: use `evaluateBooleanFlag` (it reports `available`) and keep the OpenAI fallback paths in `lib/ticket-extractor.ts` and `lib/find-festival-link.ts`. Prompts live in code as `*_PROMPT` constants and are mirrored in the LaunchDarkly configs; if you change one, say the config needs the same edit.
 - **Concurrency.** Group membership changes go through `withGroupLock`; ticket inserts go through `createTicketUnlessDuplicate`. Don't bypass them.
@@ -27,4 +27,6 @@ There are no tests. Verify with typecheck, lint, and build, and run the app for 
 
 ## Style
 
-Match the existing code: SQL via the `sql` tagged template from `lib/db.ts`, columns aliased to camelCase in the query, small focused comments explaining why, `lucide-react` icons, Tailwind classes with the `idfa-*` colors from `tailwind.config.ts`.
+Match the existing code: SQL via the `sql` tagged template from `lib/db.ts`, columns aliased to camelCase in the query, small focused comments explaining why, `lucide-react` icons.
+
+UI is mobile-first (one `max-w-xl` column, bottom tab bar) and built from the primitives in `components/ui/` (`Button`, `Avatar`, `Chip`, `SegmentedControl`, `Sheet`, `Field`/`Notice`, `EmptyState`); use them rather than hand-rolled class strings. Colours are the tokens in `app/globals.css` (`paper`, `surface`, `ink`, `ink-2`, `ink-3`, `line`, `spark`, `danger`, `crew-0…5`), which also cover dark mode; don't use raw Tailwind colours. Type uses the 5-step scale in `tailwind.config.ts` plus `font-display` for film titles and `label` for small caps headings. Yellow (`spark`) only marks now / next / you. People are always shown as `Avatar`s with their crew colour (`getCrew` in `lib/groups.ts`).
