@@ -32,18 +32,12 @@ async function canSignIn(rawEmail: string): Promise<boolean> {
   return ALLOWED_EMAILS.includes(email);
 }
 
-// Auto-detect NEXTAUTH_URL if not explicitly set
-// Priority: explicit env var > Vercel's VERCEL_URL > hardcoded production URL > localhost
-if (!process.env.NEXTAUTH_URL) {
-  // Vercel automatically sets VERCEL_URL for deployments (e.g., "idfa-ticket-manager.vercel.app")
-  if (process.env.VERCEL_URL) {
-    process.env.NEXTAUTH_URL = `https://${process.env.VERCEL_URL}`;
-  } else if (process.env.NODE_ENV === 'production') {
-    process.env.NEXTAUTH_URL = 'https://idfa-ticket-manager.vercel.app';
-  } else {
-    // Default to localhost for local development
-    process.env.NEXTAUTH_URL = 'http://localhost:3000';
-  }
+// NextAuth needs the site's public URL for OAuth callbacks and sign-out redirects. On Vercel,
+// with NEXTAUTH_URL unset, it takes it from each request's host, so sign-in stays on whatever
+// domain the user is on. Don't derive it from VERCEL_URL: that's the per-deployment hostname,
+// which Google doesn't know (redirect_uri_mismatch) and which sits behind Vercel's login wall.
+if (!process.env.NEXTAUTH_URL && !process.env.VERCEL) {
+  process.env.NEXTAUTH_URL = 'http://localhost:3000';
 }
 
 export const authOptions: NextAuthOptions = {
