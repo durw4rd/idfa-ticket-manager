@@ -7,6 +7,7 @@ import {
   inviteMember,
   leaveGroup,
   removeMember,
+  renameGroup,
 } from '@/lib/groups';
 
 export const runtime = 'nodejs';
@@ -17,6 +18,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 
 type GroupAction =
   | { action: 'create'; name: string }
+  | { action: 'rename'; groupId: string; name: string }
   | { action: 'invite'; groupId: string; email: string }
   | { action: 'accept'; groupId: string }
   | { action: 'leave'; groupId: string }
@@ -35,7 +37,7 @@ export async function GET() {
   }
 }
 
-// POST: Create a group, invite or remove a member, accept an invite, or leave a group
+// POST: Create or rename a group, invite or remove a member, accept an invite, or leave a group
 export async function POST(request: NextRequest) {
   const { viewer, error } = await requireAuth();
   if (error) return error;
@@ -49,11 +51,21 @@ export async function POST(request: NextRequest) {
 
     switch (body.action) {
       case 'create': {
-        const name = body.name?.trim();
+        const name = typeof body.name === 'string' ? body.name.trim() : '';
         if (!name || name.length > 100) {
           return NextResponse.json({ error: 'Group name is required (max 100 characters)' }, { status: 400 });
         }
         await createGroup(viewer.email, name);
+        break;
+      }
+      case 'rename': {
+        const name = typeof body.name === 'string' ? body.name.trim() : '';
+        if (!name || name.length > 100) {
+          return NextResponse.json({ error: 'Group name is required (max 100 characters)' }, { status: 400 });
+        }
+        if (!(await renameGroup(viewer.email, body.groupId, name))) {
+          return NextResponse.json({ error: 'You are not a member of this group' }, { status: 403 });
+        }
         break;
       }
       case 'invite': {

@@ -1,46 +1,84 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { signOut } from 'next-auth/react';
 import { Loader2, LogOut } from 'lucide-react';
 import type { CrewMember } from '@/lib/types';
+import { assignCrewLooks, type Badge, BADGE_LABELS, BADGES, badgeColor } from '@/lib/display';
+import { handleRadioKeys } from '@/lib/radio-keys';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { inputClasses, Notice } from '@/components/ui/Field';
 
-/** Your display name (what the crew sees on avatars and ratings) and sign out */
-export default function ProfileCard({ me, email }: { me: CrewMember; email: string }) {
+/** Your display name and badge (what the crew sees on avatars and ratings) and sign out */
+export default function ProfileCard({ me, crew, email }: { me: CrewMember; crew: CrewMember[]; email: string }) {
   const router = useRouter();
+  const [refreshing, startTransition] = useTransition();
   const [name, setName] = useState(me.name);
-  const [busy, setBusy] = useState(false);
+  // A badge being saved, shown until the refreshed `me` arrives. Otherwise the badge is the server's,
+  // which can change under us (joining a group where someone has yours clears it).
+  const [pendingBadge, setPendingBadge] = useState<Badge | null | undefined>(undefined);
+  const badge = pendingBadge === undefined ? me.badge : pendingBadge;
+  const [saving, setSaving] = useState(false);
+  const busy = saving || refreshing;
   const [error, setError] = useState<string | null>(null);
 
-  const save = async () => {
-    setBusy(true);
+  const save = async (change: { name: string } | { badge: Badge | null }) => {
+    setSaving(true);
     setError(null);
     try {
       const response = await fetch('/api/profile', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify(change),
       });
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data.error || 'Could not save your name');
+        throw new Error(data.error || 'Could not save your profile');
       }
-      router.refresh();
+      // In one transition, so the pending badge gives way to the refreshed one without a flash
+      startTransition(() => {
+        setPendingBadge(undefined);
+        router.refresh();
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save your name');
+      setPendingBadge(undefined);
+      setError(err instanceof Error ? err.message : 'Could not save your profile');
     } finally {
-      setBusy(false);
+      setSaving(false);
     }
   };
+
+  const pickBadge = (next: Badge | null) => {
+    // "Your initial" always saves: a badge lost in a crew clash shows as null here but is still
+    // stored, and would come back when the clash goes away
+    if (!busy && (next !== badge || next === null)) {
+      setPendingBadge(next);
+      save({ badge: next });
+    }
+  };
+
+  // Badges other people in your crew already have
+  const takenBy = new Map(crew.filter((m) => !m.isMe && m.badge).map((m) => [m.badge!, m.name]));
+  // The colour your initial would get without a badge, worked out the same way getCrew does
+  const initialColor = assignCrewLooks(crew.map((m) => ({ email: m.email, badge: m.isMe ? null : m.badge }))).get(
+    me.email,
+  )!.color;
+  const lookFor = (option: Badge | null) => ({
+    name: name || me.name,
+    badge: option,
+    color: option ? badgeColor(option) : initialColor,
+  });
+  const options: (Badge | null)[] = [null, ...BADGES];
+  const available = options.filter((option) => !option || !takenBy.has(option));
+  // The group's one Tab stop: the selected option, or the first if the selected one is taken
+  const tabStop = available.includes(badge) ? badge : available[0];
 
   return (
     <section className="rounded border border-line bg-surface p-4">
       <div className="flex items-center gap-4">
-        <Avatar member={{ ...me, name: name || me.name }} size="lg" />
+        <Avatar member={lookFor(badge)} size="lg" />
         <div className="min-w-0 flex-1">
           <p className="font-display text-lg">{me.name}</p>
           <p className="truncate text-sm text-ink-3">{email}</p>
@@ -51,7 +89,7 @@ export default function ProfileCard({ me, email }: { me: CrewMember; email: stri
         className="mt-4 flex gap-2"
         onSubmit={(event) => {
           event.preventDefault();
-          save();
+          save({ name });
         }}
       >
         <label className="min-w-0 flex-1">
@@ -74,6 +112,53 @@ export default function ProfileCard({ me, email }: { me: CrewMember; email: stri
         </Button>
       </form>
       <p className="mt-1.5 text-xs text-ink-3">The name your crew sees. Leave empty to use the one from your email.</p>
+
+      <h3 className="label mb-2 mt-5">Your badge</h3>
+      {/* Taken badges are shown but aren't radios, so the radios' indexes match `available` for arrow keys */}
+      <div role="radiogroup" aria-label="Your badge" className="grid max-w-sm grid-cols-7 justify-items-center">
+        {options.map((option) => {
+          const owner = option ? takenBy.get(option) : undefined;
+          const label = option ? BADGE_LABELS[option] : 'Your initial';
+          const look = lookFor(option);
+          if (owner) {
+            return (
+              <span key={option} title={`${label}: ${owner} has it`} className="rounded-full p-0.5 opacity-30">
+                <Avatar member={look} size="md" />
+                <span className="sr-only">
+                  {label}, taken by {owner}
+                </span>
+              </span>
+            );
+          }
+          const selected = option === badge;
+          const index = available.indexOf(option);
+          return (
+            <button
+              key={option ?? 'initial'}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              aria-label={label}
+              title={label}
+              tabIndex={option === tabStop ? 0 : -1}
+              // Not `disabled`: that would drop focus from the radio arrow keys just moved to
+              aria-disabled={busy}
+              onClick={() => pickBadge(option)}
+              onKeyDown={(event) =>
+                !busy && handleRadioKeys(event, index, available.length, (next) => pickBadge(available[next]))
+              }
+              className={`rounded-full p-0.5 ring-offset-surface transition focus-visible:outline-none
+                focus-visible:ring-2 focus-visible:ring-ink/40 ${selected ? 'ring-2 ring-ink' : 'hover:ring-1 hover:ring-line-strong'}`}
+            >
+              <Avatar member={look} size="md" />
+            </button>
+          );
+        })}
+      </div>
+      <p className="mt-1.5 text-xs text-ink-3">
+        {badge ? BADGE_LABELS[badge] : 'Your initial'}. Each badge goes to one person per crew; faded ones are taken.
+      </p>
+
       {error && (
         <div className="mt-3">
           <Notice>{error}</Notice>

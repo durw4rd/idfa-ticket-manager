@@ -4,6 +4,72 @@
 export const CREW_COLOR_COUNT = 6;
 
 /**
+ * Badges people pick for their avatar. Each one owns the crew colour at its index, so a badge looks
+ * the same everywhere, and within a crew no two people share one (see getCrew in lib/groups.ts).
+ * The icons live in components/ui/Avatar.tsx.
+ */
+export const BADGES = ['clapper', 'popcorn', 'projector', 'film', 'masks', 'camera'] as const;
+export type Badge = (typeof BADGES)[number];
+
+export const BADGE_LABELS: Record<Badge, string> = {
+  clapper: 'Clapperboard',
+  popcorn: 'Popcorn',
+  projector: 'Projector',
+  film: 'Film strip',
+  masks: 'Masks',
+  camera: 'Camera',
+};
+
+export function isBadge(value: unknown): value is Badge {
+  return typeof value === 'string' && (BADGES as readonly string[]).includes(value);
+}
+
+export function badgeColor(badge: Badge): number {
+  return BADGES.indexOf(badge);
+}
+
+/**
+ * Badges and colours for everyone in a crew, given in order of precedence for badge clashes.
+ *
+ * Badges are unique within a crew, but crews overlap: two people in different groups can share a
+ * badge and both be in the viewer's crew (or two people picked one at the same moment). Then
+ * whoever comes first keeps it and the other shows their initial.
+ *
+ * A badge brings its own colour. Everyone else's colour comes from their email, not from where they
+ * sit in someone's crew list, so everyone sees the same colour for the same person. When two people
+ * hash to the same colour (or a badge's), the one whose email sorts later moves to the next free
+ * colour; that only depends on who is in the crew, so viewers with the same crew still agree.
+ */
+export function assignCrewLooks(
+  people: { email: string; badge: unknown }[]
+): Map<string, { badge: Badge | null; color: number }> {
+  const looks = new Map<string, { badge: Badge | null; color: number }>();
+  const taken = new Set<number>();
+  for (const { email, badge } of people) {
+    if (isBadge(badge) && !taken.has(badgeColor(badge))) {
+      taken.add(badgeColor(badge));
+      looks.set(email, { badge, color: badgeColor(badge) });
+    }
+  }
+
+  const rest = people.map((person) => person.email).filter((email) => !looks.has(email));
+  for (const email of rest.sort()) {
+    // FNV-1a: small, stable, and spreads similar emails apart
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < email.length; i++) {
+      hash = Math.imul(hash ^ email.charCodeAt(i), 0x01000193) >>> 0;
+    }
+    let color = hash % CREW_COLOR_COUNT;
+    for (let step = 0; step < CREW_COLOR_COUNT && taken.has(color); step++) {
+      color = (color + 1) % CREW_COLOR_COUNT;
+    }
+    taken.add(color);
+    looks.set(email, { badge: null, color });
+  }
+  return looks;
+}
+
+/**
  * Default display name from an email address, for users who haven't picked one:
  * "misa.fasa@gmail.com" → "Misa"
  */

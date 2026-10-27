@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, Loader2, LogOut, UserPlus, X } from 'lucide-react';
+import { Check, Loader2, LogOut, Pencil, UserPlus, X } from 'lucide-react';
 import type { CrewMember, Group } from '@/lib/types';
 import { makeCrewLookup } from '@/lib/agenda';
 import { Avatar } from '@/components/ui/Avatar';
@@ -27,6 +27,7 @@ export default function GroupManager({ initialGroups, crew }: { initialGroups: G
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
+  const [renaming, setRenaming] = useState<{ groupId: string; name: string } | null>(null);
 
   const runAction = async (body: Record<string, string>) => {
     setBusy(true);
@@ -113,26 +114,72 @@ export default function GroupManager({ initialGroups, crew }: { initialGroups: G
         <div className="space-y-4">
           {activeGroups.map((group) => (
             <div key={group.id} className="rounded border border-line bg-surface">
-              <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
-                <p className="font-display text-lg">{group.name}</p>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="-mr-2 text-ink-2"
-                  icon={<LogOut className="h-4 w-4" />}
-                  disabled={busy}
-                  onClick={() =>
-                    setConfirm({
-                      title: `Leave ${group.name}?`,
-                      message: "You'll stop seeing each other's tickets and ratings.",
-                      action: 'Leave group',
-                      body: { action: 'leave', groupId: group.id },
-                    })
-                  }
+              {renaming?.groupId === group.id ? (
+                <form
+                  className="flex items-center gap-2 border-b border-line p-3"
+                  onSubmit={async (event) => {
+                    event.preventDefault();
+                    const name = renaming.name.trim();
+                    if (name === group.name || (await runAction({ action: 'rename', groupId: group.id, name }))) {
+                      setRenaming(null);
+                    }
+                  }}
                 >
-                  Leave
-                </Button>
-              </div>
+                  <input
+                    type="text"
+                    autoFocus
+                    aria-label="Group name"
+                    value={renaming.name}
+                    onChange={(event) => setRenaming({ groupId: group.id, name: event.target.value })}
+                    onKeyDown={(event) => event.key === 'Escape' && setRenaming(null)}
+                    maxLength={100}
+                    className={`${inputClasses} min-w-0 flex-1`}
+                  />
+                  <Button type="submit" variant="secondary" disabled={busy || !renaming.name.trim()}>
+                    Save
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="-ml-1 text-ink-2"
+                    aria-label="Cancel renaming"
+                    icon={<X className="h-5 w-5" />}
+                    onClick={() => setRenaming(null)}
+                  />
+                </form>
+              ) : (
+                <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+                  <div className="flex min-w-0 items-center gap-1">
+                    <p className="min-w-0 break-words font-display text-lg">{group.name}</p>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="-my-2 shrink-0 text-ink-3"
+                      aria-label={`Rename ${group.name}`}
+                      icon={<Pencil className="h-4 w-4" />}
+                      disabled={busy}
+                      onClick={() => setRenaming({ groupId: group.id, name: group.name })}
+                    />
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="-mr-2 text-ink-2"
+                    icon={<LogOut className="h-4 w-4" />}
+                    disabled={busy}
+                    onClick={() =>
+                      setConfirm({
+                        title: `Leave ${group.name}?`,
+                        message: "You'll stop seeing each other's tickets and ratings.",
+                        action: 'Leave group',
+                        body: { action: 'leave', groupId: group.id },
+                      })
+                    }
+                  >
+                    Leave
+                  </Button>
+                </div>
+              )}
 
               <ul className="divide-y divide-line px-4">
                 {group.members.map((member) => {
