@@ -1,21 +1,22 @@
-import Link from 'next/link';
+import Image from 'next/image';
 import { redirect } from 'next/navigation';
-import { ArrowLeft, Calendar, MapPin, Clock, Ticket, Navigation } from 'lucide-react';
-import { getScreening, getRating, getRatingsByMovie } from '@/lib/db';
+import { ArrowLeft, ExternalLink, Navigation } from 'lucide-react';
+import { getScreening, getRatingsByMovie } from '@/lib/db';
+import { getCrew } from '@/lib/groups';
 import { getViewer } from '@/lib/auth-helpers';
-import { formatDate, formatTime, isPast } from '@/lib/dates';
-import { getDisplayName } from '@/lib/display';
-import QRCodeDisplay from '@/components/QRCodeDisplay';
+import { formatDate, formatTime, getNow } from '@/lib/dates';
+import { holdersOf, makeCrewLookup, toAgendaScreening } from '@/lib/agenda';
 import { getVenueBackground } from '@/lib/venue-backgrounds';
 import { getFestivalLinkForScreening } from '@/lib/festival-links';
-import FestivalLinkButton from '@/components/FestivalLinkButton';
-import CoupleIcon from '@/components/CoupleIcon';
 import { getMapSearchUrl } from '@/lib/maps-utils';
-import MovieRating from '@/components/MovieRating';
-import AllRatings from '@/components/AllRatings';
-import CollapsibleQRSection from '@/components/CollapsibleQRSection';
-import TicketActions from '@/components/TicketActions';
+import PageHeader from '@/components/PageHeader';
+import { AvatarStack } from '@/components/ui/Avatar';
+import { ButtonLink } from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
 import AddToCalendarButton from '@/components/AddToCalendarButton';
+import ScreeningTickets from '@/components/screening/ScreeningTickets';
+import RatingInput from '@/components/RatingInput';
+import CrewRatings from '@/components/CrewRatings';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,154 +31,158 @@ export default async function ScreeningDetailPage({
   }
 
   const { id } = await params;
-  const screening = await getScreening(viewer.visibleEmails, decodeURIComponent(id));
+  const [screening, crew] = await Promise.all([
+    getScreening(viewer.visibleEmails, decodeURIComponent(id)),
+    getCrew(viewer),
+  ]);
+  const me = crew.find((member) => member.isMe);
 
   if (!screening) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">Screening not found</h1>
-          <Link
-            href="/screenings"
-            className="text-idfa-black hover:underline"
-          >
-            ← Back to Screenings
-          </Link>
-        </div>
-      </div>
+      <>
+        <PageHeader title="Screening" me={me} back={<BackLink href="/screenings" />} />
+        <EmptyState
+          title="Screening not found"
+          action={<ButtonLink href="/screenings" variant="secondary">Back to agenda</ButtonLink>}
+        >
+          Its ticket may have been deleted or had its details fixed.
+        </EmptyState>
+      </>
     );
   }
 
-  const screeningDateTime = screening.dateTime;
-  const isPastScreening = isPast(screeningDateTime);
-  const venueBackground = getVenueBackground(screening.location);
-  const festivalLink = await getFestivalLinkForScreening(screening);
-
-  // Get user's rating and the group's ratings for this movie
-  const [userRating, allRatings] = await Promise.all([
-    getRating(viewer.email, screening.act, screening.festivalYear),
+  const lookup = makeCrewLookup(crew);
+  const startsAt = screening.dateTime;
+  const started = startsAt <= getNow();
+  const venueImage = getVenueBackground(screening.location);
+  const [festivalLink, ratings] = await Promise.all([
+    getFestivalLinkForScreening(screening),
     getRatingsByMovie(viewer.visibleEmails, screening.act, screening.festivalYear),
   ]);
+  const myRating = ratings.find((rating) => rating.userEmail === viewer.email);
+  const crewRatings = ratings.filter((rating) => rating.userEmail !== viewer.email);
+  const average = ratings.length > 1 ? ratings.reduce((sum, r) => sum + r.rating, 0) / ratings.length : null;
+  const holders = holdersOf(toAgendaScreening(screening)).map(lookup);
 
   return (
-    <div
-      className={`max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 ${venueBackground ? 'venue-page-background' : ''}`}
-      style={venueBackground ? ({ '--venue-bg-image': `url(${venueBackground})` } as React.CSSProperties) : undefined}
-    >
-      <div className={venueBackground ? 'venue-page-content' : ''}>
-      <Link
-        href={`/screenings?year=${screening.festivalYear}`}
-        className="inline-flex items-center space-x-2 text-idfa-gray-600 hover:text-idfa-black mb-8"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        <span>Back to IDFA {screening.festivalYear}</span>
-      </Link>
+    <>
+      <PageHeader
+        title={`${formatDate(startsAt)} · ${formatTime(startsAt)}`}
+        eyebrow={`IDFA ${screening.festivalYear}`}
+        me={me}
+        back={<BackLink href={`/screenings?year=${screening.festivalYear}`} />}
+      />
 
-      <div className="mb-8">
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
-          <h1 className="text-3xl sm:text-4xl font-bold">{screening.act}</h1>
-          {festivalLink && (
-            <FestivalLinkButton
-              url={festivalLink}
-              movieTitle={screening.act}
-            />
+      <article className="space-y-8">
+        <header>
+          {venueImage && (
+            <div className="relative -mx-4 mb-5 h-28 overflow-hidden sm:mx-0 sm:rounded">
+              <Image
+                src={venueImage}
+                alt=""
+                fill
+                sizes="(max-width: 640px) 100vw, 576px"
+                className="object-cover grayscale contrast-125"
+                priority
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-paper via-paper/40 to-transparent" />
+            </div>
           )}
-        </div>
-
-        <div className="space-y-3 text-lg">
-          <div className="flex items-center space-x-3">
-            <Calendar className="h-5 w-5 text-idfa-gray-600" />
-            <span>{formatDate(screeningDateTime, 'long')}</span>
+          <h2 className="font-display text-xl text-balance">{screening.act}</h2>
+          <p className="mt-2 text-base">
+            <span className="font-semibold tabular-nums">{formatTime(startsAt)}</span>
+            <span className="text-ink-2"> · {formatDate(startsAt, 'long')}</span>
+          </p>
+          <p className="text-ink-2">{screening.location}</p>
+          <div className="mt-3 flex items-center gap-2 text-sm text-ink-2">
+            <AvatarStack members={holders} />
+            <span>{holders.map((member) => (member.isMe ? 'You' : member.name)).join(' & ')}</span>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Clock className="h-5 w-5 text-idfa-gray-600" />
-            <span>{formatTime(screeningDateTime)}</span>
-            {!isPastScreening && (
+
+          <div className="-mx-4 mt-5 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none]">
+            <ButtonLink
+              href={getMapSearchUrl(screening.location)}
+              external
+              variant="secondary"
+              size="sm"
+              icon={<Navigation className="h-4 w-4" />}
+            >
+              Directions
+            </ButtonLink>
+            {!started && (
               <AddToCalendarButton
                 title={screening.act}
                 location={screening.location}
-                startsAt={screeningDateTime.toISOString()}
+                startsAt={startsAt.toISOString()}
                 url={festivalLink}
               />
             )}
+            {festivalLink && (
+              <ButtonLink href={festivalLink} external variant="secondary" size="sm" icon={<ExternalLink className="h-4 w-4" />}>
+                IDFA page
+              </ButtonLink>
+            )}
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <MapPin className="h-5 w-5 text-idfa-gray-600" />
-            <span>{screening.location}</span>
-            <a
-              href={getMapSearchUrl(screening.location)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center space-x-1 px-3 py-1.5 text-sm bg-idfa-black text-white font-medium rounded hover:bg-idfa-gray-800 transition-colors"
-              title="Open in Maps"
-            >
-              <Navigation className="h-4 w-4" />
-              <span>Directions</span>
-            </a>
-          </div>
-          {screening.ticketCount > 1 && (
-            <div className="flex items-center space-x-3">
-              <Ticket className="h-5 w-5 text-idfa-gray-600" />
-              <span>{screening.ticketCount} tickets</span>
-              {screening.ticketCount === 2 && (
-                <CoupleIcon className="ml-1" />
-              )}
-            </div>
-          )}
-        </div>
-      </div>
+        </header>
 
-      <div id="qr" className="mt-12 scroll-mt-4">
-        <CollapsibleQRSection
-          title={`QR Code${screening.ticketCount > 1 ? 's' : ''}`}
-          defaultOpen={!isPastScreening}
-        >
-          <div className={`grid gap-6 ${screening.ticketCount === 1 ? 'grid-cols-1' : screening.ticketCount === 2 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
-            {screening.tickets.map((ticket, index) => {
-              const isOwn = ticket.ownerEmail === viewer.email;
-              const owner = isOwn ? null : getDisplayName(ticket.ownerEmail);
-              const label = [screening.ticketCount > 1 ? `Ticket ${index + 1}` : null, owner]
-                .filter(Boolean)
-                .join(' · ');
-              return (
-                <div key={ticket.id}>
-                  <QRCodeDisplay
-                    qrCodeUrl={`/api/tickets/${ticket.id}/qr`}
-                    alt={`QR code for ${screening.act} - Ticket ${index + 1}`}
-                    ticketLabel={label || undefined}
-                  />
-                  {isOwn && (
-                    <TicketActions
-                      ticketId={ticket.id}
-                      fields={{ act: ticket.act, location: ticket.location, date: ticket.date, start: ticket.start }}
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </CollapsibleQRSection>
-      </div>
-
-      <div className="mt-12 pt-12 border-t border-idfa-gray-200">
-        <h2 className="text-2xl font-bold mb-6">Rate this movie</h2>
-        <MovieRating
-          movieTitle={screening.act}
-          festivalYear={screening.festivalYear}
-          initialRating={userRating}
-        />
-      </div>
-
-      {allRatings.length > 0 && (
-        <div className="mt-12 pt-12 border-t border-idfa-gray-200">
-          <h2 className="text-2xl font-bold mb-6">All ratings</h2>
-          <AllRatings
-            ratings={allRatings}
-            currentUserEmail={viewer.email}
+        <section aria-labelledby="tickets-heading">
+          <h3 id="tickets-heading" className="label mb-3">
+            {screening.ticketCount > 1 ? `${screening.ticketCount} tickets` : 'Ticket'}
+          </h3>
+          <ScreeningTickets
+            tickets={screening.tickets.map((ticket) => ({
+              id: ticket.id,
+              ownerEmail: ticket.ownerEmail,
+              holderEmail: ticket.holderEmail,
+              fields: { act: ticket.act, location: ticket.location, date: ticket.date, start: ticket.start },
+            }))}
+            crew={crew}
+            meEmail={viewer.email}
+            title={screening.act}
+            meta={`${formatDate(startsAt)} · ${formatTime(startsAt)} · ${screening.location}`}
           />
-        </div>
-      )}
-      </div>
-    </div>
+        </section>
+
+        <section aria-labelledby="rating-heading">
+          <h3 id="rating-heading" className="label mb-3">
+            Your rating
+          </h3>
+          <RatingInput
+            act={screening.act}
+            festivalYear={screening.festivalYear}
+            initialRating={myRating?.rating ?? null}
+            initialComment={myRating?.comment ?? null}
+            started={started}
+          />
+        </section>
+
+        {crewRatings.length > 0 && (
+          <section aria-labelledby="crew-heading">
+            <h3 id="crew-heading" className="label mb-3 flex items-baseline">
+              Crew
+              {average !== null && (
+                <span className="ml-auto normal-case tracking-normal">
+                  avg <span className="font-display text-base text-ink">{average.toFixed(1)}</span>
+                </span>
+              )}
+            </h3>
+            <CrewRatings ratings={crewRatings} lookup={lookup} />
+          </section>
+        )}
+      </article>
+    </>
+  );
+}
+
+function BackLink({ href }: { href: string }) {
+  return (
+    <ButtonLink
+      href={href}
+      variant="ghost"
+      size="icon"
+      aria-label="Back to agenda"
+      className="-ml-3"
+      icon={<ArrowLeft className="h-5 w-5" />}
+    />
   );
 }

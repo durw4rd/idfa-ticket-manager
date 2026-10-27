@@ -16,20 +16,22 @@ Browser ──► middleware.ts (NextAuth JWT check; redirects to /login)
 
 ## Domain model
 
-- **Ticket**: one row in `tickets`, one per PDF page. Fields `act` (film title), `location`, `date` (`DD-MM-YYYY` string), `start` (`HH:MM AM/PM` string), plus `owner_email`, `festival_year`, `starts_at` (absolute `timestamptz`), `qr_hash` (SHA-256 of the decoded QR payload), `qr_code_url` and `pdf_url` (Blob URLs, never sent to the browser), `festival_link`.
+- **Ticket**: one row in `tickets`, one per PDF page. Fields `act` (film title), `location`, `date` (`DD-MM-YYYY` string), `start` (`HH:MM AM/PM` string), plus `owner_email` (the uploader), `holder_email` (who will use it; starts as the uploader), `festival_year`, `starts_at` (absolute `timestamptz`), `qr_hash` (SHA-256 of the decoded QR payload), `qr_code_url` and `pdf_url` (Blob URLs, never sent to the browser), `festival_link`.
 - **Screening**: not a table. Tickets with the same `act|date|start` are grouped in memory (`groupTicketsIntoScreenings` in `lib/db.ts`). The screening id in URLs is that key, URL-encoded; `parseScreeningKey` splits from the right because titles can contain `|`.
 - **Rating**: one per `(user_email, act, festival_year)`, 1–10 plus optional comment.
 - **Group / group_members**: sharing groups. Members are `owner` or `member`, `invited` or `active`.
+- **Crew**: the viewer plus everyone in `visibleEmails`, with a display name and a colour (`getCrew` in `lib/groups.ts`). Colours are derived from the email, so everyone sees the same colour for the same person.
+- **Profile**: `profiles(email, name)`, an optional display name a user sets on the Crew page. Without one, `getDisplayName` derives it from the email ("misa.fasa@…" → "Misa").
 - **Festival year**: derived from the ticket's date. `/screenings?year=YYYY` picks the year; years before the current one render as a recap.
 
-Schema lives in `migrations/` (run by hand, in order: `000-base-schema.sql`, `add-festival-link.sql`, `002-multi-user-multi-year.sql`).
+Schema lives in `migrations/` (run by hand, in order: `000-base-schema.sql`, `add-festival-link.sql`, `002-multi-user-multi-year.sql`, `003-ticket-holders-and-profiles.sql`).
 
 ## Data visibility
 
 The core rule: **reads are scoped to `visibleEmails`, writes to the owner's own email.**
 
 - `getViewer()` in `lib/auth-helpers.ts` returns `{ email, visibleEmails }`, where `visibleEmails` is the user plus every active member of their active groups (`getVisibleEmails` in `lib/groups.ts`).
-- Every read in `lib/db.ts` filters `owner_email = ANY(visibleEmails)` (or `user_email` for ratings). Updates and deletes filter on `owner_email = viewer.email`.
+- Every read in `lib/db.ts` filters `owner_email = ANY(visibleEmails)` (or `user_email` for ratings). Updates and deletes filter on `owner_email = viewer.email`, except `updateTicketHolder`, which also lets the current holder pass a ticket on (`PUT /api/tickets/[id]/holder`); the new holder must be in `visibleEmails`.
 - API routes start with `const { viewer, error } = await requireAuth(); if (error) return error;`. Server pages call `getViewer()` and redirect to `/login` on null.
 - Emails are always lower-cased with `normalizeEmail` before storage or comparison.
 
@@ -43,7 +45,11 @@ The core rule: **reads are scoped to `visibleEmails`, writes to the owner's own 
 
 **Sign-in** (`lib/auth.ts`): Google OAuth via NextAuth v4, JWT sessions. `signIn` allows the user if they are in any group (active or invited), else if the `app-access` flag says so, else (only when LaunchDarkly is unreachable) if they are in `ALLOWED_EMAILS`.
 
-**QR codes** are served through `GET /api/tickets/[id]/qr`, which re-checks visibility on every request and sets `Cache-Control: private, no-store`.
+**Screens.** Three tabs, one per job: **Agenda** (`/screenings`: person filter, list or day timeline, "Up next" with a one-tap QR, poster export), **Tickets** (`/tickets`: upcoming passes, the next one with its QR showing), **Films** (`/films`: a "to rate" queue, rated films with crew scores, past-year recap). The detail page `/screenings/[id]` has tickets with holders, your rating and the crew's. `/crew` holds your name, groups and sign-out. Server pages load data and pass plain `AgendaScreening`s (`lib/agenda.ts`) plus a server `now` to client components; filtering, clashes and grouping are pure functions in `lib/agenda.ts`.
+
+**QR codes** open in `components/tickets/QrOverlay.tsx`, a fixed white overlay (the Fullscreen API doesn't work on iPhone) that holds a screen wake lock while open. They are served through `GET /api/tickets/[id]/qr`, which re-checks visibility on every request and sets `Cache-Control: private, no-store`.
+
+**Poster** (`app/api/agenda/poster`): an `ImageResponse` PNG of the whole festival for `?who=all|<crew index>`. Fonts are static Archivo TTFs fetched from Google Fonts on first use and cached in memory (`lib/poster-fonts.ts`), falling back to the built-in font. The client shares it with `navigator.share({ files })` or downloads it.
 
 **Groups** (`lib/groups.ts`, `app/api/groups`): one POST endpoint with an `action` field (`create`, `invite`, `accept`, `leave`, `remove`). Every membership change runs in a transaction holding a per-group advisory lock (`withGroupLock`). Removing the last owner promotes the longest-standing active member; a group with no active members is deleted.
 
@@ -67,15 +73,19 @@ All ticket times are Amsterdam wall-clock times; servers run in UTC. Always go t
 
 | Path | What's there |
 |---|---|
-| `app/screenings/page.tsx` | Main schedule (server component): day groups, Up next, recap for past years |
-| `app/screenings/[id]/page.tsx` | Screening detail: QR codes, ratings, ticket actions |
-| `app/upload`, `app/settings`, `app/login` | Upload wizard, sharing groups, sign-in page |
+| `app/screenings/page.tsx` | Agenda (loads data, renders `components/agenda/AgendaView`) |
+| `app/screenings/[id]/page.tsx` | Screening detail: tickets and holders, ratings |
+| `app/tickets`, `app/films` | Ticket wallet; rating queue and rated films |
+| `app/upload`, `app/crew`, `app/login` | Upload wizard, profile and sharing groups, sign-in page |
 | `app/api/` | JSON route handlers (all `runtime = 'nodejs'`, `dynamic = 'force-dynamic'`) |
-| `components/` | UI components; client components are marked `'use client'` |
+| `components/ui/` | Design-system primitives (Button, Avatar, Chip, Sheet, …) |
+| `components/` | Feature components by area (`agenda/`, `tickets/`, `screening/`, `upload/`); client components are marked `'use client'` |
+| `lib/agenda.ts` | Client-safe agenda logic: serialisation, filters, clashes, rating queue |
 | `lib/db.ts` | All ticket and rating SQL, screening grouping |
 | `lib/groups.ts` | Group SQL, visibility, locking |
 | `lib/types.ts` | Shared interfaces |
-| `lib/venue-backgrounds.ts`, `public/bcg-*` | Venue name → card background image |
+| `lib/venue-backgrounds.ts`, `public/bcg-*` | Venue name → banner image on the detail page |
+| `docs/ux-research.md` | Baseline usability findings and the think-aloud script |
 | `scripts/` | One-off maintenance scripts (plain Node, read `.env.local`) |
 | `migrations/` | Hand-run SQL |
 
@@ -83,5 +93,4 @@ All ticket times are Amsterdam wall-clock times; servers run in UTC. Always go t
 
 - `@vercel/postgres` is deprecated (Neon's own driver replaces it). Used in `lib/db.ts`, `lib/groups.ts`, and the scripts.
 - `lib/festival-links.ts` hardcodes IDFA 2025 film URLs; it only matters as the last fallback.
-- `next.config.js` has a no-op `webpack` hook and a `serverActions` limit, but the app has no server actions.
 - No automated tests. Verify changes with `npm run build` and `npm run lint`, and by running the app.

@@ -3,159 +3,99 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Design tokens, as RGB channels so Tailwind can add alpha (see tailwind.config.ts).
+ * Ink on warm paper, with IDFA yellow ("spark") reserved for now / next / you.
+ * Crew colours mark people: avatars, timeline lanes. Index = CrewMember.color.
+ */
 :root {
-  --foreground-rgb: 0, 0, 0;
-  --background-rgb: 255, 255, 255;
+  --paper: 250 250 247;
+  --surface: 255 255 255;
+  --ink: 17 17 17;
+  --ink-2: 84 84 79;
+  --ink-3: 110 110 103;
+  --line: 230 229 223;
+  --line-strong: 207 206 198;
+  --spark: 255 214 0;
+  --danger: 198 45 31;
+  --ok: 31 122 58;
+
+  /* Each at least 4.5:1 against --on-crew, since they carry small initials and timeline titles */
+  --crew-0: 221 50 24;
+  --crew-1: 46 98 240;
+  --crew-2: 14 131 98;
+  --crew-3: 155 75 224;
+  --crew-4: 212 50 122;
+  --crew-5: 10 128 144;
+  /* Text on a crew colour: white on the deeper light-mode hues, ink on the brighter dark-mode ones */
+  --on-crew: 255 255 255;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: 14 14 13;
+    --surface: 26 26 24;
+    --ink: 242 241 236;
+    --ink-2: 176 175 167;
+    --ink-3: 140 139 131;
+    --line: 42 42 39;
+    --line-strong: 62 62 58;
+    --danger: 255 107 91;
+    --ok: 94 201 128;
+
+    --crew-0: 255 112 87;
+    --crew-1: 106 146 255;
+    --crew-2: 56 196 150;
+    --crew-3: 190 128 255;
+    --crew-4: 255 102 170;
+    --crew-5: 48 196 216;
+    --on-crew: 17 17 17;
+
+    color-scheme: dark;
+  }
 }
 
 body {
-  color: rgb(var(--foreground-rgb));
-  background: rgb(var(--background-rgb));
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+  @apply bg-paper text-ink antialiased;
+  -webkit-tap-highlight-color: transparent;
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
-}
 
-/* Fullscreen QR code styling for better scanning */
-:fullscreen {
-  background-color: #FFFFFF;
-}
-
-:-webkit-full-screen {
-  background-color: #FFFFFF;
-}
-
-:-moz-full-screen {
-  background-color: #FFFFFF;
-}
-
-:-ms-fullscreen {
-  background-color: #FFFFFF;
-}
-
-@layer components {
-  /* Venue background card styling - pattern in header and as border */
-  .venue-card-background {
-    position: relative;
-    overflow: hidden;
+  /* Film titles: Archivo semi-condensed, bold. The poster voice of the app. */
+  .font-display {
+    font-stretch: 85%;
+    font-weight: 700;
   }
 
-  /* Header background pattern */
-  .venue-card-header-bg {
-    position: relative;
-    padding: 1.5rem;
-    margin: -1.5rem -1.5rem 1rem -1.5rem;
-    background-image: var(--venue-bg-image);
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-    overflow: hidden;
-    border-radius: 0.5rem 0.5rem 0 0; /* Match card top border radius */
-    opacity: 0.8; /* Match left border opacity */
+  /* Small caps-style labels: day headings, section labels */
+  .label {
+    @apply text-xs font-semibold uppercase text-ink-3;
+    letter-spacing: 0.08em;
   }
 
-  /* Text legibility - subtle overlay and minimal shadow for clean design */
-  .venue-card-header-bg h2 {
-    position: relative;
-    z-index: 1;
-    /* Minimal text shadow for subtle contrast */
-    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
-    /* Increased opacity overlay for better readability */
-    padding: 0.5rem 0.75rem;
-    margin: -0.5rem -0.75rem;
-    background: rgba(255, 255, 255, 0.25);
-    backdrop-filter: blur(4px);
-    border-radius: 0.25rem;
-    display: inline-block;
-    width: calc(100% + 1.5rem);
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
-  /* Border accent using venue pattern */
-  .venue-card-background::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 5px; /* Left border */
-    height: 100%;
-    background-image: var(--venue-bg-image);
-    background-size: auto 100%;
-    background-position: left center;
-    background-repeat: repeat-y;
-    opacity: 0.8;
-    z-index: 1;
-    border-radius: 0.5rem 0 0 0.5rem; /* Match card border radius on left side */
-  }
-
-  .venue-card-background::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 3px; /* Right border accent */
-    height: 100%;
-    background-image: var(--venue-bg-image);
-    background-size: auto 100%;
-    background-position: right center;
-    background-repeat: repeat-y;
-    opacity: 0.6;
-    z-index: 1;
-    border-radius: 0 0.5rem 0.5rem 0; /* Match card border radius on right side */
-  }
-
-  /* Content should be above border */
-  .venue-card-content {
-    position: relative;
-    z-index: 2;
-  }
-
-  /* Full page venue background for detail pages */
-  .venue-page-background {
-    position: relative;
-    min-height: 100vh;
-  }
-
-  .venue-page-background::before {
-    content: '';
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-image: var(--venue-bg-image);
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-    opacity: 0.60; /* Increased brightness/opacity of background */
-    z-index: 0;
-    pointer-events: none;
-  }
-
-  /* Overlay for detail pages - exclude header area */
-  .venue-page-background::after {
-    content: '';
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(255, 255, 255, 0.40); /* Reduced overlay for more background visibility */
-    z-index: 0;
-    pointer-events: none;
-  }
-
-  /* Content wrapper for detail pages with white background - only around text */
-  .venue-page-content {
-    position: relative;
-    z-index: 1;
-    background: rgba(255, 255, 255, 0.95); /* White overlay underneath text */
-    padding: 2rem;
-    border-radius: 0.5rem;
-    /* No negative margins - overlay only covers text content area */
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
   }
 }
 
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(100%);
+  }
+}

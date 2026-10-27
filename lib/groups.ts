@@ -1,6 +1,7 @@
 import { db } from '@vercel/postgres';
 import { sql } from './db';
-import { Group, GroupMember } from './types';
+import { CrewMember, Group, GroupMember } from './types';
+import { CREW_COLOR_COUNT, getDisplayName } from './display';
 
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -24,6 +25,76 @@ export async function getVisibleEmails(userEmail: string): Promise<string[]> {
     emails.add(row.email as string);
   }
   return Array.from(emails);
+}
+
+/**
+ * A person's colour comes from their email, not from where they sit in someone's crew list, so
+ * everyone sees the same colour for the same person. When two people in one crew hash to the same
+ * colour, the one whose email sorts later moves to the next free colour; that only depends on who
+ * is in the crew, so viewers with the same crew still agree.
+ */
+function assignColors(emails: string[]): Map<string, number> {
+  const colors = new Map<string, number>();
+  const taken = new Set<number>();
+  for (const email of [...emails].sort()) {
+    // FNV-1a: small, stable, and spreads similar emails apart
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < email.length; i++) {
+      hash = Math.imul(hash ^ email.charCodeAt(i), 0x01000193) >>> 0;
+    }
+    let color = hash % CREW_COLOR_COUNT;
+    for (let step = 0; step < CREW_COLOR_COUNT && taken.has(color); step++) {
+      color = (color + 1) % CREW_COLOR_COUNT;
+    }
+    taken.add(color);
+    colors.set(email, color);
+  }
+  return colors;
+}
+
+/**
+ * The viewer plus everyone in `visibleEmails`, with display names and colours (see assignColors).
+ * The viewer comes first, then crew-mates in the order they joined.
+ */
+export async function getCrew(viewer: { email: string; visibleEmails: string[] }): Promise<CrewMember[]> {
+  const result = await sql`
+    SELECT m.user_email as "email", MIN(g.created_at) as "groupCreated", MIN(m.created_at) as "joined", p.name
+    FROM group_members m
+    JOIN groups g ON g.id = m.group_id
+    LEFT JOIN profiles p ON p.email = m.user_email
+    WHERE m.status = 'active' AND m.user_email = ANY(${viewer.visibleEmails as any}::text[])
+      AND m.group_id IN (SELECT group_id FROM group_members WHERE user_email = ${viewer.email} AND status = 'active')
+    GROUP BY m.user_email, p.name
+    ORDER BY MIN(g.created_at) ASC, MIN(m.created_at) ASC, m.user_email ASC
+  `;
+
+  const rows = result.rows.length > 0 ? result.rows : [{ email: viewer.email, name: await getProfileName(viewer.email) }];
+  const colors = assignColors(rows.map((row) => row.email as string));
+  const crew: CrewMember[] = rows.map((row) => ({
+    email: row.email as string,
+    name: (row.name as string | null) || getDisplayName(row.email as string),
+    color: colors.get(row.email as string)!,
+    isMe: row.email === viewer.email,
+  }));
+  return crew.sort((a, b) => Number(b.isMe) - Number(a.isMe));
+}
+
+async function getProfileName(email: string): Promise<string | null> {
+  const result = await sql`SELECT name FROM profiles WHERE email = ${email}`;
+  return (result.rows[0]?.name as string) || null;
+}
+
+/** Set your own display name; an empty name goes back to the default from your email. */
+export async function setProfileName(email: string, name: string): Promise<void> {
+  const me = normalizeEmail(email);
+  if (!name) {
+    await sql`DELETE FROM profiles WHERE email = ${me}`;
+    return;
+  }
+  await sql`
+    INSERT INTO profiles (email, name) VALUES (${me}, ${name})
+    ON CONFLICT (email) DO UPDATE SET name = ${name}, updated_at = NOW()
+  `;
 }
 
 /**
