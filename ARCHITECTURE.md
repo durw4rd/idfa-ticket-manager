@@ -20,11 +20,11 @@ Browser ──► middleware.ts (NextAuth JWT check; redirects to /login)
 - **Screening**: not a table. Tickets with the same `act|date|start` are grouped in memory (`groupTicketsIntoScreenings` in `lib/db.ts`). The screening id in URLs is that key, URL-encoded; `parseScreeningKey` splits from the right because titles can contain `|`.
 - **Rating**: one per `(user_email, act, festival_year)`, 1–10 plus optional comment.
 - **Group / group_members**: sharing groups. Members are `owner` or `member`, `invited` or `active`.
-- **Crew**: the viewer plus everyone in `visibleEmails`, with a display name and a colour (`getCrew` in `lib/groups.ts`). Colours are derived from the email, so everyone sees the same colour for the same person.
-- **Profile**: `profiles(email, name)`, an optional display name a user sets on the Crew page. Without one, `getDisplayName` derives it from the email ("misa.fasa@…" → "Misa").
+- **Crew**: the viewer plus everyone in `visibleEmails`, with a display name, a badge and a colour (`getCrew` in `lib/groups.ts`, `assignCrewLooks` in `lib/display.ts`). A badge brings its own colour; people without one get a colour derived from their email, so everyone sees the same look for the same person.
+- **Profile**: `profiles(email, name, badge)`, set on the Crew page. `name` is an optional display name; without one, `getDisplayName` derives it from the email ("misa.fasa@…" → "Misa"). `badge` is one of the cinema icons in `BADGES` (`lib/display.ts`), or null for their initial. A badge is unique within a crew: picking one someone in your crew has is refused, joining a group where someone has yours clears it, and when overlapping crews still put two of the same badge in front of a viewer, whoever joined any group first keeps it (then by email), so every viewer agrees.
 - **Festival year**: derived from the ticket's date. `/screenings?year=YYYY` picks the year; years before the current one render as a recap.
 
-Schema lives in `migrations/` (run by hand, in order: `000-base-schema.sql`, `add-festival-link.sql`, `002-multi-user-multi-year.sql`, `003-ticket-holders-and-profiles.sql`).
+Schema lives in `migrations/` (run by hand, in order: `000-base-schema.sql`, `add-festival-link.sql`, `002-multi-user-multi-year.sql`, `003-ticket-holders-and-profiles.sql`, `004-profile-badges.sql`).
 
 ## Data visibility
 
@@ -51,7 +51,7 @@ The core rule: **reads are scoped to `visibleEmails`, writes to the owner's own 
 
 **Poster** (`app/api/agenda/poster`): an `ImageResponse` PNG of the whole festival for `?who=all|<crew index>`. Fonts are static Archivo TTFs fetched from Google Fonts on first use and cached in memory (`lib/poster-fonts.ts`), falling back to the built-in font. The client shares it with `navigator.share({ files })` or downloads it.
 
-**Groups** (`lib/groups.ts`, `app/api/groups`): one POST endpoint with an `action` field (`create`, `invite`, `accept`, `leave`, `remove`). Every membership change runs in a transaction holding a per-group advisory lock (`withGroupLock`). Removing the last owner promotes the longest-standing active member; a group with no active members is deleted.
+**Groups** (`lib/groups.ts`, `app/api/groups`): one POST endpoint with an `action` field (`create`, `rename`, `invite`, `accept`, `leave`, `remove`). Every membership change runs in a transaction holding a per-group advisory lock (`withGroupLock`). Removing the last owner promotes the longest-standing active member; a group with no active members is deleted.
 
 ## LaunchDarkly
 

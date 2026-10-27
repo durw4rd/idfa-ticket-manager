@@ -119,7 +119,7 @@ export function screeningsToRate(
 export function makeCrewLookup(crew: CrewMember[]): (email: string) => CrewMember {
   const byEmail = new Map(crew.map((member) => [member.email, member]));
   return (email) =>
-    byEmail.get(email) || { email, name: getDisplayName(email), color: CREW_COLOR_COUNT - 1, isMe: false };
+    byEmail.get(email) || { email, name: getDisplayName(email), color: CREW_COLOR_COUNT - 1, badge: null, isMe: false };
 }
 
 export function screeningHref(screening: Pick<AgendaScreening, 'id'>): string {

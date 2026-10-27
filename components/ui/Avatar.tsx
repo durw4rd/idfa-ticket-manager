@@ -1,9 +1,27 @@
+import { Clapperboard, Drama, Film, Popcorn, Projector, Video, type LucideIcon } from 'lucide-react';
 import type { CrewMember } from '@/lib/types';
-import { getInitials } from '@/lib/display';
+import { type Badge, getInitials } from '@/lib/display';
+
+export const BADGE_ICONS: Record<Badge, LucideIcon> = {
+  clapper: Clapperboard,
+  popcorn: Popcorn,
+  projector: Projector,
+  film: Film,
+  masks: Drama,
+  camera: Video,
+};
 
 // Literal class names so Tailwind keeps them (see the crew tokens in app/globals.css)
 const CREW_BG = ['bg-crew-0', 'bg-crew-1', 'bg-crew-2', 'bg-crew-3', 'bg-crew-4', 'bg-crew-5'];
 const CREW_TEXT = ['text-crew-0', 'text-crew-1', 'text-crew-2', 'text-crew-3', 'text-crew-4', 'text-crew-5'];
+const CREW_TINT = [
+  'bg-crew-0/[0.15]',
+  'bg-crew-1/[0.15]',
+  'bg-crew-2/[0.15]',
+  'bg-crew-3/[0.15]',
+  'bg-crew-4/[0.15]',
+  'bg-crew-5/[0.15]',
+];
 
 const CREW_BORDER = [
   'border-crew-0',
@@ -33,22 +51,40 @@ const SIZES = {
   lg: 'h-12 w-12 text-base',
 };
 
+const ICON_SIZES = {
+  xs: 'h-3 w-3',
+  sm: 'h-3.5 w-3.5',
+  md: 'h-5 w-5',
+  lg: 'h-7 w-7',
+};
+
+/**
+ * A person: their badge in their crew colour on a tint of it, or their initial in ink on the tint
+ * (crew colour on its own tint is under 4.5:1, too faint for small text). The tint sits on an
+ * opaque surface, so stacked avatars don't show through each other.
+ */
 export function Avatar({
   member,
   size = 'sm',
   className = '',
 }: {
-  member: Pick<CrewMember, 'name' | 'color'>;
+  member: Pick<CrewMember, 'name' | 'color' | 'badge'>;
   size?: keyof typeof SIZES;
   className?: string;
 }) {
+  const Icon = member.badge ? BADGE_ICONS[member.badge] : null;
   return (
     <span
       title={member.name}
-      className={`inline-flex shrink-0 items-center justify-center rounded-full font-bold text-on-crew
-        ${crewBg(member.color)} ${SIZES[size]} ${className}`}
+      className={`relative inline-flex shrink-0 items-center justify-center rounded-full bg-surface font-bold
+        ${Icon ? crewText(member.color) : 'text-ink'} ${SIZES[size]} ${className}`}
     >
-      {getInitials(member.name)}
+      <span className={`absolute inset-0 rounded-full ${CREW_TINT[member.color % CREW_TINT.length]}`} aria-hidden />
+      {Icon ? (
+        <Icon className={`relative ${ICON_SIZES[size]}`} strokeWidth={2.25} aria-hidden />
+      ) : (
+        <span className="relative">{getInitials(member.name)}</span>
+      )}
     </span>
   );
 }
@@ -58,7 +94,7 @@ export function AvatarStack({
   members,
   size = 'sm',
 }: {
-  members: Pick<CrewMember, 'name' | 'color' | 'email'>[];
+  members: Pick<CrewMember, 'name' | 'color' | 'badge' | 'email'>[];
   size?: keyof typeof SIZES;
 }) {
   return (
