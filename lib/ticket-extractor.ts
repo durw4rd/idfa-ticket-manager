@@ -8,7 +8,15 @@ import { getLdClient } from './launchdarkly';
 // The variation served decides the provider (OpenAI or Anthropic) at runtime.
 export const TICKET_EXTRACTION_CONFIG_KEY = 'ticket-extraction';
 
-const handlers = [createOpenAIHandler(), createClaudeMessagesHandler()];
+// Created on first use: the OpenAI handler throws when OPENAI_API_KEY isn't set, which would
+// otherwise break importing this module even for callers that never reach a model
+let handlers: ReturnType<typeof createHandlers> | undefined;
+function createHandlers() {
+  return [createOpenAIHandler(), createClaudeMessagesHandler()];
+}
+function getHandlers() {
+  return (handlers ??= createHandlers());
+}
 
 export interface ExtractedTicketData {
   act: string;
@@ -93,7 +101,7 @@ async function extractWithAgentControl(base64Image: string, context: LDContext):
     },
   ];
 
-  const result = await config({ key: TICKET_EXTRACTION_CONFIG_KEY, handler: handlers }).invoke(
+  const result = await config({ key: TICKET_EXTRACTION_CONFIG_KEY, handler: getHandlers() }).invoke(
     'Extract the ticket information from this ticket page.',
     context,
     {},
