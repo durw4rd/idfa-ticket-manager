@@ -51,6 +51,8 @@ The core rule: **reads are scoped to `visibleEmails`, writes to the owner's own 
 
 **Poster** (`app/api/agenda/poster`): an `ImageResponse` PNG of the whole festival for `?who=all|<crew index>`. Fonts are static Archivo TTFs fetched from Google Fonts on first use and cached in memory (`lib/poster-fonts.ts`), falling back to the built-in font. The client shares it with `navigator.share({ files })` or downloads it.
 
+**Film overviews and availability** (`lib/idfa.ts`): a screening's stored festival link names its IDFA page (`/film/<id>` or `/composition/<id>`). The detail page shows that page's intro as a short synopsis (`getFilmOverview`, cached 24h). `getAvailabilityForScreenings` looks up the matching show (same start time) for every upcoming screening and marks it **Sold out** or **Few left** in the agenda, on the detail page and on the poster, so friends can see which screenings they can still join. It's cached for 10 minutes per film with `unstable_cache`, limited to 3s per page load, behind the `idfa-availability` kill switch (default on), and gives no marks when IDFA can't be reached. Screenings without a festival link get neither.
+
 **Groups** (`lib/groups.ts`, `app/api/groups`): one POST endpoint with an `action` field (`create`, `rename`, `invite`, `accept`, `leave`, `remove`). Every membership change runs in a transaction holding a per-group advisory lock (`withGroupLock`). Removing the last owner promotes the longest-standing active member; a group with no active members is deleted.
 
 ## LaunchDarkly
@@ -82,6 +84,7 @@ All ticket times are Amsterdam wall-clock times; servers run in UTC. Always go t
 | `components/` | Feature components by area (`agenda/`, `tickets/`, `screening/`, `upload/`); client components are marked `'use client'` |
 | `lib/agenda.ts` | Client-safe agenda logic: serialisation, filters, clashes, rating queue |
 | `lib/db.ts` | All ticket and rating SQL, screening grouping |
+| `lib/idfa.ts` | IDFA website GraphQL client: search, film overviews, ticket availability |
 | `lib/groups.ts` | Group SQL, visibility, locking |
 | `lib/types.ts` | Shared interfaces |
 | `lib/venue-backgrounds.ts`, `public/bcg-*` | Venue name → banner image on the detail page |

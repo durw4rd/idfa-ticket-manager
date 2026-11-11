@@ -3,6 +3,7 @@ import { config, type LDContext } from '@launchdarkly/ai-server';
 import { createOpenAIHandler } from '@launchdarkly/ai-openai-messages';
 import { createClaudeMessagesHandler } from '@launchdarkly/ai-claude-messages';
 import { evaluateBooleanFlag, getLdClient } from './launchdarkly';
+import { queryIdfa, UUID_PATTERN } from './idfa';
 
 // AgentControl config with the prompt that picks a film's IDFA page from site search results.
 // Its messages use the {{movieTitle}}, {{festivalYear}} and {{candidates}} variables.
@@ -47,27 +48,7 @@ function formatCandidates(candidates: FestivalCandidate[]): string {
     .join('\n');
 }
 
-const IDFA_GRAPHQL_URL = 'https://my.idfa.nl/api/graphql';
 const SEARCH_LIMIT = 8;
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-// The public GraphQL API behind the IDFA website's search
-async function queryIdfa<T>(endpoint: 'institute' | 'global', query: string, variables: Record<string, unknown>): Promise<T> {
-  const response = await fetch(`${IDFA_GRAPHQL_URL}/${endpoint}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Default-Language': 'en' },
-    body: JSON.stringify({ query, variables }),
-    signal: AbortSignal.timeout(5000),
-  });
-  if (!response.ok) {
-    throw new Error(`IDFA search returned ${response.status}`);
-  }
-  const body = await response.json();
-  if (body.errors?.length) {
-    throw new Error(`IDFA search failed: ${body.errors[0].message}`);
-  }
-  return body.data as T;
-}
 
 // The film archive covers every edition, including the current one, but has no shorts programs
 const ARCHIVE_FILMS_QUERY = `query ($query: String!, $filters: [ArchiveFilterInput!], $limit: Int!) {

@@ -9,6 +9,8 @@ import { holdersOf, makeCrewLookup, toAgendaScreening } from '@/lib/agenda';
 import { getVenueBackground } from '@/lib/venue-backgrounds';
 import { getFestivalLinkForScreening } from '@/lib/festival-links';
 import { getMapSearchUrl } from '@/lib/maps-utils';
+import { getAvailabilityForScreenings, getFilmOverview } from '@/lib/idfa';
+import { userContext } from '@/lib/launchdarkly';
 import PageHeader from '@/components/PageHeader';
 import { AvatarStack } from '@/components/ui/Avatar';
 import { ButtonLink } from '@/components/ui/Button';
@@ -17,6 +19,7 @@ import AddToCalendarButton from '@/components/AddToCalendarButton';
 import ScreeningTickets from '@/components/screening/ScreeningTickets';
 import RatingInput from '@/components/RatingInput';
 import CrewRatings from '@/components/CrewRatings';
+import AvailabilityMark from '@/components/AvailabilityMark';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,10 +56,16 @@ export default async function ScreeningDetailPage({
 
   const lookup = makeCrewLookup(crew);
   const startsAt = screening.dateTime;
-  const started = startsAt <= getNow();
+  const now = getNow();
+  const started = startsAt <= now;
   const venueImage = getVenueBackground(screening.location);
-  const [festivalLink, ratings] = await Promise.all([
-    getFestivalLinkForScreening(screening),
+  const [{ festivalLink, overview }, availability, ratings] = await Promise.all([
+    getFestivalLinkForScreening(screening).then(async (link) => ({
+      festivalLink: link,
+      overview: await getFilmOverview(link, screening.act),
+    })),
+    // Past screenings are skipped inside, so this makes no request once the film has started
+    getAvailabilityForScreenings([screening], now, userContext(viewer.email)).then((marks) => marks.get(screening.id)),
     getRatingsByMovie(viewer.visibleEmails, screening.act, screening.festivalYear),
   ]);
   const myRating = ratings.find((rating) => rating.userEmail === viewer.email);
@@ -96,8 +105,26 @@ export default async function ScreeningDetailPage({
           <p className="text-ink-2">{screening.location}</p>
           <div className="mt-3 flex items-center gap-2 text-sm text-ink-2">
             <AvatarStack members={holders} />
-            <span>{holders.map((member) => (member.isMe ? 'You' : member.name)).join(' & ')}</span>
+            <span className="min-w-0">{holders.map((member) => (member.isMe ? 'You' : member.name)).join(' & ')}</span>
+            {availability && <AvailabilityMark availability={availability} className="ml-auto" />}
           </div>
+
+          {overview && (
+            <div className="mt-4 text-sm text-ink-2">
+              <p className="text-pretty">{overview}</p>
+              {festivalLink && (
+                <a
+                  href={festivalLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1.5 inline-flex items-center gap-1 font-semibold text-ink underline-offset-4 hover:underline"
+                >
+                  Read more on IDFA
+                  <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                </a>
+              )}
+            </div>
+          )}
 
           <div className="-mx-4 mt-5 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none]">
             <ButtonLink

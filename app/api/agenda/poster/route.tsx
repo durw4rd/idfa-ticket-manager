@@ -5,8 +5,17 @@ import { ImageResponse } from 'next/og';
 import { requireAuth } from '@/lib/auth-helpers';
 import { getScreeningsForYear } from '@/lib/db';
 import { getCrew } from '@/lib/groups';
-import { getCurrentFestivalYear, formatDate, formatTime } from '@/lib/dates';
-import { filterByPerson, groupByDay, holdersOf, makeCrewLookup, toAgendaScreening } from '@/lib/agenda';
+import { getCurrentFestivalYear, formatDate, formatTime, getNow } from '@/lib/dates';
+import {
+  filterByPerson,
+  groupByDay,
+  holdersOf,
+  makeCrewLookup,
+  toAgendaScreening,
+  withAvailability,
+} from '@/lib/agenda';
+import { getAvailabilityForScreenings } from '@/lib/idfa';
+import { userContext } from '@/lib/launchdarkly';
 import { getPosterFonts } from '@/lib/poster-fonts';
 import { BADGE_ICONS } from '@/components/ui/Avatar';
 
@@ -19,6 +28,7 @@ const INK = '#111111';
 const PAPER = '#FAFAF7';
 const MUTED = '#9C9B94';
 const SPARK = '#FFD600';
+const DANGER = '#FF6B5B'; // --danger in dark mode, app/globals.css
 // Crew colours as hex (satori can't read CSS variables); the dark-mode values from app/globals.css
 const CREW_HEX = ['#FF7057', '#6A92FF', '#38C496', '#BE80FF', '#FF66AA', '#30C4D8'];
 
@@ -71,8 +81,11 @@ export async function GET(request: NextRequest) {
   const year = Number(params.get('year')) || getCurrentFestivalYear();
   const whoParam = params.get('who') || 'all';
 
-  const [screenings, crew, fonts] = await Promise.all([
-    getScreeningsForYear(viewer.visibleEmails, year),
+  const [{ screenings, availability }, crew, fonts] = await Promise.all([
+    getScreeningsForYear(viewer.visibleEmails, year).then(async (screenings) => ({
+      screenings,
+      availability: await getAvailabilityForScreenings(screenings, getNow(), userContext(viewer.email)),
+    })),
     getCrew(viewer),
     getPosterFonts(),
   ]);
@@ -83,7 +96,11 @@ export async function GET(request: NextRequest) {
   }
 
   const lookup = makeCrewLookup(crew);
-  const agenda = filterByPerson(screenings.map(toAgendaScreening), person ? person.email : 'all');
+  const agenda = filterByPerson(
+    withAvailability(screenings.map(toAgendaScreening), availability),
+    person ? person.email : 'all'
+  );
+  const soldOut = agenda.filter((screening) => screening.availability === 'sold-out').length;
   const days = groupByDay(agenda);
   const subtitle = person ? person.name : crew.map((member) => member.name).join(' · ');
   const display = fonts.length > 0 ? 'Archivo Display' : undefined;
@@ -124,6 +141,7 @@ export async function GET(request: NextRequest) {
           <div style={{ ...ONE_LINE, fontSize: 44, lineHeight: '56px', marginTop: 16, color: SPARK }}>{subtitle}</div>
           <div style={{ display: 'flex', fontSize: 30, marginTop: 8, color: MUTED }}>
             {`${agenda.length} ${agenda.length === 1 ? 'screening' : 'screenings'} · ${days.length} ${days.length === 1 ? 'day' : 'days'}`}
+            {soldOut > 0 && <span style={{ color: DANGER, marginLeft: 12 }}>{`· ${soldOut} sold out`}</span>}
           </div>
         </div>
 
@@ -174,8 +192,22 @@ export async function GET(request: NextRequest) {
                     >
                       {screening.act}
                     </div>
-                    <div style={{ ...ONE_LINE, fontSize: 28, lineHeight: `${VENUE_LINE}px`, color: MUTED }}>
-                      {screening.location}
+                    <div style={{ display: 'flex', fontSize: 28, lineHeight: `${VENUE_LINE}px`, color: MUTED }}>
+                      <div style={{ ...ONE_LINE, flexShrink: 1, minWidth: 0 }}>{screening.location}</div>
+                      {/* Tells friends which screenings they can't join any more */}
+                      {screening.availability && (
+                        <div
+                          style={{
+                            flexShrink: 0,
+                            marginLeft: 16,
+                            letterSpacing: 2,
+                            textTransform: 'uppercase',
+                            color: screening.availability === 'sold-out' ? DANGER : PAPER,
+                          }}
+                        >
+                          {screening.availability === 'sold-out' ? 'Sold out' : 'Few left'}
+                        </div>
+                      )}
                     </div>
                   </div>
                   {!person && (
