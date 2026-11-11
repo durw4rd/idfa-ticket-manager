@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { AlertTriangle } from 'lucide-react';
+import AvailabilityMark from '@/components/AvailabilityMark';
 import type { AgendaScreening, CrewMember } from '@/lib/types';
 import { formatDayHeading, formatTime } from '@/lib/dates';
 import { type AgendaDay, holdersOf, isTogether, screeningHref } from '@/lib/agenda';
@@ -77,14 +78,16 @@ function ScreeningRow({
           <span className={`block font-display text-lg leading-tight ${past ? 'text-ink-3' : ''}`}>
             {screening.act}
           </span>
-          <span className="mt-1 flex items-center gap-2 text-sm text-ink-2">
-            <span className={`truncate ${past ? 'text-ink-3' : ''}`}>{screening.location}</span>
+          {/* Wraps so a clashing, sold-out screening with several holders fits on narrow phones */}
+          <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-2">
+            <span className={`min-w-0 truncate ${past ? 'text-ink-3' : ''}`}>{screening.location}</span>
             {clash && (
               <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-danger">
                 <AlertTriangle className="h-3.5 w-3.5" />
                 Clash
               </span>
             )}
+            {!past && screening.availability && <AvailabilityMark availability={screening.availability} />}
             <span className="ml-auto flex shrink-0 items-center gap-1.5">
               {isTogether(screening) && <span className="text-xs font-semibold text-ink-2">Together</span>}
               <AvatarStack members={holders} size="xs" />
