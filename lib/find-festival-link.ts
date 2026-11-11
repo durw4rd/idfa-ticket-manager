@@ -8,10 +8,18 @@ import { queryIdfa, UUID_PATTERN } from './idfa';
 // AgentControl config with the prompt that picks a film's IDFA page from site search results.
 // Its messages use the {{movieTitle}}, {{festivalYear}} and {{candidates}} variables.
 export const FESTIVAL_LINK_CONFIG_KEY = 'festival-link-finder';
-// Kill switch for the AI lookup
+// Kill switch for the model pick (exact title matches don't need it)
 export const FESTIVAL_LINK_FLAG_KEY = 'festival-link-ai';
 
-const handlers = [createOpenAIHandler(), createClaudeMessagesHandler()];
+// Created on first use: the OpenAI handler throws when OPENAI_API_KEY isn't set, which would
+// otherwise break importing this module even for callers that never reach a model
+let handlers: ReturnType<typeof createHandlers> | undefined;
+function createHandlers() {
+  return [createOpenAIHandler(), createClaudeMessagesHandler()];
+}
+function getHandlers() {
+  return (handlers ??= createHandlers());
+}
 
 // Used as the LaunchDarkly config's user message, and by the fallback below
 export const FESTIVAL_LINK_PROMPT = `A ticket for IDFA (International Documentary Film Festival Amsterdam) {{festivalYear}} shows this title: "{{movieTitle}}"
@@ -114,7 +122,7 @@ async function pickWithAgentControl(
   candidates: string,
   context: LDContext
 ): Promise<string> {
-  const result = await config({ key: FESTIVAL_LINK_CONFIG_KEY, handler: handlers }).invoke(undefined, context, {
+  const result = await config({ key: FESTIVAL_LINK_CONFIG_KEY, handler: getHandlers() }).invoke(undefined, context, {
     movieTitle,
     festivalYear,
     candidates,
@@ -154,6 +162,36 @@ function parsePick(content: string, candidates: FestivalCandidate[]): FestivalCa
 // The model's deliberate "no match" answer, as opposed to a response in some other format
 function isNullAnswer(content: string): boolean {
   return /^["'`]?null["'`]?\.?$/i.test(content.trim());
+}
+
+/**
+ * A title reduced to what tickets and the website reliably agree on: no accents, case,
+ * punctuation or leading article ("Kabul, Between Prayers" and "Kabul Between Prayers" match).
+ */
+function comparableTitle(title: string): string {
+  return title
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    // Any script's letters and digits count, so "Love 愛" and "Love 恨" stay different
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .replace(/^(the|a|an) /, '');
+}
+
+/**
+ * The one search result whose title is the ticket's title, or null when none or several are.
+ * Most tickets name the film exactly as the website does, and those need no model to pick.
+ */
+function pickExactTitle(movieTitle: string, candidates: FestivalCandidate[]): FestivalCandidate | null {
+  const wanted = comparableTitle(movieTitle);
+  if (!wanted) {
+    return null;
+  }
+  const matches = candidates.filter((c) => comparableTitle(c.title) === wanted);
+  const ids = new Set(matches.map((c) => `${c.kind}:${c.id}`));
+  return ids.size === 1 ? matches[0] : null;
 }
 
 function slugify(title: string): string {
@@ -215,25 +253,36 @@ export async function verifyFestivalLink(url: string): Promise<boolean> {
 }
 
 /**
- * Finds the IDFA festival page URL for a movie title: searches the IDFA website,
- * then has the model from the LaunchDarkly AgentControl config (with a hardcoded
- * OpenAI fallback) pick the matching result. Only links that resolve to a real page are returned.
+ * Finds the IDFA festival page URL for a movie title: searches the IDFA website and takes the one
+ * result with the same title. Only when there's no such result (or several) does the model from the
+ * LaunchDarkly AgentControl config (with a hardcoded OpenAI fallback) pick one. Only links that
+ * resolve to a real page are returned.
  */
 export async function findFestivalLink(
   movieTitle: string,
   festivalYear: number,
   context: LDContext
 ): Promise<string | null> {
-  const enabled = await evaluateBooleanFlag(FESTIVAL_LINK_FLAG_KEY, context, true);
-  if (!enabled.value) {
-    return null;
-  }
-
   try {
     const candidates = await searchFestival(movieTitle, festivalYear);
     if (candidates.length === 0) {
       return null;
     }
+
+    const exact = pickExactTitle(movieTitle, candidates);
+    if (exact) {
+      const url = festivalUrl(exact);
+      if (await verifyFestivalLink(url)) {
+        return url;
+      }
+    }
+
+    // The kill switch covers the model pick only; exact title matches above don't use it
+    const enabled = await evaluateBooleanFlag(FESTIVAL_LINK_FLAG_KEY, context, true);
+    if (!enabled.value) {
+      return null;
+    }
+
     const candidateList = formatCandidates(candidates);
 
     let content: string | undefined;
