@@ -1,6 +1,6 @@
 // Agenda logic shared by server pages and client components. Pure functions, no database access.
 
-import type { AgendaScreening, CrewMember, Rating, Screening } from './types';
+import type { AgendaScreening, CrewMember, Rating, Screening, TicketAvailability } from './types';
 import { DEFAULT_SCREENING_MINUTES, festivalDayKey, festivalDayStart } from './dates';
 import { CREW_COLOR_COUNT, getDisplayName } from './display';
 
@@ -13,12 +13,21 @@ export function toAgendaScreening(screening: Screening): AgendaScreening {
     festivalYear: screening.festivalYear,
     startsAt: screening.dateTime.toISOString(),
     festivalLink: screening.tickets.find((ticket) => ticket.festivalLink)?.festivalLink || null,
+    availability: null,
     tickets: screening.tickets.map((ticket) => ({
       id: ticket.id,
       ownerEmail: ticket.ownerEmail,
       holderEmail: ticket.holderEmail,
     })),
   };
+}
+
+/** Attach IDFA ticket availability (from getAvailabilityForScreenings in lib/idfa.ts) */
+export function withAvailability(
+  screenings: AgendaScreening[],
+  availability: Map<string, TicketAvailability>
+): AgendaScreening[] {
+  return screenings.map((screening) => ({ ...screening, availability: availability.get(screening.id) ?? null }));
 }
 
 /** Everyone holding a ticket for the screening, in ticket order */

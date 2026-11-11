@@ -3,7 +3,9 @@ import { getFestivalYears, getScreeningsForYear } from '@/lib/db';
 import { getCrew } from '@/lib/groups';
 import { getViewer } from '@/lib/auth-helpers';
 import { getCurrentFestivalYear, getNow } from '@/lib/dates';
-import { toAgendaScreening } from '@/lib/agenda';
+import { toAgendaScreening, withAvailability } from '@/lib/agenda';
+import { getAvailabilityForScreenings } from '@/lib/idfa';
+import { userContext } from '@/lib/launchdarkly';
 import AgendaView from '@/components/agenda/AgendaView';
 import SharePosterButton from '@/components/agenda/SharePosterButton';
 
@@ -27,15 +29,18 @@ export default async function ScreeningsPage({
     getFestivalYears(viewer.visibleEmails),
     getCrew(viewer),
   ]);
+  const now = getNow();
+  // Only upcoming screenings are checked, so recap years make no IDFA requests
+  const availability = await getAvailabilityForScreenings(screenings, now, userContext(viewer.email));
   const years = Array.from(new Set([currentYear, year, ...festivalYears])).sort((a, b) => b - a);
 
   return (
     <AgendaView
-      screenings={screenings.map(toAgendaScreening)}
+      screenings={withAvailability(screenings.map(toAgendaScreening), availability)}
       crew={crew}
       year={year}
       years={years}
-      now={getNow().toISOString()}
+      now={now.toISOString()}
       actions={screenings.length > 0 ? <SharePosterButton key="share" year={year} crew={crew} /> : undefined}
     />
   );

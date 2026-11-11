@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { AlertTriangle } from 'lucide-react';
+import AvailabilityMark from '@/components/AvailabilityMark';
 import type { AgendaScreening, CrewMember } from '@/lib/types';
 import { formatDayHeading, formatTime } from '@/lib/dates';
 import { type AgendaDay, holdersOf, isTogether, screeningHref } from '@/lib/agenda';
@@ -85,6 +86,7 @@ function ScreeningRow({
                 Clash
               </span>
             )}
+            {!past && screening.availability && <AvailabilityMark availability={screening.availability} />}
             <span className="ml-auto flex shrink-0 items-center gap-1.5">
               {isTogether(screening) && <span className="text-xs font-semibold text-ink-2">Together</span>}
               <AvatarStack members={holders} size="xs" />
