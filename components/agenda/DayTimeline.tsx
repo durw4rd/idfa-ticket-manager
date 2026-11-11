@@ -7,6 +7,7 @@ import type { AgendaScreening, CrewMember } from '@/lib/types';
 import { DEFAULT_SCREENING_MINUTES, formatDate, formatTime, hourOfDay } from '@/lib/dates';
 import { type AgendaDay, holdersOf, screeningHref } from '@/lib/agenda';
 import { Avatar, crewBg, crewBorder } from '@/components/ui/Avatar';
+import AvailabilityMark from '@/components/AvailabilityMark';
 import type { RowMarks } from './AgendaList';
 
 const LENGTH_HOURS = DEFAULT_SCREENING_MINUTES / 60;
@@ -175,7 +176,12 @@ export default function DayTimeline({
                   <span className="text-sm font-semibold tabular-nums">{formatTime(start)}</span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-display text-base leading-tight">{selected.act}</span>
-                    <span className="block truncate text-xs text-ink-2">{selected.location}</span>
+                    <span className="flex items-center gap-2 text-xs text-ink-2">
+                      <span className="min-w-0 truncate">{selected.location}</span>
+                      {start > marks.now && selected.availability && (
+                        <AvailabilityMark availability={selected.availability} />
+                      )}
+                    </span>
                   </span>
                   <ChevronRight className="h-5 w-5 shrink-0 text-ink-3" />
                 </Link>

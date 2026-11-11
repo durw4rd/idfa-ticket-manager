@@ -89,6 +89,9 @@ export interface CrewMember {
   isMe: boolean;
 }
 
+// Ticket sales on the IDFA site for a screening; screenings with plenty left aren't marked
+export type TicketAvailability = 'sold-out' | 'low';
+
 // A screening as sent to client components: plain JSON, no blob URLs
 export interface AgendaTicket {
   id: string;
@@ -103,5 +106,6 @@ export interface AgendaScreening {
   festivalYear: number;
   startsAt: string; // ISO timestamp
   festivalLink: string | null;
+  availability: TicketAvailability | null; // Filled in by withAvailability for upcoming screenings
   tickets: AgendaTicket[];
 }
