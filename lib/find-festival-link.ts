@@ -174,7 +174,8 @@ function comparableTitle(title: string): string {
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/&/g, ' and ')
-    .replace(/[^a-z0-9]+/g, ' ')
+    // Any script's letters and digits count, so "Love 愛" and "Love 恨" stay different
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim()
     .replace(/^(the|a|an) /, '');
 }
