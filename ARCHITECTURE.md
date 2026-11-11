@@ -61,7 +61,7 @@ The core rule: **reads are scoped to `visibleEmails`, writes to the owner's own 
 
 AI calls go through `config({ key, handler }).invoke(...)` from `@launchdarkly/ai-server` with OpenAI and Claude handlers; the served variation decides the provider and model. If that throws, the code falls back to a direct OpenAI call to `gpt-5.4-mini` with the same prompt constant.
 
-The festival link finder doesn't ask the model to know URLs. It searches the public GraphQL API behind the IDFA website (`searchArchive` on `my.idfa.nl/api/graphql/institute` for films of that edition year, `searchGlobal` on `.../global` for shorts programs, which only exist for the current edition). The model then picks the matching result by number, and the code builds the URL from that result's ID.
+The festival link finder doesn't ask the model to know URLs. It searches the public GraphQL API behind the IDFA website (`searchArchive` on `my.idfa.nl/api/graphql/institute` for films of that edition year, `searchGlobal` on `.../global` for shorts programs, which only exist for the current edition). When exactly one result has the ticket's title (ignoring case, accents, punctuation and a leading article), it is used without a model; otherwise the model picks the matching result by number. Either way the code builds the URL from that result's ID, so most links are found even when the AI provider is unavailable.
 
 ## Dates and time zones
 
