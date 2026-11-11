@@ -178,27 +178,54 @@ function availabilityOf(shows: IdfaShow[], startsAt: Date): TicketAvailability |
   }
 }
 
-// Pages wait for this, so keep it short; a slow IDFA means no hints rather than a slow page
-const AVAILABILITY_TIMEOUT_MS = 3000;
+// Pages wait for this, so keep it short; a slow IDFA means no hints rather than a slow page.
+// It bounds the whole lookup, including the flag check, which can wait for LaunchDarkly to start.
+const AVAILABILITY_DEADLINE_MS = 3000;
 
 /**
  * Sold-out and low-availability marks for the upcoming screenings among `screenings`, keyed by
  * screening id. Screenings with plenty of tickets left, without an IDFA page, or that IDFA couldn't
- * tell us about are left out. One request per film, all in parallel.
+ * tell us about in time are left out. One request per film, all in parallel.
  */
 export async function getAvailabilityForScreenings(
   screenings: Screening[],
   now: Date,
   context: LDContext
 ): Promise<Map<string, TicketAvailability>> {
-  const result = new Map<string, TicketAvailability>();
   const upcoming = screenings.filter((screening) => screening.dateTime > now);
   if (upcoming.length === 0) {
-    return result;
+    return new Map();
   }
+
+  // Filled in as each film's lookup finishes, so a deadline still returns the ones that made it
+  const marks = new Map<string, TicketAvailability>();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<'timeout'>((resolve) => {
+    timer = setTimeout(() => resolve('timeout'), AVAILABILITY_DEADLINE_MS);
+  });
+
+  try {
+    const outcome = await Promise.race([lookUpAvailability(upcoming, context, marks), deadline]);
+    if (outcome === 'timeout') {
+      console.warn(`IDFA availability check passed ${AVAILABILITY_DEADLINE_MS}ms; showing the ${marks.size} marks found so far`);
+    }
+  } catch (error) {
+    console.warn('Could not check IDFA availability:', error);
+  } finally {
+    clearTimeout(timer);
+  }
+  // A copy, so lookups still running after the deadline can't change what the caller renders
+  return new Map(marks);
+}
+
+async function lookUpAvailability(
+  upcoming: Screening[],
+  context: LDContext,
+  marks: Map<string, TicketAvailability>
+): Promise<'done'> {
   const enabled = await evaluateBooleanFlag(IDFA_AVAILABILITY_FLAG_KEY, context, true);
   if (!enabled.value) {
-    return result;
+    return 'done';
   }
 
   const byFilm = new Map<string, { page: FestivalPage; title: string; screenings: Screening[] }>();
@@ -215,10 +242,11 @@ export async function getAvailabilityForScreenings(
 
   const lookups = await Promise.allSettled(
     Array.from(byFilm.values()).map(async (film) => {
-      const shows = await cachedShows(film.page.kind, film.page.id, film.title, AVAILABILITY_TIMEOUT_MS);
+      // The request timeout matches the deadline so late requests don't linger in the background
+      const shows = await cachedShows(film.page.kind, film.page.id, film.title, AVAILABILITY_DEADLINE_MS);
       for (const screening of film.screenings) {
         const availability = availabilityOf(shows, screening.dateTime);
-        if (availability) result.set(screening.id, availability);
+        if (availability) marks.set(screening.id, availability);
       }
     })
   );
@@ -226,5 +254,5 @@ export async function getAvailabilityForScreenings(
   if (failed.length > 0) {
     console.warn(`Could not check IDFA availability for ${failed.length} film(s):`, (failed[0] as PromiseRejectedResult).reason);
   }
-  return result;
+  return 'done';
 }
