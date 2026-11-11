@@ -115,7 +115,8 @@ const MAX_OVERVIEW_LENGTH = 500;
 /** The site's intros carry a little HTML (<em>, &ldquo;); React would show it literally */
 function toPlainText(html: string): string | null {
   const text = html
-    .replace(/<br\s*\/?>/gi, ' ')
+    // Block boundaries become spaces so paragraphs don't run together; inline tags like <em> just go
+    .replace(/<br\s*\/?>|<\/?(p|div|li|ul|ol|h[1-6]|blockquote)\b[^>]*>/gi, ' ')
     .replace(/<[^>]*>/g, '')
     .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
     .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(Number(dec)))
@@ -165,9 +166,17 @@ export async function getFilmOverview(festivalLink: string | null, title: string
 const SHOW_MATCH_WINDOW_MS = 5 * 60 * 1000;
 
 function availabilityOf(shows: IdfaShow[], startsAt: Date): TicketAvailability | null {
-  const show = shows.find(
-    (s) => s.startOn && Math.abs(new Date(s.startOn).getTime() - startsAt.getTime()) <= SHOW_MATCH_WINDOW_MS
-  );
+  // The nearest show in the window, so an 18:05 ticket doesn't pick up an 18:00 show listed first
+  let show: IdfaShow | undefined;
+  let bestGap = Infinity;
+  for (const candidate of shows) {
+    if (!candidate.startOn) continue;
+    const gap = Math.abs(new Date(candidate.startOn).getTime() - startsAt.getTime());
+    if (gap <= SHOW_MATCH_WINDOW_MS && gap < bestGap) {
+      show = candidate;
+      bestGap = gap;
+    }
+  }
   switch (show?.ticketAvailabilityStatus) {
     case 'SOLD_OUT':
       return 'sold-out';
