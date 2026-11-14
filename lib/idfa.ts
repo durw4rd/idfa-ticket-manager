@@ -144,11 +144,16 @@ const cachedOverview = unstable_cache(
   { revalidate: 24 * 60 * 60 }
 );
 
+// One timeout for every caller, so it isn't part of the cache key: the availability check and the
+// end-time refresh that follows it share one request per film. It matches the availability
+// deadline (AVAILABILITY_DEADLINE_MS) so late requests don't linger in the background.
+const SHOWS_TIMEOUT_MS = 3000;
+
 const cachedShows = unstable_cache(
-  async (kind: FestivalPage['kind'], id: string, title: string, timeoutMs: number) =>
-    (await fetchFilmInfo(kind, id, title, timeoutMs)).shows,
-  // v2: the cached shows gained endOn and hasQa
-  ['idfa-shows-v2'],
+  async (kind: FestivalPage['kind'], id: string, title: string) =>
+    (await fetchFilmInfo(kind, id, title, SHOWS_TIMEOUT_MS)).shows,
+  // v3: the cached shows gained endOn and hasQa, and the timeout left the key
+  ['idfa-shows-v3'],
   // Short enough that a screening selling out shows up the same afternoon
   { revalidate: 10 * 60 }
 );
@@ -233,7 +238,7 @@ export async function getShowDetails(
     return null;
   }
   try {
-    return showDetailsOf(await cachedShows(page.kind, page.id, title, 5000), startsAt);
+    return showDetailsOf(await cachedShows(page.kind, page.id, title), startsAt);
   } catch (error) {
     console.warn(`Could not load the IDFA show times for "${title}":`, error);
     return null;
@@ -242,7 +247,7 @@ export async function getShowDetails(
 
 // Pages wait for this, so keep it short; a slow IDFA means no hints rather than a slow page.
 // It bounds the whole lookup, including the flag check, which can wait for LaunchDarkly to start.
-const AVAILABILITY_DEADLINE_MS = 3000;
+const AVAILABILITY_DEADLINE_MS = SHOWS_TIMEOUT_MS;
 
 /**
  * Sold-out and low-availability marks for the upcoming screenings among `screenings`, keyed by
@@ -292,8 +297,7 @@ async function lookUpAvailability(
 
   const lookups = await Promise.allSettled(
     (await groupByFilm(upcoming)).map(async (film) => {
-      // The request timeout matches the deadline so late requests don't linger in the background
-      const shows = await cachedShows(film.page.kind, film.page.id, film.title, AVAILABILITY_DEADLINE_MS);
+      const shows = await cachedShows(film.page.kind, film.page.id, film.title);
       for (const screening of film.screenings) {
         const availability = availabilityOf(shows, screening.dateTime);
         if (availability) marks.set(screening.id, availability);
@@ -330,9 +334,10 @@ async function groupByFilm(screenings: Screening[]): Promise<FilmScreenings[]> {
 }
 
 /**
- * Bring the stored end time and Q&A in line with the IDFA site, for upcoming screenings (IDFA
- * reschedules) and for this year's screenings that have neither yet (tickets uploaded before the
- * app read them, or edited since). Meant for `after()`: nothing waits for it, and the next page
+ * Bring the stored end time and Q&A in line with the IDFA site: for upcoming screenings (IDFA
+ * corrects end times and adds Q&As), and for this year's screenings with a ticket missing either
+ * (uploaded before the app read them, or edited since). A showing is recognised by its start
+ * time, so one that IDFA moves to another time keeps what it had until the ticket is corrected. Meant for `after()`: nothing waits for it, and the next page
  * load shows the result. The shows are usually already cached by the availability check.
  */
 export async function refreshShowDetails(
@@ -346,7 +351,8 @@ export async function refreshShowDetails(
     const stale = screenings.filter(
       (screening) =>
         screening.dateTime > now ||
-        (screening.festivalYear === currentYear && !screening.endsAt && screening.hasQa == null)
+        (screening.festivalYear === currentYear &&
+          screening.tickets.some((ticket) => !ticket.endsAt || ticket.hasQa == null))
     );
     if (stale.length === 0) {
       return;
@@ -357,9 +363,9 @@ export async function refreshShowDetails(
       return;
     }
 
-    await Promise.allSettled(
+    const refreshes = await Promise.allSettled(
       (await groupByFilm(stale)).map(async (film) => {
-        const shows = await cachedShows(film.page.kind, film.page.id, film.title, 5000);
+        const shows = await cachedShows(film.page.kind, film.page.id, film.title);
         for (const screening of film.screenings) {
           const details = showDetailsOf(shows, screening.dateTime);
           // No matching show tells us nothing, so keep what's stored
@@ -376,6 +382,10 @@ export async function refreshShowDetails(
         }
       })
     );
+    const failed = refreshes.filter((refresh) => refresh.status === 'rejected');
+    if (failed.length > 0) {
+      console.warn(`Could not refresh IDFA show times for ${failed.length} film(s):`, (failed[0] as PromiseRejectedResult).reason);
+    }
   } catch (error) {
     console.warn('Could not refresh IDFA show times:', error);
   }
