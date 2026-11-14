@@ -26,9 +26,9 @@ async function insertTicket(query: typeof sql, ticket: NewTicket): Promise<Ticke
   const startsAt = parseTicketDateTime(ticket.date, ticket.start);
 
   const result = await query`
-    INSERT INTO tickets (act, location, date, start, qr_code_url, pdf_url, transaction_id, festival_link, owner_email, holder_email, festival_year, starts_at, qr_hash)
-    VALUES (${ticket.act}, ${ticket.location}, ${ticket.date}, ${ticket.start}, ${ticket.qrCodeUrl}, ${ticket.pdfUrl}, ${ticket.transactionId || null}, ${ticket.festivalLink || null}, ${ticket.ownerEmail}, ${ticket.holderEmail || ticket.ownerEmail}, ${festivalYear}, ${startsAt.toISOString()}, ${ticket.qrHash || null})
-    RETURNING id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", festival_link as "festivalLink", owner_email as "ownerEmail", holder_email as "holderEmail", festival_year as "festivalYear", starts_at as "startsAt", qr_hash as "qrHash", created_at as "createdAt"
+    INSERT INTO tickets (act, location, date, start, qr_code_url, pdf_url, transaction_id, festival_link, owner_email, holder_email, festival_year, starts_at, qr_hash, ends_at, has_qa)
+    VALUES (${ticket.act}, ${ticket.location}, ${ticket.date}, ${ticket.start}, ${ticket.qrCodeUrl}, ${ticket.pdfUrl}, ${ticket.transactionId || null}, ${ticket.festivalLink || null}, ${ticket.ownerEmail}, ${ticket.holderEmail || ticket.ownerEmail}, ${festivalYear}, ${startsAt.toISOString()}, ${ticket.qrHash || null}, ${ticket.endsAt ? ticket.endsAt.toISOString() : null}, ${ticket.hasQa ?? null})
+    RETURNING id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", festival_link as "festivalLink", owner_email as "ownerEmail", holder_email as "holderEmail", festival_year as "festivalYear", starts_at as "startsAt", qr_hash as "qrHash", ends_at as "endsAt", has_qa as "hasQa", created_at as "createdAt"
   `;
 
   return result.rows[0] as Ticket;
@@ -78,7 +78,7 @@ export async function createTicketUnlessDuplicate(
 
 export async function getTicketsForYear(visibleEmails: string[], year: number): Promise<Ticket[]> {
   const result = await sql`
-    SELECT id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", festival_link as "festivalLink", owner_email as "ownerEmail", holder_email as "holderEmail", festival_year as "festivalYear", starts_at as "startsAt", qr_hash as "qrHash", created_at as "createdAt"
+    SELECT id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", festival_link as "festivalLink", owner_email as "ownerEmail", holder_email as "holderEmail", festival_year as "festivalYear", starts_at as "startsAt", qr_hash as "qrHash", ends_at as "endsAt", has_qa as "hasQa", created_at as "createdAt"
     FROM tickets
     WHERE owner_email = ANY(${visibleEmails as any}::text[]) AND festival_year = ${year}
     ORDER BY starts_at ASC, created_at ASC
@@ -89,7 +89,7 @@ export async function getTicketsForYear(visibleEmails: string[], year: number): 
 
 export async function getTicketById(visibleEmails: string[], id: string): Promise<Ticket | null> {
   const result = await sql`
-    SELECT id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", festival_link as "festivalLink", owner_email as "ownerEmail", holder_email as "holderEmail", festival_year as "festivalYear", starts_at as "startsAt", qr_hash as "qrHash", created_at as "createdAt"
+    SELECT id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", festival_link as "festivalLink", owner_email as "ownerEmail", holder_email as "holderEmail", festival_year as "festivalYear", starts_at as "startsAt", qr_hash as "qrHash", ends_at as "endsAt", has_qa as "hasQa", created_at as "createdAt"
     FROM tickets
     WHERE id = ${id} AND owner_email = ANY(${visibleEmails as any}::text[])
   `;
@@ -104,7 +104,7 @@ export async function getTicketsByScreeningKey(
   start: string
 ): Promise<Ticket[]> {
   const result = await sql`
-    SELECT id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", festival_link as "festivalLink", owner_email as "ownerEmail", holder_email as "holderEmail", festival_year as "festivalYear", starts_at as "startsAt", qr_hash as "qrHash", created_at as "createdAt"
+    SELECT id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", festival_link as "festivalLink", owner_email as "ownerEmail", holder_email as "holderEmail", festival_year as "festivalYear", starts_at as "startsAt", qr_hash as "qrHash", ends_at as "endsAt", has_qa as "hasQa", created_at as "createdAt"
     FROM tickets
     WHERE act = ${act} AND date = ${date} AND start = ${start}
       AND owner_email = ANY(${visibleEmails as any}::text[])
@@ -147,15 +147,18 @@ export async function updateTicketDetails(
   const festivalYear = getFestivalYear(fields.date);
   const startsAt = parseTicketDateTime(fields.date, fields.start);
 
-  // A stored festival link belongs to the old title and year, so drop it when either changes
+  // A stored festival link belongs to the old title and year, so drop it when either changes.
+  // Likewise the end time and Q&A belong to one showing; the next agenda load looks them up again.
   // (the right-hand side of SET sees the row's values before the update)
   const result = await sql`
     UPDATE tickets
     SET act = ${fields.act}, location = ${fields.location}, date = ${fields.date}, start = ${fields.start},
         festival_year = ${festivalYear}, starts_at = ${startsAt.toISOString()},
-        festival_link = CASE WHEN act = ${fields.act} AND festival_year = ${festivalYear} THEN festival_link ELSE NULL END
+        festival_link = CASE WHEN act = ${fields.act} AND festival_year = ${festivalYear} THEN festival_link ELSE NULL END,
+        ends_at = CASE WHEN act = ${fields.act} AND date = ${fields.date} AND start = ${fields.start} THEN ends_at ELSE NULL END,
+        has_qa = CASE WHEN act = ${fields.act} AND date = ${fields.date} AND start = ${fields.start} THEN has_qa ELSE NULL END
     WHERE id = ${id} AND owner_email = ${ownerEmail}
-    RETURNING id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", festival_link as "festivalLink", owner_email as "ownerEmail", holder_email as "holderEmail", festival_year as "festivalYear", starts_at as "startsAt", qr_hash as "qrHash", created_at as "createdAt"
+    RETURNING id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", festival_link as "festivalLink", owner_email as "ownerEmail", holder_email as "holderEmail", festival_year as "festivalYear", starts_at as "startsAt", qr_hash as "qrHash", ends_at as "endsAt", has_qa as "hasQa", created_at as "createdAt"
   `;
 
   return (result.rows[0] as Ticket) || null;
@@ -187,7 +190,7 @@ export async function updateTicketHolder(
             AND holder_m.user_email = ${holderEmail} AND holder_m.status = 'active'
         )
       )
-    RETURNING id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", festival_link as "festivalLink", owner_email as "ownerEmail", holder_email as "holderEmail", festival_year as "festivalYear", starts_at as "startsAt", qr_hash as "qrHash", created_at as "createdAt"
+    RETURNING id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", festival_link as "festivalLink", owner_email as "ownerEmail", holder_email as "holderEmail", festival_year as "festivalYear", starts_at as "startsAt", qr_hash as "qrHash", ends_at as "endsAt", has_qa as "hasQa", created_at as "createdAt"
   `;
 
   return (result.rows[0] as Ticket) || null;
@@ -196,6 +199,24 @@ export async function updateTicketHolder(
 export async function updateTicketFestivalLink(id: string, festivalLink: string): Promise<void> {
   await sql`
     UPDATE tickets SET festival_link = ${festivalLink} WHERE id = ${id}
+  `;
+}
+
+/**
+ * Store what the IDFA site says about a showing (see refreshShowDetails in lib/idfa.ts) on every
+ * visible ticket for it. Not limited to the caller's own tickets: this is public programme
+ * information about the screening, the same for everyone holding a ticket.
+ */
+export async function updateScreeningShowDetails(
+  visibleEmails: string[],
+  screening: { act: string; date: string; start: string },
+  details: { endsAt: Date | null; hasQa: boolean | null }
+): Promise<void> {
+  await sql`
+    UPDATE tickets
+    SET ends_at = ${details.endsAt ? details.endsAt.toISOString() : null}, has_qa = ${details.hasQa}
+    WHERE act = ${screening.act} AND date = ${screening.date} AND start = ${screening.start}
+      AND owner_email = ANY(${visibleEmails as any}::text[])
   `;
 }
 
@@ -254,6 +275,8 @@ export function groupTicketsIntoScreenings(tickets: Ticket[]): Screening[] {
       start: firstTicket.start,
       festivalYear: firstTicket.festivalYear,
       dateTime: parseTicketDateTime(firstTicket.date, firstTicket.start),
+      endsAt: ticketGroup.find((ticket) => ticket.endsAt)?.endsAt ?? null,
+      hasQa: ticketGroup.find((ticket) => ticket.hasQa != null)?.hasQa ?? null,
       tickets: ticketGroup,
       ticketCount: ticketGroup.length,
     });
