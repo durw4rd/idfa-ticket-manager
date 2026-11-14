@@ -2,10 +2,13 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Pencil } from 'lucide-react';
+import type { CrewMember } from '@/lib/types';
 import { Button } from '@/components/ui/Button';
 import { handleRadioKeys } from '@/lib/radio-keys';
 import { Notice } from '@/components/ui/Field';
+import { AutoTextarea } from '@/components/ui/AutoTextarea';
+import { RatingRow } from '@/components/CrewRatings';
 
 const MAX_COMMENT_LENGTH = 500;
 const SCALE = Array.from({ length: 10 }, (_, i) => i + 1);
@@ -13,6 +16,8 @@ const SCALE = Array.from({ length: 10 }, (_, i) => i + 1);
 /**
  * Your score (1–10) and comment for a film. One Save for both; the page refreshes so the crew's
  * ratings and averages update. Before the screening it stays folded behind "Rate early".
+ * With `me`, a saved rating reads like the crew's (avatar, score, comment) with Edit to reopen
+ * the form.
  */
 export default function RatingInput({
   act,
@@ -21,6 +26,7 @@ export default function RatingInput({
   initialComment,
   started = true,
   compact = false,
+  me,
 }: {
   act: string;
   festivalYear: number;
@@ -28,15 +34,21 @@ export default function RatingInput({
   initialComment: string | null;
   started?: boolean;
   compact?: boolean; // In lists: the comment and Save appear once a score is picked
+  me?: CrewMember; // Show a saved rating as a row in the crew's list instead of the filled-in form
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(started || initialRating !== null);
+  // What's stored. Kept here rather than read from the props, which only catch up after the refresh.
+  const [saved, setSaved] = useState(
+    initialRating === null ? null : { rating: initialRating, comment: initialComment || '' },
+  );
+  const [editing, setEditing] = useState(false);
   const [rating, setRating] = useState<number | null>(initialRating);
   const [comment, setComment] = useState(initialComment || '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const dirty = rating !== initialRating || comment.trim() !== (initialComment || '');
+  const dirty = rating !== (saved?.rating ?? null) || comment.trim() !== (saved?.comment ?? '');
 
   if (!open) {
     return (
@@ -62,15 +74,49 @@ export default function RatingInput({
         throw new Error(data.error || 'Could not save your rating');
       }
       if (method === 'DELETE') {
+        setSaved(null);
         setRating(null);
         setComment('');
+      } else if (rating !== null) {
+        setSaved({ rating, comment: comment.trim() });
+        setComment(comment.trim());
       }
+      setEditing(false);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save your rating');
     } finally {
       setBusy(false);
     }
+  };
+
+  if (me && saved && !editing) {
+    return (
+      <RatingRow
+        member={me}
+        name="You"
+        rating={saved.rating}
+        comment={saved.comment}
+        action={
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setEditing(true)}
+            icon={<Pencil className="h-3.5 w-3.5" />}
+            className="-ml-4 mt-1 text-ink-2"
+          >
+            Edit
+          </Button>
+        }
+      />
+    );
+  }
+
+  const cancel = () => {
+    setRating(saved?.rating ?? null);
+    setComment(saved?.comment ?? '');
+    setError(null);
+    setEditing(false);
   };
 
   return (
@@ -110,14 +156,13 @@ export default function RatingInput({
         <>
           <label className="block">
             <span className="sr-only">Comment</span>
-            <textarea
+            <AutoTextarea
               value={comment}
               onChange={(event) => setComment(event.target.value.slice(0, MAX_COMMENT_LENGTH))}
               rows={2}
               disabled={busy}
               placeholder="One line about it (optional)"
-              className="w-full resize-none rounded border border-line-strong bg-surface px-3 py-2.5 text-base italic text-ink
-            placeholder:not-italic placeholder:text-ink-3 focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/10"
+              className="block italic placeholder:not-italic"
             />
           </label>
 
@@ -130,9 +175,14 @@ export default function RatingInput({
               disabled={!rating || !dirty || busy}
               icon={busy ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}
             >
-              {initialRating ? 'Save changes' : 'Save rating'}
+              {saved ? 'Save changes' : 'Save rating'}
             </Button>
-            {initialRating !== null && (
+            {editing && (
+              <Button variant="ghost" size="sm" disabled={busy} onClick={cancel} className="text-ink-2">
+                Cancel
+              </Button>
+            )}
+            {saved && (
               <Button variant="ghost" size="sm" disabled={busy} onClick={() => send('DELETE')} className="text-ink-2">
                 Remove
               </Button>
