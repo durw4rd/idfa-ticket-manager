@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Pencil } from 'lucide-react';
 import type { CrewMember } from '@/lib/types';
@@ -48,6 +48,20 @@ export default function RatingInput({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Swapping the saved row for the form (and back) removes the control that had focus. Put it on
+  // the matching control on the other side, so keyboard and screen-reader users keep their place.
+  const rowRef = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const moveFocus = useRef(false);
+  useEffect(() => {
+    if (!moveFocus.current) return;
+    moveFocus.current = false;
+    const target = rowRef.current
+      ? rowRef.current.querySelector<HTMLElement>('button')
+      : formRef.current?.querySelector<HTMLElement>('[role="radio"][tabindex="0"]');
+    target?.focus();
+  });
+
   const dirty = rating !== (saved?.rating ?? null) || comment.trim() !== (saved?.comment ?? '');
 
   if (!open) {
@@ -81,6 +95,8 @@ export default function RatingInput({
         setSaved({ rating, comment: comment.trim() });
         setComment(comment.trim());
       }
+      // Save turns the form into the row, Remove empties the form: both drop the focused button
+      moveFocus.current = !!me || method === 'DELETE';
       setEditing(false);
       router.refresh();
     } catch (err) {
@@ -92,23 +108,28 @@ export default function RatingInput({
 
   if (me && saved && !editing) {
     return (
-      <RatingRow
-        member={me}
-        name="You"
-        rating={saved.rating}
-        comment={saved.comment}
-        action={
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setEditing(true)}
-            icon={<Pencil className="h-3.5 w-3.5" />}
-            className="-ml-4 mt-1 text-ink-2"
-          >
-            Edit
-          </Button>
-        }
-      />
+      <div ref={rowRef}>
+        <RatingRow
+          member={me}
+          name="You"
+          rating={saved.rating}
+          comment={saved.comment}
+          action={
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                moveFocus.current = true;
+                setEditing(true);
+              }}
+              icon={<Pencil className="h-3.5 w-3.5" />}
+              className="-ml-4 mt-1 text-ink-2"
+            >
+              Edit
+            </Button>
+          }
+        />
+      </div>
     );
   }
 
@@ -116,11 +137,13 @@ export default function RatingInput({
     setRating(saved?.rating ?? null);
     setComment(saved?.comment ?? '');
     setError(null);
+    moveFocus.current = true;
     setEditing(false);
   };
 
   return (
     <form
+      ref={formRef}
       className="space-y-3"
       onSubmit={(event) => {
         event.preventDefault();
