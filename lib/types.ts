@@ -15,6 +15,8 @@ export interface Ticket {
   festivalYear: number;
   startsAt: Date;
   qrHash?: string | null; // SHA-256 of the decoded QR payload, used to detect duplicates
+  endsAt?: Date | null; // From the IDFA site, not the ticket; null when IDFA hasn't told us
+  hasQa?: boolean | null; // Q&A after the film, from the IDFA site; null when unknown
   createdAt: Date;
 }
 
@@ -26,6 +28,8 @@ export interface Screening {
   start: string;
   festivalYear: number;
   dateTime: Date; // Parsed date+time for sorting/filtering
+  endsAt: Date | null; // See Ticket.endsAt
+  hasQa: boolean | null;
   tickets: Ticket[];
   ticketCount: number;
 }
@@ -105,6 +109,8 @@ export interface AgendaScreening {
   location: string;
   festivalYear: number;
   startsAt: string; // ISO timestamp
+  endsAt: string | null; // ISO timestamp from the IDFA site; null means assume a typical length (screeningEnd)
+  hasQa: boolean; // A Q&A follows the film, according to the IDFA site
   festivalLink: string | null;
   availability: TicketAvailability | null; // Filled in by withAvailability for upcoming screenings
   tickets: AgendaTicket[];

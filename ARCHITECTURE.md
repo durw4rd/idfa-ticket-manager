@@ -16,7 +16,7 @@ Browser ──► middleware.ts (NextAuth JWT check; redirects to /login)
 
 ## Domain model
 
-- **Ticket**: one row in `tickets`, one per PDF page. Fields `act` (film title), `location`, `date` (`DD-MM-YYYY` string), `start` (`HH:MM AM/PM` string), plus `owner_email` (the uploader), `holder_email` (who will use it; starts as the uploader), `festival_year`, `starts_at` (absolute `timestamptz`), `qr_hash` (SHA-256 of the decoded QR payload), `qr_code_url` and `pdf_url` (Blob URLs, never sent to the browser), `festival_link`.
+- **Ticket**: one row in `tickets`, one per PDF page. Fields `act` (film title), `location`, `date` (`DD-MM-YYYY` string), `start` (`HH:MM AM/PM` string), plus `owner_email` (the uploader), `holder_email` (who will use it; starts as the uploader), `festival_year`, `starts_at` (absolute `timestamptz`), `qr_hash` (SHA-256 of the decoded QR payload), `qr_code_url` and `pdf_url` (Blob URLs, never sent to the browser), `festival_link`, and `ends_at` / `has_qa` (from the IDFA site, null when unknown).
 - **Screening**: not a table. Tickets with the same `act|date|start` are grouped in memory (`groupTicketsIntoScreenings` in `lib/db.ts`). The screening id in URLs is that key, URL-encoded; `parseScreeningKey` splits from the right because titles can contain `|`.
 - **Rating**: one per `(user_email, act, festival_year)`, 1–10 plus optional comment.
 - **Group / group_members**: sharing groups. Members are `owner` or `member`, `invited` or `active`.
@@ -24,7 +24,7 @@ Browser ──► middleware.ts (NextAuth JWT check; redirects to /login)
 - **Profile**: `profiles(email, name, badge)`, set on the Crew page. `name` is an optional display name; without one, `getDisplayName` derives it from the email ("misa.fasa@…" → "Misa"). `badge` is one of the cinema icons in `BADGES` (`lib/display.ts`), or null for their initial. A badge is unique within a crew: picking one someone in your crew has is refused, joining a group where someone has yours clears it, and when overlapping crews still put two of the same badge in front of a viewer, whoever joined any group first keeps it (then by email), so every viewer agrees.
 - **Festival year**: derived from the ticket's date. `/screenings?year=YYYY` picks the year; years before the current one render as a recap.
 
-Schema lives in `migrations/` (run by hand, in order: `000-base-schema.sql`, `add-festival-link.sql`, `002-multi-user-multi-year.sql`, `003-ticket-holders-and-profiles.sql`, `004-profile-badges.sql`).
+Schema lives in `migrations/` (run by hand, in order: `000-base-schema.sql`, `add-festival-link.sql`, `002-multi-user-multi-year.sql`, `003-ticket-holders-and-profiles.sql`, `004-profile-badges.sql`, `005-screening-end-and-qa.sql`).
 
 ## Data visibility
 
@@ -33,6 +33,7 @@ The core rule: **reads are scoped to `visibleEmails`, writes to the owner's own 
 - `getViewer()` in `lib/auth-helpers.ts` returns `{ email, visibleEmails }`, where `visibleEmails` is the user plus every active member of their active groups (`getVisibleEmails` in `lib/groups.ts`).
 - Every read in `lib/db.ts` filters `owner_email = ANY(visibleEmails)` (or `user_email` for ratings). Updates and deletes filter on `owner_email = viewer.email`, except `updateTicketHolder`, which also lets the current holder pass a ticket on (`PUT /api/tickets/[id]/holder`); the new holder must be in `visibleEmails`.
 - API routes start with `const { viewer, error } = await requireAuth(); if (error) return error;`. Server pages call `getViewer()` and redirect to `/login` on null.
+- `updateScreeningShowDetails` writes the end time and Q&A to every visible ticket of a showing, not just the caller's: it is public programme data.
 - Emails are always lower-cased with `normalizeEmail` before storage or comparison.
 
 ## Key flows
@@ -54,6 +55,8 @@ The core rule: **reads are scoped to `visibleEmails`, writes to the owner's own 
 **Film overviews and availability** (`lib/idfa.ts`): a screening's stored festival link names its IDFA page (`/film/<id>` or `/composition/<id>`). The detail page shows that page's intro as a short synopsis (`getFilmOverview`, cached 24h). `getAvailabilityForScreenings` looks up the matching show (same start time) for every upcoming screening and marks it **Sold out** or **Few left** in the agenda, on the detail page and on the poster, so friends can see which screenings they can still join. It's cached for 10 minutes per film with `unstable_cache`, limited to 3s per page load, behind the `idfa-availability` kill switch (default on), and gives no marks when IDFA can't be reached. Screenings without a festival link get neither.
 
 **Groups** (`lib/groups.ts`, `app/api/groups`): one POST endpoint with an `action` field (`create`, `rename`, `invite`, `accept`, `leave`, `remove`). Every membership change runs in a transaction holding a per-group advisory lock (`withGroupLock`). Removing the last owner promotes the longest-standing active member; a group with no active members is deleted.
+
+**End time and Q&A** (`lib/idfa.ts`): tickets only print the start. The matching show on the film's IDFA page has `endOn` and `hasQa`; `getShowDetails` stores them on the ticket at upload, and `refreshShowDetails` (run in `after()` when the agenda loads) fills them in for older tickets and follows reschedules of upcoming screenings. `screeningEnd(start, endsAt)` in `lib/dates.ts` returns the real end when known and a 120-minute guess otherwise; clashes, timeline blocks, the calendar export and the wallet all use it.
 
 ## LaunchDarkly
 
@@ -84,7 +87,7 @@ All ticket times are Amsterdam wall-clock times; servers run in UTC. Always go t
 | `components/` | Feature components by area (`agenda/`, `tickets/`, `screening/`, `upload/`); client components are marked `'use client'` |
 | `lib/agenda.ts` | Client-safe agenda logic: serialisation, filters, clashes, rating queue |
 | `lib/db.ts` | All ticket and rating SQL, screening grouping |
-| `lib/idfa.ts` | IDFA website GraphQL client: search, film overviews, ticket availability |
+| `lib/idfa.ts` | IDFA website GraphQL client: search, film overviews, ticket availability, end times and Q&A |
 | `lib/groups.ts` | Group SQL, visibility, locking |
 | `lib/types.ts` | Shared interfaces |
 | `lib/venue-backgrounds.ts`, `public/bcg-*` | Venue name → banner image on the detail page |

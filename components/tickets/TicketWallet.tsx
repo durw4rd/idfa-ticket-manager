@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { ChevronRight, Plus, QrCode, Ticket } from 'lucide-react';
 import type { AgendaScreening, CrewMember } from '@/lib/types';
-import { dayKey, formatDate, formatTime } from '@/lib/dates';
+import { dayKey, formatDate, formatTimeRange } from '@/lib/dates';
 import { formatTimeUntil } from '@/lib/display';
 import { makeCrewLookup, screeningHref } from '@/lib/agenda';
 import { usePersistentState } from '@/lib/use-persistent-state';
@@ -65,7 +65,7 @@ export default function TicketWallet({
     return {
       id: pass.ticketId,
       title: pass.screening.act,
-      meta: `${formatDate(start)} · ${formatTime(start)} · ${pass.screening.location}`,
+      meta: `${formatDate(start)} · ${formatTimeRange(start, pass.screening.endsAt)} · ${pass.screening.location}`,
       holder: pass.holder.name,
       label: pass.of > 1 ? `${pass.index + 1} of ${pass.of}` : undefined,
     };
@@ -123,7 +123,7 @@ export default function TicketWallet({
                       <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-ink-3 group-hover:text-ink" />
                     </Link>
                     <p className="mt-1 text-sm text-ink-2">
-                      <span className="font-semibold tabular-nums text-ink">{formatTime(start)}</span> ·{' '}
+                      <span className="font-semibold tabular-nums text-ink">{formatTimeRange(start, pass.screening.endsAt)}</span> ·{' '}
                       {pass.screening.location}
                     </p>
                     <p className="mt-2 flex items-center gap-1.5 text-sm text-ink-2">

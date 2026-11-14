@@ -4,14 +4,20 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import type { AgendaScreening, CrewMember } from '@/lib/types';
-import { DEFAULT_SCREENING_MINUTES, formatDate, formatTime, hourOfDay } from '@/lib/dates';
+import { formatDate, formatTime, formatTimeRange, hourOfDay, screeningEnd } from '@/lib/dates';
 import { type AgendaDay, holdersOf, screeningHref } from '@/lib/agenda';
 import { Avatar, crewBg, crewBorder } from '@/components/ui/Avatar';
 import AvailabilityMark from '@/components/AvailabilityMark';
+import QaMark from '@/components/QaMark';
 import type { RowMarks } from './AgendaList';
 
-const LENGTH_HOURS = DEFAULT_SCREENING_MINUTES / 60;
 const ROW_PX = 36;
+
+/** How long a screening's block is: to the end time from the IDFA site, else a typical length */
+function lengthHours(screening: AgendaScreening): number {
+  const start = new Date(screening.startsAt);
+  return (screeningEnd(start, screening.endsAt).getTime() - start.getTime()) / 3600000;
+}
 
 /**
  * A person's screenings for one day, each on the first row where it doesn't overlap the one
@@ -20,12 +26,11 @@ const ROW_PX = 36;
 function layoutLane(screenings: AgendaScreening[]): { rows: Map<string, number>; count: number } {
   const rowEnds: number[] = [];
   const rows = new Map<string, number>();
-  const length = LENGTH_HOURS * 3600000;
   for (const screening of [...screenings].sort((a, b) => a.startsAt.localeCompare(b.startsAt))) {
     const start = new Date(screening.startsAt).getTime();
     let row = rowEnds.findIndex((end) => end <= start);
     if (row === -1) row = rowEnds.length;
-    rowEnds[row] = start + length;
+    rowEnds[row] = screeningEnd(new Date(start), screening.endsAt).getTime();
     rows.set(screening.id, row);
   }
   return { rows, count: Math.max(rowEnds.length, 1) };
@@ -59,9 +64,10 @@ export default function DayTimeline({
   }, []);
 
   // One hour axis for every day, so the same time sits at the same x all festival long
-  const starts = days.flatMap((day) => day.screenings.map((s) => axisHour(new Date(s.startsAt))));
+  const all = days.flatMap((day) => day.screenings);
+  const starts = all.map((s) => axisHour(new Date(s.startsAt)));
   const firstHour = Math.floor(Math.min(...starts));
-  const lastHour = Math.ceil(Math.max(...starts) + LENGTH_HOURS);
+  const lastHour = Math.ceil(Math.max(...all.map((s, i) => starts[i] + lengthHours(s))));
   const span = Math.max(lastHour - firstHour, 1);
   const pct = (hours: number) => `${(hours / span) * 100}%`;
   const ticks = Array.from({ length: span + 1 }, (_, i) => firstHour + i).filter((hour) => hour % 2 === 0);
@@ -133,7 +139,7 @@ export default function DayTimeline({
                           key={screening.id}
                           onClick={() => setSelectedId(selectedId === screening.id ? null : screening.id)}
                           aria-pressed={selectedId === screening.id}
-                          aria-label={`${formatTime(start)} ${screening.act}, ${screening.location}`}
+                          aria-label={`${formatTimeRange(start, screening.endsAt)} ${screening.act}, ${screening.location}`}
                           className={`absolute h-8 overflow-hidden rounded px-1.5 text-left text-[11px] font-semibold leading-8
                               ${
                                 past
@@ -145,7 +151,7 @@ export default function DayTimeline({
                           style={{
                             top: (rows.get(screening.id) || 0) * ROW_PX + 2,
                             left: pct(axisHour(start) - firstHour),
-                            width: `calc(${pct(LENGTH_HOURS)} - 2px)`,
+                            width: `calc(${pct(lengthHours(screening))} - 2px)`,
                           }}
                         >
                           <span className="block truncate [font-stretch:75%]">{screening.act}</span>
@@ -173,11 +179,12 @@ export default function DayTimeline({
                   href={screeningHref(selected)}
                   className="mt-2 flex items-center gap-3 rounded border border-line bg-surface px-3 py-2.5"
                 >
-                  <span className="text-sm font-semibold tabular-nums">{formatTime(start)}</span>
+                  <span className="text-sm font-semibold tabular-nums">{formatTimeRange(start, selected.endsAt)}</span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-display text-base leading-tight">{selected.act}</span>
                     <span className="flex items-center gap-2 text-xs text-ink-2">
                       <span className="min-w-0 truncate">{selected.location}</span>
+                      {selected.hasQa && <QaMark />}
                       {start > marks.now && selected.availability && (
                         <AvailabilityMark availability={selected.availability} />
                       )}

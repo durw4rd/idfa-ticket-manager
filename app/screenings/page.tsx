@@ -1,10 +1,11 @@
 import { redirect } from 'next/navigation';
+import { after } from 'next/server';
 import { getFestivalYears, getScreeningsForYear } from '@/lib/db';
 import { getCrew } from '@/lib/groups';
 import { getViewer } from '@/lib/auth-helpers';
 import { getCurrentFestivalYear, getNow } from '@/lib/dates';
 import { toAgendaScreening, withAvailability } from '@/lib/agenda';
-import { getAvailabilityForScreenings } from '@/lib/idfa';
+import { getAvailabilityForScreenings, refreshShowDetails } from '@/lib/idfa';
 import { userContext } from '@/lib/launchdarkly';
 import AgendaView from '@/components/agenda/AgendaView';
 import SharePosterButton from '@/components/agenda/SharePosterButton';
@@ -32,6 +33,8 @@ export default async function ScreeningsPage({
   const now = getNow();
   // Only upcoming screenings are checked, so recap years make no IDFA requests
   const availability = await getAvailabilityForScreenings(screenings, now, userContext(viewer.email));
+  // End times and Q&A are stored on the tickets; catch up with the IDFA site once the page is sent
+  after(() => refreshShowDetails(viewer.visibleEmails, screenings, now, userContext(viewer.email)));
   const years = Array.from(new Set([currentYear, year, ...festivalYears])).sort((a, b) => b - a);
 
   return (

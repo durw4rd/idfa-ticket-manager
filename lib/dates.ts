@@ -149,11 +149,21 @@ export function hourOfDay(date: Date): number {
   return p.hour + p.minute / 60;
 }
 
-// Typical IDFA screening length; tickets don't carry the film's runtime
+// Typical IDFA screening length, for when the IDFA site hasn't told us the real end
 export const DEFAULT_SCREENING_MINUTES = 120;
 
-export function screeningEnd(start: Date): Date {
+/** When a screening is over: the end time from the IDFA site when known, else a typical length */
+export function screeningEnd(start: Date, endsAt?: Date | string | null): Date {
+  if (endsAt) {
+    const end = new Date(endsAt);
+    if (end > start) return end;
+  }
   return new Date(start.getTime() + DEFAULT_SCREENING_MINUTES * 60000);
+}
+
+/** "16:00–17:45", or just "16:00" when the end isn't known */
+export function formatTimeRange(start: Date, endsAt?: Date | string | null): string {
+  return endsAt ? `${formatTime(start)}–${formatTime(new Date(endsAt))}` : formatTime(start);
 }
 
 /** Normalize an AI-extracted start time ("6:45 pm") to the stored "06:45 PM" format */
