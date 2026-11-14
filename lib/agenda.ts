@@ -90,11 +90,16 @@ export function findClashes(screenings: AgendaScreening[]): Map<string, string[]
 
   for (const [email, own] of Array.from(byPerson.entries())) {
     const sorted = [...own].sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+    const ends = sorted.map((screening) => screeningEnd(new Date(screening.startsAt), screening.endsAt));
     for (let i = 1; i < sorted.length; i++) {
-      const previousEnd = screeningEnd(new Date(sorted[i - 1].startsAt), sorted[i - 1].endsAt);
-      if (new Date(sorted[i].startsAt) < previousEnd) {
-        mark(sorted[i - 1].id, email);
-        mark(sorted[i].id, email);
+      const start = new Date(sorted[i].startsAt);
+      // Every earlier one, not just the one before: lengths differ, so a long screening can
+      // still be running after a short one that started later has finished
+      for (let j = 0; j < i; j++) {
+        if (start < ends[j]) {
+          mark(sorted[j].id, email);
+          mark(sorted[i].id, email);
+        }
       }
     }
   }

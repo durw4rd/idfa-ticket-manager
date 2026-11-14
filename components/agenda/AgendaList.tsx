@@ -3,7 +3,7 @@ import { AlertTriangle } from 'lucide-react';
 import AvailabilityMark from '@/components/AvailabilityMark';
 import QaMark from '@/components/QaMark';
 import type { AgendaScreening, CrewMember } from '@/lib/types';
-import { formatDayHeading, formatTime } from '@/lib/dates';
+import { formatDayHeading, formatTime, screeningEnd } from '@/lib/dates';
 import { type AgendaDay, holdersOf, isTogether, screeningHref } from '@/lib/agenda';
 import { AvatarStack } from '@/components/ui/Avatar';
 
@@ -95,7 +95,8 @@ function ScreeningRow({
                 Clash
               </span>
             )}
-            {!past && screening.hasQa && <QaMark />}
+            {/* Unlike availability, this still matters once the film is running: stay for the Q&A? */}
+            {screening.hasQa && screeningEnd(startsAt, screening.endsAt) > marks.now && <QaMark />}
             {!past && screening.availability && <AvailabilityMark availability={screening.availability} />}
             <span className="ml-auto flex shrink-0 items-center gap-1.5">
               {isTogether(screening) && <span className="text-xs font-semibold text-ink-2">Together</span>}

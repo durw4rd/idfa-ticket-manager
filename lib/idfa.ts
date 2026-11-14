@@ -364,8 +364,14 @@ export async function refreshShowDetails(
           const details = showDetailsOf(shows, screening.dateTime);
           // No matching show tells us nothing, so keep what's stored
           if (!details) continue;
-          const sameEnd = (details.endsAt?.getTime() ?? null) === (screening.endsAt ? new Date(screening.endsAt).getTime() : null);
-          if (sameEnd && details.hasQa === screening.hasQa) continue;
+          // Every ticket, not the screening's summary: one uploaded earlier can lag behind another
+          const wantedEnd = details.endsAt?.getTime() ?? null;
+          const upToDate = screening.tickets.every(
+            (ticket) =>
+              (ticket.endsAt ? new Date(ticket.endsAt).getTime() : null) === wantedEnd &&
+              (ticket.hasQa ?? null) === details.hasQa
+          );
+          if (upToDate) continue;
           await updateScreeningShowDetails(visibleEmails, screening, details);
         }
       })
