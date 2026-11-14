@@ -11,9 +11,12 @@ export default function FilmsLoading() {
       <Skeleton className="mb-1 h-4 w-16" />
       <ol className="divide-y divide-line">
         {[0, 1, 2, 3, 4].map((i) => (
-          <li key={i} className="flex items-start gap-3 py-4">
-            <Skeleton className={`h-5 flex-1 ${i % 2 ? 'max-w-[50%]' : 'max-w-[70%]'}`} />
-            <Skeleton className="ml-auto h-6 w-6" />
+          <li key={i} className="py-4">
+            <div className="flex items-start gap-3">
+              <Skeleton className={`h-5 flex-1 ${i % 2 ? 'max-w-[50%]' : 'max-w-[70%]'}`} />
+              <Skeleton className="ml-auto h-8 w-9" />
+            </div>
+            <Skeleton className="mt-2 h-5 w-24" />
           </li>
         ))}
       </ol>

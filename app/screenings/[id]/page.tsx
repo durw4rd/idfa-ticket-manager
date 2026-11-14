@@ -171,31 +171,27 @@ export default async function ScreeningDetailPage({
         </section>
 
         <section aria-labelledby="rating-heading">
-          <h3 id="rating-heading" className="label mb-3">
-            Your rating
+          <h3 id="rating-heading" className="label mb-3 flex items-baseline">
+            Ratings
+            {average !== null && (
+              <span className="ml-auto normal-case tracking-normal">
+                avg <span className="font-display text-base text-ink">{average.toFixed(1)}</span>
+              </span>
+            )}
           </h3>
-          <RatingInput
-            act={screening.act}
-            festivalYear={screening.festivalYear}
-            initialRating={myRating?.rating ?? null}
-            initialComment={myRating?.comment ?? null}
-            started={started}
-          />
+          <div className="space-y-4">
+            {/* Yours first: the form until it's saved, then a row like everyone else's */}
+            <RatingInput
+              act={screening.act}
+              festivalYear={screening.festivalYear}
+              initialRating={myRating?.rating ?? null}
+              initialComment={myRating?.comment ?? null}
+              started={started}
+              me={me}
+            />
+            {crewRatings.length > 0 && <CrewRatings ratings={crewRatings} lookup={lookup} />}
+          </div>
         </section>
-
-        {crewRatings.length > 0 && (
-          <section aria-labelledby="crew-heading">
-            <h3 id="crew-heading" className="label mb-3 flex items-baseline">
-              Crew
-              {average !== null && (
-                <span className="ml-auto normal-case tracking-normal">
-                  avg <span className="font-display text-base text-ink">{average.toFixed(1)}</span>
-                </span>
-              )}
-            </h3>
-            <CrewRatings ratings={crewRatings} lookup={lookup} />
-          </section>
-        )}
       </article>
     </>
   );

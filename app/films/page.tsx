@@ -11,6 +11,7 @@ import PageHeader from '@/components/PageHeader';
 import YearSwitcher from '@/components/agenda/YearSwitcher';
 import RatingInput from '@/components/RatingInput';
 import { Avatar } from '@/components/ui/Avatar';
+import { Disclosure } from '@/components/ui/Disclosure';
 import { EmptyState } from '@/components/ui/EmptyState';
 
 export const dynamic = 'force-dynamic';
@@ -19,8 +20,9 @@ interface Film {
   act: string;
   screening: AgendaScreening; // The first showing, for the link
   mine: Rating | undefined;
-  others: Rating[];
-  average: number | null;
+  ratings: Rating[]; // Yours first, then the crew's
+  comments: Rating[]; // The ratings that came with a comment, same order
+  average: number;
 }
 
 export default async function FilmsPage({ searchParams }: { searchParams: Promise<{ year?: string }> }) {
@@ -54,16 +56,19 @@ export default async function FilmsPage({ searchParams }: { searchParams: Promis
   const films: Film[] = Array.from(new Set(ratings.map((rating) => rating.act)))
     .filter((act) => firstShowing.has(act))
     .map((act) => {
-      const filmRatings = ratings.filter((rating) => rating.act === act);
+      const mine = ratings.find((rating) => rating.act === act && rating.userEmail === viewer.email);
+      const others = ratings.filter((rating) => rating.act === act && rating.userEmail !== viewer.email);
+      const filmRatings = mine ? [mine, ...others] : others;
       return {
         act,
         screening: firstShowing.get(act)!,
-        mine: filmRatings.find((rating) => rating.userEmail === viewer.email),
-        others: filmRatings.filter((rating) => rating.userEmail !== viewer.email),
+        mine,
+        ratings: filmRatings,
+        comments: filmRatings.filter((rating) => !!rating.comment),
         average: filmRatings.reduce((sum, r) => sum + r.rating, 0) / filmRatings.length,
       };
     })
-    .sort((a, b) => (b.mine?.rating ?? 0) - (a.mine?.rating ?? 0) || (b.average ?? 0) - (a.average ?? 0));
+    .sort((a, b) => (b.mine?.rating ?? 0) - (a.mine?.rating ?? 0) || b.average - a.average);
 
   const myAverage = myRatings.length
     ? myRatings.reduce((sum, rating) => sum + rating.rating, 0) / myRatings.length
@@ -123,30 +128,51 @@ export default async function FilmsPage({ searchParams }: { searchParams: Promis
           </h2>
           <ol className="divide-y divide-line">
             {films.map((film) => (
-              <li key={film.act}>
-                <Link href={screeningHref(film.screening)} className="-mx-4 block px-4 py-4 hover:bg-ink/[0.03]">
-                  <div className="flex items-start gap-3">
-                    <p className="min-w-0 flex-1 font-display text-lg leading-tight">{film.act}</p>
-                    <p className="shrink-0 text-right">
-                      {film.mine ? (
-                        <span className="font-display text-xl tabular-nums">{film.mine.rating}</span>
-                      ) : (
-                        <span className="text-sm text-ink-3">not rated</span>
-                      )}
-                      {film.others.length > 0 && (
-                        <span className="block text-xs tabular-nums text-ink-3">crew {film.average?.toFixed(1)}</span>
-                      )}
-                    </p>
-                  </div>
-                  {[film.mine, ...film.others]
-                    .filter((rating): rating is Rating => !!rating?.comment)
-                    .map((rating) => (
+              <li key={film.act} className="py-4">
+                <div className="flex items-start gap-3">
+                  <Link
+                    href={screeningHref(film.screening)}
+                    className="min-w-0 flex-1 font-display text-lg leading-tight underline-offset-4 hover:underline"
+                  >
+                    {film.act}
+                  </Link>
+                  <p className="shrink-0 text-right">
+                    <span className="font-display text-xl tabular-nums">{film.average.toFixed(1)}</span>
+                    <span className="block text-xs tabular-nums text-ink-3">
+                      {film.ratings.length === 1 ? '1 rating' : `avg of ${film.ratings.length}`}
+                    </span>
+                  </p>
+                </div>
+
+                {/* Who gave what, you first */}
+                <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5">
+                  {film.ratings.map((rating) => {
+                    const member = lookup(rating.userEmail);
+                    return (
+                      <li key={rating.id} className="flex items-center gap-1.5 text-sm">
+                        <Avatar member={member} size="xs" />
+                        <span className="sr-only">{member.isMe ? 'You' : member.name}:</span>
+                        <span className="font-semibold tabular-nums">{rating.rating}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+
+                {film.comments.length > 0 && (
+                  <Disclosure
+                    className="mt-2"
+                    label={film.comments.length === 1 ? '1 comment' : `${film.comments.length} comments`}
+                  >
+                    {film.comments.map((rating) => (
                       <p key={rating.id} className="mt-2 flex gap-2 text-sm">
                         <Avatar member={lookup(rating.userEmail)} size="xs" className="mt-0.5" />
-                        <span className="italic text-ink-2">“{rating.comment}”</span>
+                        <span className="min-w-0 whitespace-pre-line break-words italic text-ink-2">
+                          “{rating.comment}”
+                        </span>
                       </p>
                     ))}
-                </Link>
+                  </Disclosure>
+                )}
               </li>
             ))}
           </ol>
