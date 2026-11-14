@@ -5,7 +5,7 @@ A small web app for keeping IDFA (International Documentary Film Festival Amster
 ## What it does
 
 - **Upload tickets.** Drop in one or more PDFs (one ticket per page). The app pulls out the film, venue, date, and time, and asks you to confirm or fix them. Re-uploading a ticket you or your group already have is skipped.
-- **See your schedule.** Screenings are grouped by day, with an "Up next" card, a ticket count per screening, directions to the venue, a link to the film's IDFA page, and an "Add to calendar" button.
+- **See your schedule.** Screenings are grouped by day, with an "Up next" card, a ticket count per screening, directions to the venue, a link to the film's IDFA page, and an "Add to calendar" button. End times and whether a Q&A follows come from the IDFA site.
 - **Scan at the door.** Each screening shows its QR codes, with a fullscreen mode for scanning.
 - **Share with your group.** Invite people on the Sharing page. Everyone in a group sees each other's screenings, tickets, and ratings.
 - **Rate films.** Give each film 1–10 with an optional comment. Past festival years turn into a recap of what you saw and how you rated it.
@@ -47,7 +47,7 @@ Open http://localhost:3000. To pull env vars from the linked Vercel project inst
 
 ### Database
 
-There is no migration runner; run the SQL by hand. For a new database, run [`migrations/000-base-schema.sql`](migrations/000-base-schema.sql), then [`migrations/add-festival-link.sql`](migrations/add-festival-link.sql), then [`migrations/002-multi-user-multi-year.sql`](migrations/002-multi-user-multi-year.sql), [`migrations/003-ticket-holders-and-profiles.sql`](migrations/003-ticket-holders-and-profiles.sql) and [`migrations/004-profile-badges.sql`](migrations/004-profile-badges.sql). Migration 002 assigns existing tickets to a hardcoded owner and seeds a group; edit the emails in it first.
+There is no migration runner; run the SQL by hand. For a new database, run [`migrations/000-base-schema.sql`](migrations/000-base-schema.sql), then [`migrations/add-festival-link.sql`](migrations/add-festival-link.sql), then [`migrations/002-multi-user-multi-year.sql`](migrations/002-multi-user-multi-year.sql), [`migrations/003-ticket-holders-and-profiles.sql`](migrations/003-ticket-holders-and-profiles.sql) , [`migrations/004-profile-badges.sql`](migrations/004-profile-badges.sql) and [`migrations/005-screening-end-and-qa.sql`](migrations/005-screening-end-and-qa.sql). Run a new migration before deploying the code that needs it. Migration 002 assigns existing tickets to a hardcoded owner and seeds a group; edit the emails in it first.
 
 ### LaunchDarkly
 
@@ -59,6 +59,7 @@ The app expects these in its LaunchDarkly project. Each has a code fallback, so 
 | `ticket-extraction` | AgentControl config (completion) | Model and prompt for reading tickets. Prompt: `TICKET_EXTRACTION_PROMPT` in `lib/ticket-extractor.ts` |
 | `festival-link-finder` | AgentControl config (completion) | Model and prompt that picks a film's IDFA page from IDFA site search results. Prompt: `FESTIVAL_LINK_PROMPT` in `lib/find-festival-link.ts`, with variables `{{movieTitle}}`, `{{festivalYear}}`, `{{candidates}}` |
 | `festival-link-ai` | Boolean flag | Kill switch for the festival-link lookup |
+| `idfa-availability` | Boolean flag | Kill switch for the routine calls to the IDFA site: availability marks and the end time / Q&A refresh |
 | `ticket-extraction-corrected` | Numeric metric | `1` when a user corrected the AI's extraction on the review screen, `0` otherwise |
 
 ## Deploying

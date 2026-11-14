@@ -177,7 +177,12 @@ export async function GET(request: NextRequest) {
                     borderBottom: '1px solid #2A2A27',
                   }}
                 >
-                  <div style={{ width: 150, fontSize: 40, fontFamily: display }}>{formatTime(start)}</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', width: 150 }}>
+                    <div style={{ fontSize: 40, fontFamily: display }}>{formatTime(start)}</div>
+                    {screening.endsAt && (
+                      <div style={{ fontSize: 24, color: MUTED }}>{`–${formatTime(new Date(screening.endsAt))}`}</div>
+                    )}
+                  </div>
                   <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
                     <div
                       style={{
@@ -194,6 +199,9 @@ export async function GET(request: NextRequest) {
                     </div>
                     <div style={{ display: 'flex', fontSize: 28, lineHeight: `${VENUE_LINE}px`, color: MUTED }}>
                       <div style={{ ...ONE_LINE, flexShrink: 1, minWidth: 0 }}>{screening.location}</div>
+                      {screening.hasQa && (
+                        <div style={{ flexShrink: 0, marginLeft: 16, letterSpacing: 2 }}>Q&A</div>
+                      )}
                       {/* Tells friends which screenings they can't join any more */}
                       {screening.availability && (
                         <div

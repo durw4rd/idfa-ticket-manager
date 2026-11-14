@@ -1,11 +1,13 @@
 // Client for the public GraphQL API behind the IDFA website: festival search (used by
-// lib/find-festival-link.ts), film overviews and per-screening ticket availability.
+// lib/find-festival-link.ts), film overviews, and per-screening ticket availability, end time and Q&A.
 
 import { unstable_cache } from 'next/cache';
 import type { LDContext } from '@launchdarkly/ai-server';
 import type { Screening, TicketAvailability } from './types';
 import { getFestivalLinkForScreening } from './festival-links';
 import { evaluateBooleanFlag } from './launchdarkly';
+import { updateScreeningShowDetails } from './db';
+import { getCurrentFestivalYear } from './dates';
 
 export const IDFA_GRAPHQL_URL = 'https://my.idfa.nl/api/graphql';
 export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -61,6 +63,8 @@ export function parseFestivalLink(url: string): FestivalPage | null {
 
 interface IdfaShow {
   startOn: string | null;
+  endOn: string | null;
+  hasQa: boolean | null;
   ticketAvailabilityStatus: 'SOLD_OUT' | 'LOW_AVAILABILITY' | 'HIGH_AVAILABILITY' | null;
 }
 
@@ -69,7 +73,7 @@ interface IdfaFilmInfo {
   shows: IdfaShow[];
 }
 
-const SHOW_FIELDS = 'shows { startOn ticketAvailabilityStatus }';
+const SHOW_FIELDS = 'shows { startOn endOn hasQa ticketAvailabilityStatus }';
 
 const FILM_QUERY = `query ($id: ID!) {
   film(id: $id) { intro { translation } logline ${SHOW_FIELDS} }
@@ -140,10 +144,16 @@ const cachedOverview = unstable_cache(
   { revalidate: 24 * 60 * 60 }
 );
 
+// One timeout for every caller, so it isn't part of the cache key: the availability check and the
+// end-time refresh that follows it share one request per film. It matches the availability
+// deadline (AVAILABILITY_DEADLINE_MS) so late requests don't linger in the background.
+const SHOWS_TIMEOUT_MS = 3000;
+
 const cachedShows = unstable_cache(
-  async (kind: FestivalPage['kind'], id: string, title: string, timeoutMs: number) =>
-    (await fetchFilmInfo(kind, id, title, timeoutMs)).shows,
-  ['idfa-shows'],
+  async (kind: FestivalPage['kind'], id: string, title: string) =>
+    (await fetchFilmInfo(kind, id, title, SHOWS_TIMEOUT_MS)).shows,
+  // v3: the cached shows gained endOn and hasQa, and the timeout left the key
+  ['idfa-shows-v3'],
   // Short enough that a screening selling out shows up the same afternoon
   { revalidate: 10 * 60 }
 );
@@ -165,7 +175,8 @@ export async function getFilmOverview(festivalLink: string | null, title: string
 // Ticket times and the site's show times are the same instant; allow for a rounding difference
 const SHOW_MATCH_WINDOW_MS = 5 * 60 * 1000;
 
-function availabilityOf(shows: IdfaShow[], startsAt: Date): TicketAvailability | null {
+/** The site's show for a ticket's start time */
+function matchShow(shows: IdfaShow[], startsAt: Date): IdfaShow | undefined {
   // The nearest show in the window, so an 18:05 ticket doesn't pick up an 18:00 show listed first
   let show: IdfaShow | undefined;
   let bestGap = Infinity;
@@ -177,7 +188,11 @@ function availabilityOf(shows: IdfaShow[], startsAt: Date): TicketAvailability |
       bestGap = gap;
     }
   }
-  switch (show?.ticketAvailabilityStatus) {
+  return show;
+}
+
+function availabilityOf(shows: IdfaShow[], startsAt: Date): TicketAvailability | null {
+  switch (matchShow(shows, startsAt)?.ticketAvailabilityStatus) {
     case 'SOLD_OUT':
       return 'sold-out';
     case 'LOW_AVAILABILITY':
@@ -187,9 +202,52 @@ function availabilityOf(shows: IdfaShow[], startsAt: Date): TicketAvailability |
   }
 }
 
+export interface ShowDetails {
+  endsAt: Date | null;
+  hasQa: boolean | null;
+}
+
+// The site has the odd typo'd end time (a film "ending" eight hours after it starts); longer than
+// this and we'd rather fall back to the typical length
+const MAX_SCREENING_MS = 6 * 60 * 60 * 1000;
+
+function showDetailsOf(shows: IdfaShow[], startsAt: Date): ShowDetails | null {
+  const show = matchShow(shows, startsAt);
+  if (!show) {
+    return null;
+  }
+  const end = show.endOn ? new Date(show.endOn) : null;
+  const length = end ? end.getTime() - startsAt.getTime() : NaN;
+  return {
+    endsAt: end && length > 0 && length <= MAX_SCREENING_MS ? end : null,
+    hasQa: typeof show.hasQa === 'boolean' ? show.hasQa : null,
+  };
+}
+
+/**
+ * When the showing at `startsAt` ends and whether a Q&A follows, from the film's IDFA page. Null
+ * when there's no page, no show at that time, or IDFA can't be reached. Used at upload.
+ */
+export async function getShowDetails(
+  festivalLink: string | null,
+  title: string,
+  startsAt: Date
+): Promise<ShowDetails | null> {
+  const page = festivalLink ? parseFestivalLink(festivalLink) : null;
+  if (!page) {
+    return null;
+  }
+  try {
+    return showDetailsOf(await cachedShows(page.kind, page.id, title), startsAt);
+  } catch (error) {
+    console.warn(`Could not load the IDFA show times for "${title}":`, error);
+    return null;
+  }
+}
+
 // Pages wait for this, so keep it short; a slow IDFA means no hints rather than a slow page.
 // It bounds the whole lookup, including the flag check, which can wait for LaunchDarkly to start.
-const AVAILABILITY_DEADLINE_MS = 3000;
+const AVAILABILITY_DEADLINE_MS = SHOWS_TIMEOUT_MS;
 
 /**
  * Sold-out and low-availability marks for the upcoming screenings among `screenings`, keyed by
@@ -237,22 +295,9 @@ async function lookUpAvailability(
     return 'done';
   }
 
-  const byFilm = new Map<string, { page: FestivalPage; title: string; screenings: Screening[] }>();
-  await Promise.all(
-    upcoming.map(async (screening) => {
-      const link = await getFestivalLinkForScreening(screening);
-      const page = link ? parseFestivalLink(link) : null;
-      if (!page) return;
-      const key = `${page.kind}:${page.id}`;
-      if (!byFilm.has(key)) byFilm.set(key, { page, title: screening.act, screenings: [] });
-      byFilm.get(key)!.screenings.push(screening);
-    })
-  );
-
   const lookups = await Promise.allSettled(
-    Array.from(byFilm.values()).map(async (film) => {
-      // The request timeout matches the deadline so late requests don't linger in the background
-      const shows = await cachedShows(film.page.kind, film.page.id, film.title, AVAILABILITY_DEADLINE_MS);
+    (await groupByFilm(upcoming)).map(async (film) => {
+      const shows = await cachedShows(film.page.kind, film.page.id, film.title);
       for (const screening of film.screenings) {
         const availability = availabilityOf(shows, screening.dateTime);
         if (availability) marks.set(screening.id, availability);
@@ -264,4 +309,84 @@ async function lookUpAvailability(
     console.warn(`Could not check IDFA availability for ${failed.length} film(s):`, (failed[0] as PromiseRejectedResult).reason);
   }
   return 'done';
+}
+
+interface FilmScreenings {
+  page: FestivalPage;
+  title: string;
+  screenings: Screening[];
+}
+
+/** Screenings that have an IDFA page, grouped per film so each film is requested once */
+async function groupByFilm(screenings: Screening[]): Promise<FilmScreenings[]> {
+  const byFilm = new Map<string, FilmScreenings>();
+  await Promise.all(
+    screenings.map(async (screening) => {
+      const link = await getFestivalLinkForScreening(screening);
+      const page = link ? parseFestivalLink(link) : null;
+      if (!page) return;
+      const key = `${page.kind}:${page.id}`;
+      if (!byFilm.has(key)) byFilm.set(key, { page, title: screening.act, screenings: [] });
+      byFilm.get(key)!.screenings.push(screening);
+    })
+  );
+  return Array.from(byFilm.values());
+}
+
+/**
+ * Bring the stored end time and Q&A in line with the IDFA site: for upcoming screenings (IDFA
+ * corrects end times and adds Q&As), and for this year's screenings with a ticket missing either
+ * (uploaded before the app read them, or edited since). A showing is recognised by its start
+ * time, so one that IDFA moves to another time keeps what it had until the ticket is corrected. Meant for `after()`: nothing waits for it, and the next page
+ * load shows the result. The shows are usually already cached by the availability check.
+ */
+export async function refreshShowDetails(
+  visibleEmails: string[],
+  screenings: Screening[],
+  now: Date,
+  context: LDContext
+): Promise<void> {
+  try {
+    const currentYear = getCurrentFestivalYear();
+    const stale = screenings.filter(
+      (screening) =>
+        screening.dateTime > now ||
+        (screening.festivalYear === currentYear &&
+          screening.tickets.some((ticket) => !ticket.endsAt || ticket.hasQa == null))
+    );
+    if (stale.length === 0) {
+      return;
+    }
+    // The same switch as availability: it turns off the app's routine calls to IDFA
+    const enabled = await evaluateBooleanFlag(IDFA_AVAILABILITY_FLAG_KEY, context, true);
+    if (!enabled.value) {
+      return;
+    }
+
+    const refreshes = await Promise.allSettled(
+      (await groupByFilm(stale)).map(async (film) => {
+        const shows = await cachedShows(film.page.kind, film.page.id, film.title);
+        for (const screening of film.screenings) {
+          const details = showDetailsOf(shows, screening.dateTime);
+          // No matching show tells us nothing, so keep what's stored
+          if (!details) continue;
+          // Every ticket, not the screening's summary: one uploaded earlier can lag behind another
+          const wantedEnd = details.endsAt?.getTime() ?? null;
+          const upToDate = screening.tickets.every(
+            (ticket) =>
+              (ticket.endsAt ? new Date(ticket.endsAt).getTime() : null) === wantedEnd &&
+              (ticket.hasQa ?? null) === details.hasQa
+          );
+          if (upToDate) continue;
+          await updateScreeningShowDetails(visibleEmails, screening, details);
+        }
+      })
+    );
+    const failed = refreshes.filter((refresh) => refresh.status === 'rejected');
+    if (failed.length > 0) {
+      console.warn(`Could not refresh IDFA show times for ${failed.length} film(s):`, (failed[0] as PromiseRejectedResult).reason);
+    }
+  } catch (error) {
+    console.warn('Could not refresh IDFA show times:', error);
+  }
 }

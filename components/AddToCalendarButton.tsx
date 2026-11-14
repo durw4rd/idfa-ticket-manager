@@ -8,6 +8,8 @@ interface AddToCalendarButtonProps {
   title: string;
   location: string;
   startsAt: string; // ISO timestamp
+  endsAt?: string | null; // From the IDFA site; a typical length is assumed without it
+  hasQa?: boolean;
   url?: string | null;
 }
 
@@ -19,10 +21,10 @@ function escapeIcsText(text: string): string {
   return text.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
 }
 
-export default function AddToCalendarButton({ title, location, startsAt, url }: AddToCalendarButtonProps) {
+export default function AddToCalendarButton({ title, location, startsAt, endsAt, hasQa, url }: AddToCalendarButtonProps) {
   const handleClick = () => {
     const start = new Date(startsAt);
-    const end = screeningEnd(start);
+    const end = screeningEnd(start, endsAt);
 
     const lines = [
       'BEGIN:VCALENDAR',
@@ -35,6 +37,7 @@ export default function AddToCalendarButton({ title, location, startsAt, url }: 
       `DTEND:${toIcsTimestamp(end)}`,
       `SUMMARY:${escapeIcsText(`IDFA: ${title}`)}`,
       `LOCATION:${escapeIcsText(location)}`,
+      ...(hasQa ? ['DESCRIPTION:Q&A after the film'] : []),
       ...(url ? [`URL:${url}`] : []),
       'BEGIN:VALARM',
       'TRIGGER:-PT45M',

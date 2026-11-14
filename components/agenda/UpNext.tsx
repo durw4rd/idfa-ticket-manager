@@ -4,12 +4,13 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { Navigation, QrCode } from 'lucide-react';
 import type { AgendaScreening, CrewMember } from '@/lib/types';
-import { dayKey, formatDate, formatTime } from '@/lib/dates';
+import { dayKey, formatDate, formatTimeRange } from '@/lib/dates';
 import { formatTimeUntil } from '@/lib/display';
 import { getMapSearchUrl } from '@/lib/maps-utils';
 import { holdersOf, screeningHref } from '@/lib/agenda';
 import { AvatarStack } from '@/components/ui/Avatar';
 import { Button, ButtonLink } from '@/components/ui/Button';
+import QaMark from '@/components/QaMark';
 import QrOverlay, { qrTicketsFor } from '@/components/tickets/QrOverlay';
 
 /** The next screening for the selected person, with the QR one tap away */
@@ -38,9 +39,12 @@ export default function UpNext({
           <h2 className="font-display text-xl text-balance">{screening.act}</h2>
         </Link>
         <div className="mt-2 flex items-center gap-2 text-sm text-ink-2">
-          <span className="font-semibold tabular-nums text-ink">{formatTime(startsAt)}</span>
+          <span className="shrink-0 font-semibold tabular-nums text-ink">
+            {formatTimeRange(startsAt, screening.endsAt)}
+          </span>
           <span aria-hidden>·</span>
           <span className="truncate">{screening.location}</span>
+          {screening.hasQa && <QaMark />}
           <span className="ml-auto">
             <AvatarStack members={holdersOf(screening).map(lookup)} />
           </span>
