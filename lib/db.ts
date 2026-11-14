@@ -198,18 +198,20 @@ export async function updateTicketHolder(
 
 /**
  * Store the IDFA page found for one of the owner's tickets after its title was corrected. Only
- * while the ticket still has that title and no link, so a lookup that finishes after another edit
+ * while the ticket still has that title and festival year and no link, so a lookup that finishes after another edit
  * can't attach the wrong film.
  */
 export async function updateTicketFestivalLink(
   ownerEmail: string,
   id: string,
   act: string,
+  festivalYear: number,
   festivalLink: string
 ): Promise<void> {
   await sql`
     UPDATE tickets SET festival_link = ${festivalLink}
-    WHERE id = ${id} AND owner_email = ${ownerEmail} AND act = ${act} AND festival_link IS NULL
+    WHERE id = ${id} AND owner_email = ${ownerEmail} AND act = ${act} AND festival_year = ${festivalYear}
+      AND festival_link IS NULL
   `;
 }
 
