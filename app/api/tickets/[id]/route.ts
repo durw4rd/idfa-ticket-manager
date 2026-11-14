@@ -79,7 +79,7 @@ export async function PATCH(
             const link =
               (await findFestivalLink(title, festivalYear, userContext(viewer.email))) ||
               getFestivalLink(title, festivalYear);
-            if (link) await updateTicketFestivalLink(viewer.email, ticketId, title, link);
+            if (link) await updateTicketFestivalLink(viewer.email, ticketId, title, festivalYear, link);
           } catch (linkError) {
             console.warn(`Could not find the festival link for "${title}":`, linkError);
           } finally {
