@@ -1,8 +1,9 @@
 import Link from 'next/link';
 import { AlertTriangle } from 'lucide-react';
 import AvailabilityMark from '@/components/AvailabilityMark';
+import QaMark from '@/components/QaMark';
 import type { AgendaScreening, CrewMember } from '@/lib/types';
-import { formatDayHeading, formatTime } from '@/lib/dates';
+import { formatDayHeading, formatTime, screeningEnd } from '@/lib/dates';
 import { type AgendaDay, holdersOf, isTogether, screeningHref } from '@/lib/agenda';
 import { AvatarStack } from '@/components/ui/Avatar';
 
@@ -73,6 +74,13 @@ function ScreeningRow({
           className={`pt-0.5 text-base font-semibold tabular-nums ${past ? 'text-ink-3' : 'text-ink'}`}
         >
           {formatTime(startsAt)}
+          {/* The end sits under the start, quieter, so the column still scans by start time */}
+          {screening.endsAt && (
+            <span className="block text-xs font-normal text-ink-3">
+              <span className="sr-only">until </span>
+              {formatTime(new Date(screening.endsAt))}
+            </span>
+          )}
         </span>
         <span className="min-w-0">
           <span className={`block font-display text-lg leading-tight ${past ? 'text-ink-3' : ''}`}>
@@ -87,6 +95,8 @@ function ScreeningRow({
                 Clash
               </span>
             )}
+            {/* Unlike availability, this still matters once the film is running: stay for the Q&A? */}
+            {screening.hasQa && screeningEnd(startsAt, screening.endsAt) > marks.now && <QaMark />}
             {!past && screening.availability && <AvailabilityMark availability={screening.availability} />}
             <span className="ml-auto flex shrink-0 items-center gap-1.5">
               {isTogether(screening) && <span className="text-xs font-semibold text-ink-2">Together</span>}

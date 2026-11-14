@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import { requireAuth } from '@/lib/auth-helpers';
-import { deleteTicket, updateTicketDetails } from '@/lib/db';
+import { deleteTicket, updateTicketDetails, updateTicketFestivalLink } from '@/lib/db';
+import { findFestivalLink } from '@/lib/find-festival-link';
+import { getFestivalLink } from '@/lib/festival-links';
 import { deleteTicketFiles } from '@/lib/storage';
 import { flushLdEvents, trackEvent, userContext } from '@/lib/launchdarkly';
 import { normalizeStartTime, parseTicketDateTime } from '@/lib/dates';
@@ -66,6 +68,24 @@ export async function PATCH(
       });
       if (!ticket) {
         return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
+      }
+
+      // A corrected title drops the old film's IDFA page. Find the new one once the response is
+      // sent; the overview, availability, end time and Q&A all hang off that link.
+      if (!ticket.festivalLink) {
+        const { id: ticketId, act: title, festivalYear } = ticket;
+        after(async () => {
+          try {
+            const link =
+              (await findFestivalLink(title, festivalYear, userContext(viewer.email))) ||
+              getFestivalLink(title, festivalYear);
+            if (link) await updateTicketFestivalLink(viewer.email, ticketId, title, festivalYear, link);
+          } catch (linkError) {
+            console.warn(`Could not find the festival link for "${title}":`, linkError);
+          } finally {
+            await flushLdEvents();
+          }
+        });
       }
     }
 

@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import type { AgendaScreening } from '@/lib/types';
 import { useModal } from '@/lib/use-modal';
-import { formatDate, formatTime } from '@/lib/dates';
+import { formatDate, formatTimeRange } from '@/lib/dates';
 
 export interface QrTicket {
   id: string;
@@ -172,7 +172,7 @@ export function qrTicketsFor(
   const mine = screening.tickets.filter((ticket) => ticket.holderEmail === preferEmail);
   const tickets = mine.length > 0 ? mine : screening.tickets;
   const startsAt = new Date(screening.startsAt);
-  const meta = `${formatDate(startsAt)} · ${formatTime(startsAt)} · ${screening.location}`;
+  const meta = `${formatDate(startsAt)} · ${formatTimeRange(startsAt, screening.endsAt)} · ${screening.location}`;
   return tickets.map((ticket, index) => ({
     id: ticket.id,
     title: screening.act,

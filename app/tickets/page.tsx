@@ -21,7 +21,7 @@ export default async function TicketsPage() {
     getCrew(viewer),
   ]);
   // Keep a ticket until its screening is over, in case you need it at the door after the start
-  const current = screenings.filter((screening) => screeningEnd(screening.dateTime) > now);
+  const current = screenings.filter((screening) => screeningEnd(screening.dateTime, screening.endsAt) > now);
 
   return (
     <>
