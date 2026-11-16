@@ -149,13 +149,18 @@ function parseKnownTemplate(subject: string, links: EmailLink[]): VoteEmail | nu
 
 const MAX_BODY_LENGTH = 4000;
 
-// The model sees each link's text and host, never the URL: the links are single-use credentials,
+// A link's visible text can itself be the URL, and a subject or body can quote one
+const withoutUrls = (text: string) => text.replace(/\b(?:https?:\/\/|www\.)\S+/gi, '[url]');
+
+// The model sees each link's text and host, never a URL: the links are single-use credentials,
 // and picking by number means it can't return one that wasn't in the email
 function promptVariables(email: InboundEmail, links: EmailLink[], body: string) {
   return {
-    subject: email.subject.slice(0, 300),
-    body: body.slice(0, MAX_BODY_LENGTH),
-    links: links.map((link, i) => `${i + 1}. "${link.text || '(no text)'}" → ${new URL(link.url).hostname}`).join('\n'),
+    subject: withoutUrls(email.subject).slice(0, 300),
+    body: withoutUrls(body).slice(0, MAX_BODY_LENGTH),
+    links: links
+      .map((link, i) => `${i + 1}. "${withoutUrls(link.text) || '(no text)'}" → ${new URL(link.url).hostname}`)
+      .join('\n'),
   };
 }
 
@@ -212,6 +217,9 @@ function parseModelAnswer(content: unknown, links: EmailLink[]): VoteEmail | 'no
  * The film and voting links in a forwarded IDFA voting email, or null when it isn't one. Emails
  * in the known template are read in code. Otherwise the model from the LaunchDarkly AgentControl
  * config (with a hardcoded OpenAI fallback) reads it, unless the kill switch is off.
+ *
+ * Throws when no model could be reached, so the webhook can ask for the mail again later rather
+ * than drop its links during a provider outage.
  */
 export async function extractVoteLinks(email: InboundEmail, context: LDContext): Promise<VoteEmail | null> {
   const { links, body } = readEmail(email);
@@ -224,39 +232,34 @@ export async function extractVoteLinks(email: InboundEmail, context: LDContext):
     return known;
   }
 
-  try {
-    const enabled = await evaluateBooleanFlag(VOTE_LINK_FLAG_KEY, context, true);
-    if (!enabled.value) {
-      return null;
-    }
-
-    const variables = promptVariables(email, links, body);
-    let answer: ReturnType<typeof parseModelAnswer> = null;
-
-    if (await getLdClient()) {
-      try {
-        answer = parseModelAnswer(await readWithAgentControl(variables, context), links);
-        if (!answer) {
-          console.warn(`AgentControl config "${VOTE_LINK_CONFIG_KEY}" gave an unexpected answer, using fallback model`);
-        }
-      } catch (error) {
-        console.warn(`AgentControl config "${VOTE_LINK_CONFIG_KEY}" unavailable, using fallback model:`, error);
-      }
-    }
-
-    if (!answer) {
-      if (!process.env.OPENAI_API_KEY) {
-        console.warn('OpenAI API key not configured, cannot read the voting email');
-        return null;
-      }
-      answer = parseModelAnswer(await readWithFallback(variables), links);
-    }
-
-    return answer && answer !== 'not-a-vote-email' ? answer : null;
-  } catch (error) {
-    console.error('Error reading a voting email with AI:', error);
+  const enabled = await evaluateBooleanFlag(VOTE_LINK_FLAG_KEY, context, true);
+  if (!enabled.value) {
     return null;
   }
+
+  const variables = promptVariables(email, links, body);
+  let answer: ReturnType<typeof parseModelAnswer> = null;
+
+  if (await getLdClient()) {
+    try {
+      answer = parseModelAnswer(await readWithAgentControl(variables, context), links);
+      if (!answer) {
+        console.warn(`AgentControl config "${VOTE_LINK_CONFIG_KEY}" gave an unexpected answer, using fallback model`);
+      }
+    } catch (error) {
+      console.warn(`AgentControl config "${VOTE_LINK_CONFIG_KEY}" unavailable, using fallback model:`, error);
+    }
+  }
+
+  if (!answer) {
+    if (!process.env.OPENAI_API_KEY) {
+      console.warn('OpenAI API key not configured, cannot read the voting email');
+      return null;
+    }
+    answer = parseModelAnswer(await readWithFallback(variables), links);
+  }
+
+  return answer && answer !== 'not-a-vote-email' ? answer : null;
 }
 
 const GMAIL_CONFIRM_SENDER = 'forwarding-noreply@google.com';

@@ -4,6 +4,7 @@
 // ever sent to that one person's browser.
 
 import { randomBytes } from 'crypto';
+import { db } from '@vercel/postgres';
 import { sql } from './db';
 import { comparableTitle } from './find-festival-link';
 import { normalizeEmail } from './groups';
@@ -58,8 +59,12 @@ export async function setForwardConfirmUrl(email: string, url: string | null): P
 /**
  * Store the voting links from one email and deal them to the owner's tickets for that film: the
  * most recent showing that has started (the email follows the screening), one link per ticket that
- * has none yet, the owner's own ticket first. Links left over stay with the owner, unassigned.
- * Safe to repeat: links already stored for this owner are skipped. Returns how many were new.
+ * has none yet, the owner's own ticket first. Links left over, and all of them when no showing has
+ * started, stay with the owner, unassigned. Safe to repeat: links already stored for this owner
+ * are skipped. Returns how many were new.
+ *
+ * Runs in one transaction under an advisory lock on the owner, so two emails arriving together
+ * can't both pick the same free ticket.
  */
 export async function saveVoteLinks(
   ownerEmail: string,
@@ -70,38 +75,53 @@ export async function saveVoteLinks(
   now: Date
 ): Promise<number> {
   const owner = normalizeEmail(ownerEmail);
-  const known = await sql`SELECT url FROM vote_links WHERE owner_email = ${owner} AND url = ANY(${urls as any}::text[])`;
-  const knownUrls = new Set(known.rows.map((row) => row.url as string));
-  const fresh = urls.filter((url) => !knownUrls.has(url));
-  if (fresh.length === 0) {
-    return 0;
-  }
+  const client = await db.connect();
+  try {
+    await client.sql`BEGIN`;
+    await client.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`vote-links:${owner}`}, 0))`;
 
-  const tickets = await sql`
-    SELECT t.id, t.act, t.starts_at as "startsAt", t.holder_email as "holderEmail"
-    FROM tickets t
-    WHERE t.owner_email = ${owner} AND t.festival_year = ${festivalYear}
-      AND NOT EXISTS (SELECT 1 FROM vote_links v WHERE v.ticket_id = t.id)
-    ORDER BY t.starts_at DESC, (t.holder_email = ${owner}) DESC, t.created_at ASC
-  `;
-  const wanted = comparableTitle(title);
-  const matching = tickets.rows.filter((ticket) => comparableTitle(ticket.act as string) === wanted);
-  // Rows are newest showing first, so the first one that has started is the one just seen
-  const seen = matching.find((ticket) => new Date(ticket.startsAt) <= now) ?? matching[matching.length - 1];
-  const showing = seen ? matching.filter((ticket) => new Date(ticket.startsAt).getTime() === new Date(seen.startsAt).getTime()) : [];
-
-  let saved = 0;
-  for (const [index, url] of Array.from(fresh.entries())) {
-    const ticket = showing[index];
-    // The unique indexes make a concurrent retry of the same email a no-op
-    const result = await sql`
-      INSERT INTO vote_links (owner_email, festival_year, act, url, ticket_id, message_id)
-      VALUES (${owner}, ${festivalYear}, ${(ticket?.act as string) ?? title.slice(0, 255)}, ${url}, ${ticket?.id ?? null}, ${messageId})
-      ON CONFLICT DO NOTHING
+    const known = await client.sql`
+      SELECT url FROM vote_links WHERE owner_email = ${owner} AND url = ANY(${urls as any}::text[])
     `;
-    saved += result.rowCount || 0;
+    const knownUrls = new Set(known.rows.map((row) => row.url as string));
+    const fresh = urls.filter((url) => !knownUrls.has(url));
+
+    const tickets = await client.sql`
+      SELECT t.id, t.act, t.starts_at as "startsAt",
+             EXISTS (SELECT 1 FROM vote_links v WHERE v.ticket_id = t.id) as "taken"
+      FROM tickets t
+      WHERE t.owner_email = ${owner} AND t.festival_year = ${festivalYear}
+      ORDER BY t.starts_at DESC, (t.holder_email = ${owner}) DESC, t.created_at ASC
+    `;
+    const wanted = comparableTitle(title);
+    const matching = tickets.rows.filter((ticket) => comparableTitle(ticket.act as string) === wanted);
+    // The showing is chosen among all the film's tickets, before looking at which are free, so a
+    // spare link never spills over to another day's showing. Rows are newest showing first.
+    const seen = matching.find((ticket) => new Date(ticket.startsAt) <= now);
+    const free = seen
+      ? matching.filter(
+          (ticket) => !ticket.taken && new Date(ticket.startsAt).getTime() === new Date(seen.startsAt).getTime()
+        )
+      : [];
+
+    let saved = 0;
+    for (const [index, url] of Array.from(fresh.entries())) {
+      const ticket = free[index];
+      const result = await client.sql`
+        INSERT INTO vote_links (owner_email, festival_year, act, url, ticket_id, message_id)
+        VALUES (${owner}, ${festivalYear}, ${(ticket?.act as string) ?? (seen?.act as string) ?? title.slice(0, 255)}, ${url}, ${ticket?.id ?? null}, ${messageId})
+        ON CONFLICT (owner_email, url) DO NOTHING
+      `;
+      saved += result.rowCount || 0;
+    }
+    await client.sql`COMMIT`;
+    return saved;
+  } catch (error) {
+    await client.sql`ROLLBACK`.catch(() => {});
+    throw error;
+  } finally {
+    client.release();
   }
-  return saved;
 }
 
 export interface VoteLink {
