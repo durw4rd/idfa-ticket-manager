@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
         break;
       }
       case 'invite': {
-        if (!body.email || !EMAIL_PATTERN.test(body.email.trim())) {
+        if (typeof body.email !== 'string' || !EMAIL_PATTERN.test(body.email.trim())) {
           return NextResponse.json({ error: 'A valid email address is required' }, { status: 400 });
         }
         if (!(await inviteMember(viewer.email, body.groupId, body.email))) {
@@ -88,6 +88,9 @@ export async function POST(request: NextRequest) {
         break;
       }
       case 'remove': {
+        if (typeof body.email !== 'string' || !body.email.trim()) {
+          return NextResponse.json({ error: 'The email of the member to remove is required' }, { status: 400 });
+        }
         if (!(await removeMember(viewer.email, body.groupId, body.email))) {
           return NextResponse.json({ error: 'Only group owners can remove members' }, { status: 403 });
         }

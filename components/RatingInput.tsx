@@ -6,6 +6,7 @@ import { Loader2, Pencil } from 'lucide-react';
 import type { CrewMember } from '@/lib/types';
 import { Button } from '@/components/ui/Button';
 import { handleRadioKeys } from '@/lib/radio-keys';
+import { readApiResponse } from '@/lib/api-client';
 import { Notice } from '@/components/ui/Field';
 import { AutoTextarea } from '@/components/ui/AutoTextarea';
 import { RatingRow } from '@/components/CrewRatings';
@@ -83,10 +84,7 @@ export default function RatingInput({
           method === 'POST' ? { act, festivalYear, rating, comment: comment.trim() || null } : { act, festivalYear },
         ),
       });
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Could not save your rating');
-      }
+      await readApiResponse(response, 'Could not save your rating');
       if (method === 'DELETE') {
         setSaved(null);
         setRating(null);

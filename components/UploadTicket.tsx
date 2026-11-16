@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { pdfFileToImages } from '@/lib/pdf-client-utils';
+import { readApiResponse } from '@/lib/api-client';
 import { CrewMember, ExtractedTicketFields, PDFProcessingSummary, ProcessedTicketResult } from '@/lib/types';
 import UploadSelect from './upload/UploadSelect';
 import UploadProgress from './upload/UploadProgress';
@@ -100,11 +101,7 @@ export default function UploadTicket({ crew }: { crew: CrewMember[] }) {
                 pageImages: [{ pageNumber: page.pageNumber, imageData: page.imageData, pdfUrl: pdf.pdfUrl }],
               }),
             });
-            if (!response.ok) {
-              const errorData = await response.json().catch(() => ({}));
-              throw new Error(errorData.error || 'Failed to process ticket');
-            }
-            const summary: PDFProcessingSummary = await response.json();
+            const summary = await readApiResponse<PDFProcessingSummary>(response, 'Failed to process ticket');
             pageResults.push({ ...summary.tickets[0], fileName: pdf.file.name, pageNumber: page.pageNumber });
           } catch (err) {
             pageResults.push({
@@ -165,10 +162,9 @@ export default function UploadTicket({ crew }: { crew: CrewMember[] }) {
             review: { corrected },
           }),
         });
-        if (!response.ok) {
-          const data = await response.json().catch(() => ({}));
-          throw new Error(`${item.draft.act}: ${data.error || 'Failed to save changes'}`);
-        }
+        await readApiResponse(response, 'Failed to save changes').catch((err: Error) => {
+          throw new Error(`${item.draft.act}: ${err.message}`);
+        });
         // New tickets are held by the uploader; hand over the ones meant for someone else
         if (item.holderEmail !== me.email) {
           const holderResponse = await fetch(`/api/tickets/${item.ticketId}/holder`, {
@@ -176,10 +172,9 @@ export default function UploadTicket({ crew }: { crew: CrewMember[] }) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ holderEmail: item.holderEmail }),
           });
-          if (!holderResponse.ok) {
-            const data = await holderResponse.json().catch(() => ({}));
-            throw new Error(`${item.draft.act}: ${data.error || 'Failed to set who the ticket is for'}`);
-          }
+          await readApiResponse(holderResponse, 'Failed to set who the ticket is for').catch((err: Error) => {
+            throw new Error(`${item.draft.act}: ${err.message}`);
+          });
         }
         setReviewItems((items) => items.map((i) => (i.ticketId === item.ticketId ? { ...i, saved: true } : i)));
       }

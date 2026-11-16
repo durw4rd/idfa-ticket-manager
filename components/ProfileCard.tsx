@@ -7,6 +7,7 @@ import { Loader2, LogOut } from 'lucide-react';
 import type { CrewMember } from '@/lib/types';
 import { assignCrewLooks, type Badge, BADGE_LABELS, BADGES, badgeColor } from '@/lib/display';
 import { handleRadioKeys } from '@/lib/radio-keys';
+import { readApiResponse } from '@/lib/api-client';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { inputClasses, Notice } from '@/components/ui/Field';
@@ -33,10 +34,7 @@ export default function ProfileCard({ me, crew, email }: { me: CrewMember; crew:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(change),
       });
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Could not save your profile');
-      }
+      await readApiResponse(response, 'Could not save your profile');
       // In one transition, so the pending badge gives way to the refreshed one without a flash
       startTransition(() => {
         setPendingBadge(undefined);
