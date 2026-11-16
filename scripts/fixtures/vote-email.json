@@ -1,0 +1,10 @@
+{
+  "From": "IDFA <noreply@mailgun.idfa.nl>",
+  "FromFull": { "Email": "noreply@mailgun.idfa.nl", "Name": "IDFA" },
+  "To": "inbound+000000000000000000000000@inbound.postmarkapp.com",
+  "MailboxHash": "000000000000000000000000",
+  "MessageID": "00000000-0000-0000-0000-000000000001",
+  "Subject": "Breng je stem uit: wat vind jij van Nuisance Bear? - Cast your vote: What did you think of Nuisance Bear?",
+  "TextBody": "",
+  "HtmlBody": "<div><table><tbody><tr><td><img src=\"https://cdn.eventpoll.eu/idfa/images/banner.webp\" alt=\"header audience award 2026\"></td></tr><tr><td><h1>Beste Alex,</h1><p><strong>Bedankt voor je bezoek aan IDFA 2026.</strong></p><p>Laat ons weten wat je van <strong><em>Nuisance Bear</em></strong> vond door online je stem uit te brengen voor IDFA Audience Award.</p><p>Let op: Voor elk gescand ticket ontvang je een unieke stemlink. Elke stemlink kan maar één keer gebruikt worden.</p><p>Meer weten? <a href=\"https://email.mailgun.idfa.nl/c/EXAMPLE-INFO-NL\" target=\"_blank\">Kijk hier voor meer informatie</a>.</p></td></tr><tr><td><h1>Dear Alex,</h1><p><strong>Thank you for attending IDFA 2026.</strong></p><p>Let us know what you think about <strong><em>Nuisance Bear</em></strong> by voting for the IDFA Audience Award online.</p><p>Each scanned ticket corresponds to a unique voting link. Every link can only be used once.</p><p>Want to know more? <a href=\"https://email.mailgun.idfa.nl/c/EXAMPLE-INFO-EN\" target=\"_blank\">Click here to find out more</a>.</p></td></tr><tr><td align=\"center\"><a href=\"https://email.mailgun.idfa.nl/c/EXAMPLE-VOTE-1\" style=\"padding:10px\" target=\"_blank\">Stem\n nu / Vote now</a></td></tr><tr><td align=\"center\"><a href=\"https://email.mailgun.idfa.nl/c/EXAMPLE-VOTE-2\" style=\"padding:10px\" target=\"_blank\">Stem\n nu / Vote now</a></td></tr><tr><td>Eventpoll 2026</td></tr></tbody></table><img width=\"1\" height=\"1\" alt=\"\" src=\"https://email.mailgun.idfa.nl/o/EXAMPLE-PIXEL\"></div>"
+}
