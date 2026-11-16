@@ -9,6 +9,7 @@ A small web app for keeping IDFA (International Documentary Film Festival Amster
 - **Scan at the door.** Each screening shows its QR codes, with a fullscreen mode for scanning.
 - **Share with your group.** Invite people on the Sharing page. Everyone in a group sees each other's screenings, tickets, and ratings.
 - **Rate films.** Give each film 1–10 with an optional comment. Past festival years turn into a recap of what you saw and how you rated it.
+- **Vote for the Audience Award.** Forward IDFA's "Cast your vote" emails to your private address (Crew page) and each ticket's holder gets a Vote button on the screening.
 
 ## Using it
 
@@ -44,10 +45,12 @@ Open http://localhost:3000. To pull env vars from the linked Vercel project inst
 | `NEXTAUTH_URL` | optional | Leave unset on Vercel (NextAuth uses the request's host); defaults to `http://localhost:3000` locally |
 | `LD_SERVICE_NAME` | optional | Labels AI traces in LaunchDarkly (default `idfa-manager`) |
 | `TEST_DATE` | optional | Pretend "now" is this ISO date, to test today/past styling |
+| `INBOUND_EMAIL_ADDRESS` | optional | The Postmark server's inbound address (`<hash>@inbound.postmarkapp.com`). Turns on voting links; see below |
+| `INBOUND_WEBHOOK_SECRET` | with the above | Password Postmark sends with each inbound mail (`openssl rand -hex 24`) |
 
 ### Database
 
-There is no migration runner; run the SQL by hand. For a new database, run [`migrations/000-base-schema.sql`](migrations/000-base-schema.sql), then [`migrations/add-festival-link.sql`](migrations/add-festival-link.sql), then [`migrations/002-multi-user-multi-year.sql`](migrations/002-multi-user-multi-year.sql), [`migrations/003-ticket-holders-and-profiles.sql`](migrations/003-ticket-holders-and-profiles.sql) , [`migrations/004-profile-badges.sql`](migrations/004-profile-badges.sql) and [`migrations/005-screening-end-and-qa.sql`](migrations/005-screening-end-and-qa.sql). Run a new migration before deploying the code that needs it. Migration 002 assigns existing tickets to a hardcoded owner and seeds a group; edit the emails in it first.
+There is no migration runner; run the SQL by hand. For a new database, run [`migrations/000-base-schema.sql`](migrations/000-base-schema.sql), then [`migrations/add-festival-link.sql`](migrations/add-festival-link.sql), then [`migrations/002-multi-user-multi-year.sql`](migrations/002-multi-user-multi-year.sql), [`migrations/003-ticket-holders-and-profiles.sql`](migrations/003-ticket-holders-and-profiles.sql) , [`migrations/004-profile-badges.sql`](migrations/004-profile-badges.sql), [`migrations/005-screening-end-and-qa.sql`](migrations/005-screening-end-and-qa.sql) and [`migrations/006-vote-links.sql`](migrations/006-vote-links.sql). Run a new migration before deploying the code that needs it. Migration 002 assigns existing tickets to a hardcoded owner and seeds a group; edit the emails in it first.
 
 ### LaunchDarkly
 
@@ -61,6 +64,23 @@ The app expects these in its LaunchDarkly project. Each has a code fallback, so 
 | `festival-link-ai` | Boolean flag | Kill switch for the festival-link lookup |
 | `idfa-availability` | Boolean flag | Kill switch for the routine calls to the IDFA site: availability marks and the end time / Q&A refresh |
 | `ticket-extraction-corrected` | Numeric metric | `1` when a user corrected the AI's extraction on the review screen, `0` otherwise |
+
+| `vote-link-extraction` | AgentControl config (completion) | Model and prompt that reads a voting email the code couldn't parse. Prompt: `VOTE_LINK_PROMPT` in `lib/vote-link-extractor.ts`, with variables `{{subject}}`, `{{body}}`, `{{links}}`; structured output: `VOTE_LINK_SCHEMA` |
+| `vote-link-ai` | Boolean flag | Kill switch for that model fallback (emails in IDFA's usual template never reach it) |
+
+### Voting links by email (optional)
+
+IDFA emails a single-use Audience Award voting link per scanned ticket. The app can receive those emails through [Postmark](https://postmarkapp.com) inbound and show each link to the holder of a ticket.
+
+1. Run `migrations/006-vote-links.sql`.
+2. Create a Postmark server. On its inbound stream, copy the inbound address into `INBOUND_EMAIL_ADDRESS` and set the webhook to `https://postmark:<INBOUND_WEBHOOK_SECRET>@<your-app>/api/inbound/email`.
+3. Each user then finds a private forwarding address on the **Crew** page, with the Gmail steps: add it as a forwarding address, confirm it with the button that appears on the Crew page, and add a filter (`from:noreply@mailgun.idfa.nl "Cast your vote"`) that forwards to it.
+
+To try the webhook locally, post the sample mail with your own token as `MailboxHash`:
+
+```bash
+curl -u postmark:$INBOUND_WEBHOOK_SECRET -H 'Content-Type: application/json' -d @scripts/fixtures/vote-email.json http://localhost:3000/api/inbound/email
+```
 
 ## Deploying
 
