@@ -8,10 +8,11 @@ IDFA Ticket Manager: a Next.js 15 (App Router, React 19, TypeScript, Tailwind 3)
 npm run dev          # http://localhost:3000 (needs .env.local; see .env.example)
 npx tsc --noEmit     # typecheck
 npm run lint         # next lint
+npm test             # vitest: pure logic in lib/*.test.ts
 npm run build        # full production build
 ```
 
-There are no tests. Verify with typecheck, lint, and build, and run the app for UI changes. Node 22 (`.nvmrc`).
+Unit tests cover the pure logic in `lib/` (`lib/*.test.ts`, Vitest); add one when you change dates, agenda, parsing or matching code. CI (`.github/workflows/ci.yml`) runs typecheck, lint, tests and build on every PR. Run the app for UI changes. Node 22 (`.nvmrc`).
 
 ## Rules that matter
 

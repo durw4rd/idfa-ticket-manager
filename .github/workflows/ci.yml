@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Placeholders so modules that read these at import time load; nothing connects to them
+      DATABASE_URL: postgres://ci:ci@localhost:5432/ci
+      AUTH_SECRET: ci-only-not-a-secret
+      GOOGLE_CLIENT_ID: ci
+      GOOGLE_CLIENT_SECRET: ci
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Lint
+        run: npm run lint
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: pdf.js worker matches the installed pdfjs-dist
+        run: cmp public/pdf.worker.min.mjs node_modules/pdfjs-dist/build/pdf.worker.min.mjs

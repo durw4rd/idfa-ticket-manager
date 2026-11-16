@@ -1,6 +1,6 @@
 # Architecture
 
-Next.js 15 App Router app, deployed on Vercel. Server components read Postgres directly; client components call JSON route handlers under `app/api/`. No ORM, no client-side state library, no test suite.
+Next.js 15 App Router app, deployed on Vercel. Server components read Postgres directly; client components call JSON route handlers under `app/api/`. No ORM, no client-side state library. Unit tests (Vitest) cover the pure logic in `lib/`.
 
 ```
 Browser ──► middleware.ts (NextAuth JWT check; redirects to /login)
@@ -105,4 +105,4 @@ All ticket times are Amsterdam wall-clock times; servers run in UTC. Always go t
 
 - `@vercel/postgres` is deprecated (Neon's own driver replaces it). Used in `lib/db.ts`, `lib/groups.ts`, and the scripts.
 - `lib/festival-links.ts` hardcodes IDFA 2025 film URLs; it only matters as the last fallback.
-- No automated tests. Verify changes with `npm run build` and `npm run lint`, and by running the app.
+- Tests cover pure functions only; database queries and UI flows are verified by running the app.
