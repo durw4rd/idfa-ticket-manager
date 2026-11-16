@@ -42,7 +42,7 @@ Open http://localhost:3000. To pull env vars from the linked Vercel project inst
 | `ANTHROPIC_API_KEY` | if used | Only needed when a LaunchDarkly variation serves a Claude model |
 | `LD_SDK_KEY` | recommended | LaunchDarkly server SDK key. Without it the app uses hardcoded fallbacks |
 | `ALLOWED_EMAILS` | optional | Comma-separated sign-in allowlist, used only when LaunchDarkly is unreachable |
-| `NEXTAUTH_URL` | optional | Leave unset on Vercel (NextAuth uses the request's host); defaults to `http://localhost:3000` locally |
+| `NEXTAUTH_URL` | optional | Leave unset on Vercel (NextAuth uses the request's host); defaults to `http://localhost:3000` whenever `VERCEL_URL` is empty, including a `.env.local` from `vercel env pull` |
 | `LD_SERVICE_NAME` | optional | Labels AI traces in LaunchDarkly (default `idfa-manager`) |
 | `TEST_DATE` | optional | Pretend "now" is this ISO date, to test today/past styling |
 | `INBOUND_EMAIL_ADDRESS` | optional | The Postmark server's inbound address (`<hash>@inbound.postmarkapp.com`). Turns on voting links; see below |
