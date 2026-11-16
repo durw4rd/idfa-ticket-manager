@@ -110,37 +110,51 @@ export function isPast(date: Date): boolean {
   return date < getNow();
 }
 
-// Festival-local formats: 24h times and day-month order, as on the tickets and the IDFA site
+// Festival-local formats: 24h times and day-month order, as on the tickets and the IDFA site.
+//
+// The strings are assembled from formatToParts rather than taken from toLocaleDateString: the
+// punctuation of a whole formatted date differs between ICU versions (Node renders "Wed 18 Nov",
+// Chrome "Wed, 18 Nov"), and client components render on both, which breaks hydration.
+
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
+function festivalParts(date: Date, options: Intl.DateTimeFormatOptions): Record<string, string> {
+  const key = JSON.stringify(options);
+  let formatter = formatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-GB', { timeZone: FESTIVAL_TIME_ZONE, ...options });
+    formatters.set(key, formatter);
+  }
+  const result: Record<string, string> = {};
+  for (const part of formatter.formatToParts(date)) {
+    if (part.type !== 'literal') {
+      result[part.type] = part.value;
+    }
+  }
+  return result;
+}
 
 /** "Sun 15 Nov" ("short") or "Sunday 15 November 2026" ("long") */
 export function formatDate(date: Date, style: 'short' | 'long' = 'short'): string {
-  return date.toLocaleDateString('en-GB', {
-    timeZone: FESTIVAL_TIME_ZONE,
+  const p = festivalParts(date, {
     weekday: style,
     day: 'numeric',
     month: style,
     ...(style === 'long' ? { year: 'numeric' } : {}),
   });
+  return style === 'long' ? `${p.weekday} ${p.day} ${p.month} ${p.year}` : `${p.weekday} ${p.day} ${p.month}`;
 }
 
 /** "Sunday 15 November", for day section headings */
 export function formatDayHeading(date: Date): string {
-  return date.toLocaleDateString('en-GB', {
-    timeZone: FESTIVAL_TIME_ZONE,
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  });
+  const p = festivalParts(date, { weekday: 'long', day: 'numeric', month: 'long' });
+  return `${p.weekday} ${p.day} ${p.month}`;
 }
 
 /** "16:00" */
 export function formatTime(date: Date): string {
-  return date.toLocaleTimeString('en-GB', {
-    timeZone: FESTIVAL_TIME_ZONE,
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  });
+  const p = festivalParts(date, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  return `${p.hour}:${p.minute}`;
 }
 
 /** Amsterdam hour of day with minutes as a fraction, e.g. 16:30 → 16.5. For timeline layout. */

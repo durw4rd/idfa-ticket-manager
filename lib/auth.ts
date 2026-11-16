@@ -36,7 +36,9 @@ async function canSignIn(rawEmail: string): Promise<boolean> {
 // with NEXTAUTH_URL unset, it takes it from each request's host, so sign-in stays on whatever
 // domain the user is on. Don't derive it from VERCEL_URL: that's the per-deployment hostname,
 // which Google doesn't know (redirect_uri_mismatch) and which sits behind Vercel's login wall.
-if (!process.env.NEXTAUTH_URL && !process.env.VERCEL) {
+// Checks VERCEL_URL rather than VERCEL: `vercel env pull` writes VERCEL="1" with an empty
+// VERCEL_URL into .env.local, and next-auth/react can't parse an empty URL (local builds fail).
+if (!process.env.NEXTAUTH_URL && !process.env.VERCEL_URL) {
   process.env.NEXTAUTH_URL = 'http://localhost:3000';
 }
 
