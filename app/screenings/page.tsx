@@ -30,12 +30,16 @@ export default async function ScreeningsPage({
     getFestivalYears(viewer.visibleEmails),
     getCrew(viewer),
   ]);
+  // Only years someone in the crew has tickets for, plus this one: ?year=1900 isn't a festival
+  if (year !== currentYear && !festivalYears.includes(year)) {
+    redirect('/screenings');
+  }
   const now = getNow();
   // Only upcoming screenings are checked, so recap years make no IDFA requests
   const availability = await getAvailabilityForScreenings(screenings, now, userContext(viewer.email));
   // End times and Q&A are stored on the tickets; catch up with the IDFA site once the page is sent
   after(() => refreshShowDetails(viewer.visibleEmails, screenings, now, userContext(viewer.email)));
-  const years = Array.from(new Set([currentYear, year, ...festivalYears])).sort((a, b) => b - a);
+  const years = Array.from(new Set([currentYear, ...festivalYears])).sort((a, b) => b - a);
 
   return (
     <AgendaView

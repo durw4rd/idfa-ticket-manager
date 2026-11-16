@@ -1,6 +1,6 @@
 import Image from 'next/image';
 import { redirect } from 'next/navigation';
-import { ArrowLeft, ExternalLink, Navigation, Vote } from 'lucide-react';
+import { ExternalLink, Navigation, Vote } from 'lucide-react';
 import { getScreening, getRatingsByMovie } from '@/lib/db';
 import { getCrew } from '@/lib/groups';
 import { getViewer } from '@/lib/auth-helpers';
@@ -12,7 +12,7 @@ import { getMapSearchUrl } from '@/lib/maps-utils';
 import { getAvailabilityForScreenings, getFilmOverview } from '@/lib/idfa';
 import { userContext } from '@/lib/launchdarkly';
 import { getVoteLinksForScreening } from '@/lib/vote-links';
-import PageHeader from '@/components/PageHeader';
+import PageHeader, { BackLink } from '@/components/PageHeader';
 import { AvatarStack } from '@/components/ui/Avatar';
 import { ButtonLink } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -133,7 +133,9 @@ export default async function ScreeningDetailPage({
             </div>
           )}
 
-          <div className="-mx-4 mt-4 flex gap-2 overflow-x-auto px-4 py-1 [scrollbar-width:none]">
+          {/* Wraps rather than scrolls: nothing is cut off, and the 8px gap leaves each small button's
+              44px touch area clear of the next row's */}
+          <div className="mt-5 flex flex-wrap gap-2">
             {voteLinks.map((link, index) => (
               <ButtonLink key={link.id} href={link.url} external size="sm" icon={<Vote className="h-4 w-4" />}>
                 {voteLinks.length > 1 ? `Vote ${index + 1}` : 'Vote'}
@@ -158,7 +160,8 @@ export default async function ScreeningDetailPage({
                 url={festivalLink}
               />
             )}
-            {festivalLink && (
+            {/* With an overview, its "Read more on IDFA" link already goes there */}
+            {festivalLink && !overview && (
               <ButtonLink href={festivalLink} external variant="secondary" size="sm" icon={<ExternalLink className="h-4 w-4" />}>
                 IDFA page
               </ButtonLink>
@@ -208,18 +211,5 @@ export default async function ScreeningDetailPage({
         </section>
       </article>
     </>
-  );
-}
-
-function BackLink({ href }: { href: string }) {
-  return (
-    <ButtonLink
-      href={href}
-      variant="ghost"
-      size="icon"
-      aria-label="Back to agenda"
-      className="-ml-3"
-      icon={<ArrowLeft className="h-5 w-5" />}
-    />
   );
 }

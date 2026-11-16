@@ -137,6 +137,25 @@ export function makeCrewLookup(crew: CrewMember[]): (email: string) => CrewMembe
     byEmail.get(email) || { email, name: getDisplayName(email), color: CREW_COLOR_COUNT - 1, badge: null, isMe: false };
 }
 
+/** A screening's id: tickets with the same title, date and start are one screening */
+export function screeningKey(act: string, date: string, start: string): string {
+  return `${act}|${date}|${start}`;
+}
+
+/**
+ * Split a screening key back into its parts. The movie title may itself contain "|",
+ * so date and start are taken from the end.
+ */
+export function parseScreeningKey(key: string): { act: string; date: string; start: string } | null {
+  const parts = key.split('|');
+  if (parts.length < 3) {
+    return null;
+  }
+  const start = parts.pop()!;
+  const date = parts.pop()!;
+  return { act: parts.join('|'), date, start };
+}
+
 export function screeningHref(screening: Pick<AgendaScreening, 'id'>): string {
   return `/screenings/${encodeURIComponent(screening.id)}`;
 }

@@ -4,10 +4,11 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { ChevronRight, Plus, QrCode, Ticket } from 'lucide-react';
 import type { AgendaScreening, CrewMember } from '@/lib/types';
-import { dayKey, formatDate, formatTimeRange } from '@/lib/dates';
+import { dayKey, formatDate, formatTimeRange, screeningEnd } from '@/lib/dates';
 import { formatTimeUntil } from '@/lib/display';
 import { makeCrewLookup, screeningHref } from '@/lib/agenda';
 import { usePersistentState } from '@/lib/use-persistent-state';
+import { useNow } from '@/lib/use-now';
 import { Avatar } from '@/components/ui/Avatar';
 import { ButtonLink } from '@/components/ui/Button';
 import QaMark from '@/components/QaMark';
@@ -39,7 +40,7 @@ export default function TicketWallet({
   crew: CrewMember[];
   now: string;
 }) {
-  const now = useMemo(() => new Date(nowIso), [nowIso]);
+  const now = useNow(nowIso);
   const lookup = useMemo(() => makeCrewLookup(crew), [crew]);
   const me = crew.find((member) => member.isMe)!;
   const [scope, setScope] = usePersistentState<Scope>('tickets.scope', 'mine', (v) => ['mine', 'crew'].includes(v));
@@ -51,7 +52,9 @@ export default function TicketWallet({
   );
   const showScope = crew.length > 1 || othersHoldTickets;
 
-  const passes: Pass[] = screenings.flatMap((screening) => {
+  // The server leaves out screenings that are over; drop the ones that end while the page is open
+  const current = screenings.filter((screening) => screeningEnd(new Date(screening.startsAt), screening.endsAt) > now);
+  const passes: Pass[] = current.flatMap((screening) => {
     const tickets = screening.tickets.filter((ticket) => scope === 'crew' || ticket.holderEmail === me.email);
     return tickets.map((ticket, index) => ({
       screening,
