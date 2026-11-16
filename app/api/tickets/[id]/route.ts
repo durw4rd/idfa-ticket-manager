@@ -5,16 +5,13 @@ import { findFestivalLink } from '@/lib/find-festival-link';
 import { getFestivalLink } from '@/lib/festival-links';
 import { deleteTicketFiles } from '@/lib/storage';
 import { flushLdEvents, trackEvent, userContext } from '@/lib/launchdarkly';
-import { normalizeStartTime, parseTicketDateTime } from '@/lib/dates';
+import { validateTicketFields } from '@/lib/ticket-fields';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // LaunchDarkly metric: 1 when a user had to correct AI-extracted ticket fields, 0 when they were right
 const EXTRACTION_CORRECTED_EVENT = 'ticket-extraction-corrected';
-
-const DATE_PATTERN = /^\d{2}-\d{2}-\d{4}$/;
-const START_PATTERN = /^\d{1,2}:\d{2}\s*(AM|PM)$/i;
 
 interface UpdateTicketRequest {
   fields?: { act: string; location: string; date: string; start: string };
@@ -37,35 +34,12 @@ export async function PATCH(
     let ticket = null;
 
     if (body.fields) {
-      const act = body.fields.act?.trim();
-      const location = body.fields.location?.trim();
-      const date = body.fields.date?.trim();
-      const start = body.fields.start?.trim();
-
-      if (!act || !location || !date || !start) {
-        return NextResponse.json({ error: 'Title, venue, date, and time are required' }, { status: 400 });
-      }
-      if (!DATE_PATTERN.test(date) || !START_PATTERN.test(start)) {
-        return NextResponse.json(
-          { error: 'Date must be DD-MM-YYYY and time must be HH:MM AM/PM' },
-          { status: 400 }
-        );
-      }
-      try {
-        parseTicketDateTime(date, start);
-      } catch (parseError) {
-        return NextResponse.json(
-          { error: parseError instanceof Error ? parseError.message : 'Invalid date or time' },
-          { status: 400 }
-        );
+      const checked = validateTicketFields(body.fields);
+      if (!checked.ok) {
+        return NextResponse.json({ error: checked.error }, { status: 400 });
       }
 
-      ticket = await updateTicketDetails(viewer.email, id, {
-        act,
-        location,
-        date,
-        start: normalizeStartTime(start),
-      });
+      ticket = await updateTicketDetails(viewer.email, id, checked.fields);
       if (!ticket) {
         return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
       }

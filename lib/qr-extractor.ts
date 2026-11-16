@@ -1,4 +1,4 @@
-import jsQR from 'jsqr';
+import jsQR, { type QRCode } from 'jsqr';
 import sharp from 'sharp';
 
 export interface ExtractedQRCode {
@@ -39,28 +39,7 @@ export async function extractQRCodeFromImage(
       return await tryFindQRCodeInRegions(imageBuffer, info.width, info.height);
     }
 
-    // Extract QR code region (with some padding)
-    // sharp requires integers for extract coordinates, so we round all values
-    const padding = 50;
-    const x = Math.max(0, Math.round(qrCode.location.topLeftCorner.x - padding));
-    const y = Math.max(0, Math.round(qrCode.location.topLeftCorner.y - padding));
-    const width = Math.round(qrCode.location.bottomRightCorner.x - qrCode.location.topLeftCorner.x + (padding * 2));
-    const height = Math.round(qrCode.location.bottomRightCorner.y - qrCode.location.topLeftCorner.y + (padding * 2));
-
-    // Ensure width and height are also integers and within bounds
-    const extractWidth = Math.floor(Math.min(width, info.width - x));
-    const extractHeight = Math.floor(Math.min(height, info.height - y));
-
-    const qrCodeImage = await sharp(imageBuffer)
-      .extract({
-        left: x,
-        top: y,
-        width: extractWidth,
-        height: extractHeight,
-      })
-      .resize(500, 500, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 1 } })
-      .png()
-      .toBuffer();
+    const qrCodeImage = await cropToCode(imageBuffer, qrCode.location, info.width, info.height);
 
     return { image: qrCodeImage, payload: qrCode.data };
   } catch (error) {
@@ -102,11 +81,9 @@ async function tryFindQRCodeInRegions(
     const qrCode = jsQR(imageData, info.width, info.height);
 
     if (qrCode) {
-      // Found QR code in this region, return the cropped region with padding
-      const image = await sharp(croppedBuffer)
-        .resize(500, 500, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 1 } })
-        .png()
-        .toBuffer();
+      // Crop to the code within the region, as for a code found on the whole page: the region is a
+      // quarter of the ticket, and stored as is it would show a small code among the ticket's text
+      const image = await cropToCode(croppedBuffer, qrCode.location, info.width, info.height);
       return { image, payload: qrCode.data };
     }
   }
@@ -114,3 +91,27 @@ async function tryFindQRCodeInRegions(
   return null;
 }
 
+
+// White space kept around the code, in source pixels, so scanners find its edges
+const QR_PADDING = 50;
+
+/** The code's square (from jsQR's corners) plus padding, clamped to the image, as a 500×500 PNG */
+async function cropToCode(
+  imageBuffer: Buffer,
+  location: QRCode['location'],
+  imageWidth: number,
+  imageHeight: number
+): Promise<Buffer> {
+  // All four corners, so a slightly rotated code isn't clipped (sharp needs whole pixels)
+  const corners = [location.topLeftCorner, location.topRightCorner, location.bottomLeftCorner, location.bottomRightCorner];
+  const left = Math.max(0, Math.floor(Math.min(...corners.map((c) => c.x)) - QR_PADDING));
+  const top = Math.max(0, Math.floor(Math.min(...corners.map((c) => c.y)) - QR_PADDING));
+  const right = Math.min(imageWidth, Math.ceil(Math.max(...corners.map((c) => c.x)) + QR_PADDING));
+  const bottom = Math.min(imageHeight, Math.ceil(Math.max(...corners.map((c) => c.y)) + QR_PADDING));
+
+  return sharp(imageBuffer)
+    .extract({ left, top, width: right - left, height: bottom - top })
+    .resize(500, 500, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 1 } })
+    .png()
+    .toBuffer();
+}
