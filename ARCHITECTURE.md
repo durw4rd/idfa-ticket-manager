@@ -22,9 +22,10 @@ Browser ──► middleware.ts (NextAuth JWT check; redirects to /login)
 - **Group / group_members**: sharing groups. Members are `owner` or `member`, `invited` or `active`.
 - **Crew**: the viewer plus everyone in `visibleEmails`, with a display name, a badge and a colour (`getCrew` in `lib/groups.ts`, `assignCrewLooks` in `lib/display.ts`). A badge brings its own colour; people without one get a colour derived from their email, so everyone sees the same look for the same person.
 - **Profile**: `profiles(email, name, badge)`, set on the Crew page. `name` is an optional display name; without one, `getDisplayName` derives it from the email ("misa.fasa@…" → "Misa"). `badge` is one of the cinema icons in `BADGES` (`lib/display.ts`), or null for their initial. A badge is unique within a crew: picking one someone in your crew has is refused, joining a group where someone has yours clears it, and when overlapping crews still put two of the same badge in front of a viewer, whoever joined any group first keeps it (then by email), so every viewer agrees.
+- **Vote link**: one row in `vote_links` per Audience Award voting link, owned by the user whose mailbox forwarded it and attached to one of their tickets (or to none).
 - **Festival year**: derived from the ticket's date. `/screenings?year=YYYY` picks the year; years before the current one render as a recap.
 
-Schema lives in `migrations/` (run by hand, in order: `000-base-schema.sql`, `add-festival-link.sql`, `002-multi-user-multi-year.sql`, `003-ticket-holders-and-profiles.sql`, `004-profile-badges.sql`, `005-screening-end-and-qa.sql`).
+Schema lives in `migrations/` (run by hand, in order: `000-base-schema.sql`, `add-festival-link.sql`, `002-multi-user-multi-year.sql`, `003-ticket-holders-and-profiles.sql`, `004-profile-badges.sql`, `005-screening-end-and-qa.sql`, `006-vote-links.sql`).
 
 ## Data visibility
 
@@ -33,6 +34,8 @@ The core rule: **reads are scoped to `visibleEmails`, writes to the owner's own 
 - `getViewer()` in `lib/auth-helpers.ts` returns `{ email, visibleEmails }`, where `visibleEmails` is the user plus every active member of their active groups (`getVisibleEmails` in `lib/groups.ts`).
 - Every read in `lib/db.ts` filters `owner_email = ANY(visibleEmails)` (or `user_email` for ratings). Updates and deletes filter on `owner_email = viewer.email`, except `updateTicketHolder`, which also lets the current holder pass a ticket on (`PUT /api/tickets/[id]/holder`); the new holder must be in `visibleEmails`.
 - API routes start with `const { viewer, error } = await requireAuth(); if (error) return error;`. Server pages call `getViewer()` and redirect to `/login` on null.
+- The one route without `requireAuth` is `POST /api/inbound/email` (also left out of `middleware.ts`): Postmark calls it with a shared secret, and the user is found from the token in the address the mail was sent to.
+- A voting link is shown only to the current holder of the ticket it is attached to; unattached ones only to their owner. The URLs are single-use, so they are never logged and never part of `AgendaScreening`.
 - `updateScreeningShowDetails` writes the end time and Q&A to every visible ticket of a showing, not just the caller's: it is public programme data.
 - Emails are always lower-cased with `normalizeEmail` before storage or comparison.
 
@@ -57,6 +60,8 @@ The core rule: **reads are scoped to `visibleEmails`, writes to the owner's own 
 **Groups** (`lib/groups.ts`, `app/api/groups`): one POST endpoint with an `action` field (`create`, `rename`, `invite`, `accept`, `leave`, `remove`). Every membership change runs in a transaction holding a per-group advisory lock (`withGroupLock`). Removing the last owner promotes the longest-standing active member; a group with no active members is deleted.
 
 **End time and Q&A** (`lib/idfa.ts`): tickets only print the start. The matching show on the film's IDFA page has `endOn` and `hasQa`; `getShowDetails` stores them on the ticket at upload, and `refreshShowDetails` (run in `after()` when the agenda loads) fills them in for older tickets and picks up changed end times and added Q&As for upcoming screenings. A showing is matched by its start time, so one IDFA moves to a different time keeps its old values until the ticket's time is corrected. Correcting a ticket's title or time clears the values (and, for a new title, looks up the film's IDFA page again), and the next agenda load fills them back in. `screeningEnd(start, endsAt)` in `lib/dates.ts` returns the real end when known and a 120-minute guess otherwise; clashes, timeline blocks, the calendar export and the wallet all use it.
+
+**Voting links** (`lib/vote-link-extractor.ts`, `lib/vote-links.ts`, `app/api/inbound/email`): a Gmail filter forwards IDFA's "Cast your vote" emails to the user's private address (`<inbound>+<token>@…`, shown on the Crew page). Postmark posts each mail to the webhook. Gmail's own "confirm forwarding" mail arrives the same way; its link is kept on the profile until the user opens it from the Crew page. A voting email is parsed in code (title from the subject, one "Stem nu / Vote now" button per ticket, links only to IDFA hosts); only when that finds nothing does the `vote-link-extraction` AgentControl config read it, picking links by number without seeing the URLs. `saveVoteLinks` deals the links to the owner's tickets for the most recent started showing of that film, one per ticket.
 
 ## LaunchDarkly
 
@@ -88,6 +93,7 @@ All ticket times are Amsterdam wall-clock times; servers run in UTC. Always go t
 | `lib/agenda.ts` | Client-safe agenda logic: serialisation, filters, clashes, rating queue |
 | `lib/db.ts` | All ticket and rating SQL, screening grouping |
 | `lib/idfa.ts` | IDFA website GraphQL client: search, film overviews, ticket availability, end times and Q&A |
+| `lib/vote-link-extractor.ts`, `lib/vote-links.ts` | Reading forwarded voting emails; forwarding addresses and vote link SQL |
 | `lib/groups.ts` | Group SQL, visibility, locking |
 | `lib/types.ts` | Shared interfaces |
 | `lib/venue-backgrounds.ts`, `public/bcg-*` | Venue name → banner image on the detail page |

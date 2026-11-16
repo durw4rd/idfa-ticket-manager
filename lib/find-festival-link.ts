@@ -168,7 +168,7 @@ function isNullAnswer(content: string): boolean {
  * A title reduced to what tickets and the website reliably agree on: no accents, case,
  * punctuation or leading article ("Kabul, Between Prayers" and "Kabul Between Prayers" match).
  */
-function comparableTitle(title: string): string {
+export function comparableTitle(title: string): string {
   return title
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
