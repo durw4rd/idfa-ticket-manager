@@ -1,0 +1,110 @@
+import { describe, expect, it } from 'vitest';
+import type { AgendaScreening } from './types';
+import { filterByPerson, findClashes, groupByDay, isTogether, makeCrewLookup, screeningsToRate } from './agenda';
+
+const ME = 'me@example.com';
+const FRIEND = 'friend@example.com';
+
+function screening(id: string, startsAt: string, holders: string[], extra: Partial<AgendaScreening> = {}): AgendaScreening {
+  return {
+    id,
+    act: id,
+    location: 'Tuschinski 1',
+    festivalYear: 2026,
+    startsAt,
+    endsAt: null,
+    hasQa: false,
+    festivalLink: null,
+    availability: null,
+    tickets: holders.map((holderEmail, i) => ({ id: `${id}-${i}`, ownerEmail: ME, holderEmail })),
+    ...extra,
+  };
+}
+
+describe('findClashes', () => {
+  it('flags overlapping screenings for the person holding both, using the typical length when the end is unknown', () => {
+    const clashes = findClashes([
+      screening('a', '2026-11-18T19:00:00.000Z', [ME]),
+      screening('b', '2026-11-18T20:30:00.000Z', [ME, FRIEND]),
+    ]);
+    expect(clashes.get('a')).toEqual([ME]);
+    expect(clashes.get('b')).toEqual([ME]);
+  });
+
+  it('uses the real end time when known', () => {
+    const clashes = findClashes([
+      screening('a', '2026-11-18T19:00:00.000Z', [ME], { endsAt: '2026-11-18T20:15:00.000Z' }),
+      screening('b', '2026-11-18T20:30:00.000Z', [ME]),
+    ]);
+    expect(clashes.size).toBe(0);
+  });
+
+  it('catches a long screening still running after a later short one', () => {
+    const clashes = findClashes([
+      screening('long', '2026-11-18T10:00:00.000Z', [ME], { endsAt: '2026-11-18T15:00:00.000Z' }),
+      screening('short', '2026-11-18T11:00:00.000Z', [ME], { endsAt: '2026-11-18T12:00:00.000Z' }),
+      screening('later', '2026-11-18T13:00:00.000Z', [ME]),
+    ]);
+    expect(clashes.get('later')).toEqual([ME]);
+    expect(clashes.get('long')).toEqual([ME]);
+  });
+
+  it('does not flag different people at the same time', () => {
+    expect(
+      findClashes([screening('a', '2026-11-18T19:00:00.000Z', [ME]), screening('b', '2026-11-18T19:00:00.000Z', [FRIEND])]).size
+    ).toBe(0);
+  });
+});
+
+describe('screeningsToRate', () => {
+  const now = new Date('2026-11-18T12:00:00.000Z');
+
+  it('lists started films you held a ticket for, newest first, once per film, without rated ones', () => {
+    const queue = screeningsToRate(
+      [
+        screening('Seen', '2026-11-16T19:00:00.000Z', [ME]),
+        screening('Seen', '2026-11-17T19:00:00.000Z', [ME], { id: 'Seen-2' }),
+        screening('Rated', '2026-11-17T10:00:00.000Z', [ME]),
+        screening('Friend only', '2026-11-17T11:00:00.000Z', [FRIEND]),
+        screening('Upcoming', '2026-11-19T19:00:00.000Z', [ME]),
+      ],
+      [{ act: 'Rated', festivalYear: 2026 }],
+      ME,
+      now
+    );
+    expect(queue.map((s) => s.id)).toEqual(['Seen-2']);
+  });
+});
+
+describe('groupByDay', () => {
+  it('puts an after-midnight show on the previous festival day', () => {
+    const days = groupByDay([
+      screening('evening', '2026-11-21T19:00:00.000Z', [ME]),
+      screening('night', '2026-11-21T23:30:00.000Z', [ME]),
+    ]);
+    expect(days).toHaveLength(1);
+    expect(days[0].key).toBe('2026-11-21');
+  });
+});
+
+describe('filterByPerson and isTogether', () => {
+  const shared = screening('shared', '2026-11-18T19:00:00.000Z', [ME, FRIEND]);
+  const mine = screening('mine', '2026-11-19T19:00:00.000Z', [ME]);
+
+  it('filters by holder', () => {
+    expect(filterByPerson([shared, mine], FRIEND).map((s) => s.id)).toEqual(['shared']);
+    expect(filterByPerson([shared, mine], 'all')).toHaveLength(2);
+  });
+
+  it('knows when two people go together', () => {
+    expect(isTogether(shared)).toBe(true);
+    expect(isTogether(mine)).toBe(false);
+  });
+});
+
+describe('makeCrewLookup', () => {
+  it('still names people who have left the crew', () => {
+    const lookup = makeCrewLookup([]);
+    expect(lookup('martina.example@gmail.com').name).toBe('Martina');
+  });
+});
