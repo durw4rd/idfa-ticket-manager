@@ -1,6 +1,6 @@
 import Image from 'next/image';
 import { redirect } from 'next/navigation';
-import { ArrowLeft, ExternalLink, Navigation } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Navigation, Vote } from 'lucide-react';
 import { getScreening, getRatingsByMovie } from '@/lib/db';
 import { getCrew } from '@/lib/groups';
 import { getViewer } from '@/lib/auth-helpers';
@@ -11,6 +11,7 @@ import { getFestivalLinkForScreening } from '@/lib/festival-links';
 import { getMapSearchUrl } from '@/lib/maps-utils';
 import { getAvailabilityForScreenings, getFilmOverview } from '@/lib/idfa';
 import { userContext } from '@/lib/launchdarkly';
+import { getVoteLinksForScreening } from '@/lib/vote-links';
 import PageHeader from '@/components/PageHeader';
 import { AvatarStack } from '@/components/ui/Avatar';
 import { ButtonLink } from '@/components/ui/Button';
@@ -60,7 +61,7 @@ export default async function ScreeningDetailPage({
   const now = getNow();
   const started = startsAt <= now;
   const venueImage = getVenueBackground(screening.location);
-  const [{ festivalLink, overview }, availability, ratings] = await Promise.all([
+  const [{ festivalLink, overview }, availability, ratings, voteLinks] = await Promise.all([
     getFestivalLinkForScreening(screening).then(async (link) => ({
       festivalLink: link,
       overview: await getFilmOverview(link, screening.act),
@@ -68,6 +69,8 @@ export default async function ScreeningDetailPage({
     // Past screenings are skipped inside, so this makes no request once the film has started
     getAvailabilityForScreenings([screening], now, userContext(viewer.email)).then((marks) => marks.get(screening.id)),
     getRatingsByMovie(viewer.visibleEmails, screening.act, screening.festivalYear),
+    // Audience Award links for the tickets the viewer holds; only this viewer's page gets them
+    getVoteLinksForScreening(viewer, screening),
   ]);
   const myRating = ratings.find((rating) => rating.userEmail === viewer.email);
   const crewRatings = ratings.filter((rating) => rating.userEmail !== viewer.email);
@@ -131,6 +134,11 @@ export default async function ScreeningDetailPage({
           )}
 
           <div className="-mx-4 mt-5 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none]">
+            {voteLinks.map((link, index) => (
+              <ButtonLink key={link.id} href={link.url} external size="sm" icon={<Vote className="h-4 w-4" />}>
+                {voteLinks.length > 1 ? `Vote ${index + 1}` : 'Vote'}
+              </ButtonLink>
+            ))}
             <ButtonLink
               href={getMapSearchUrl(screening.location)}
               external
