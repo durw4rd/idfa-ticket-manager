@@ -41,7 +41,11 @@ export default async function FilmsPage({ searchParams }: { searchParams: Promis
     getCrew(viewer),
     getFestivalYears(viewer.visibleEmails),
   ]);
-  const years = Array.from(new Set([currentYear, year, ...festivalYears])).sort((a, b) => b - a);
+  // Only years someone in the crew has tickets for, plus this one
+  if (year !== currentYear && !festivalYears.includes(year)) {
+    redirect('/films');
+  }
+  const years = Array.from(new Set([currentYear, ...festivalYears])).sort((a, b) => b - a);
   const lookup = makeCrewLookup(crew);
   const agenda = screenings.map(toAgendaScreening);
 
