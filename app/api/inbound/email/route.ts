@@ -29,6 +29,32 @@ function authorized(request: NextRequest): boolean {
 const asString = (value: unknown): string => (typeof value === 'string' ? value : '');
 
 /**
+ * Every place the "+token" of the user's forwarding address can turn up. Mail sent straight to
+ * the address has it in MailboxHash. Mail that Gmail forwards automatically is still addressed
+ * (To) to the user's own mailbox, so the token is only in the address Postmark received it at
+ * (OriginalRecipient), or in the per-address hashes when the address was a Cc or Bcc.
+ */
+function addressTokens(mail: Record<string, unknown>): string[] {
+  const tokens = [asString(mail.MailboxHash)];
+  tokens.push(asString(mail.OriginalRecipient).match(/\+([^@+]+)@/)?.[1] ?? '');
+  for (const field of ['ToFull', 'CcFull', 'BccFull']) {
+    const addresses = mail[field];
+    if (Array.isArray(addresses)) {
+      for (const address of addresses) {
+        tokens.push(asString((address as { MailboxHash?: unknown } | null)?.MailboxHash));
+      }
+    }
+  }
+  return Array.from(new Set(tokens.filter(Boolean)));
+}
+
+// Why a mail was dropped, for the function log. Never the mail's contents or addresses.
+function ignored(reason: string) {
+  console.info(`Inbound email ignored: ${reason}`);
+  return NextResponse.json({ status: 'ignored', reason });
+}
+
+/**
  * POST /api/inbound/email — Postmark's inbound webhook (JSON). Handles two kinds of mail sent to
  * a user's forwarding address: IDFA's voting emails, and Gmail's "confirm forwarding" mail.
  * Anything else is acknowledged and dropped. Answers 200 unless it should be retried.
@@ -50,10 +76,13 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // Postmark puts the part after "+" in MailboxHash
-    const owner = await findInboundOwner(asString(mail.MailboxHash));
+    let owner: string | null = null;
+    for (const token of addressTokens(mail)) {
+      owner = await findInboundOwner(token);
+      if (owner) break;
+    }
     if (!owner) {
-      return NextResponse.json({ status: 'ignored' });
+      return ignored('no forwarding address of a user among the recipients');
     }
 
     const fromFull = mail.FromFull as { Email?: unknown } | undefined;
@@ -69,13 +98,13 @@ export async function POST(request: NextRequest) {
     // Gmail's automatic forwarding keeps IDFA as the sender; a mail the user forwards by hand
     // comes from the user. Mail from anyone else isn't read at all.
     if (from !== VOTE_EMAIL_SENDER && from !== owner) {
-      return NextResponse.json({ status: 'ignored' });
+      return ignored('sender is neither IDFA nor the user');
     }
 
     after(flushLdEvents);
     const vote = await extractVoteLinks(email, userContext(owner));
     if (!vote) {
-      return NextResponse.json({ status: 'ignored' });
+      return ignored('not a voting email');
     }
 
     const saved = await saveVoteLinks(
