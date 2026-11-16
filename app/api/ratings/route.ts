@@ -76,9 +76,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (typeof rating !== 'number' || rating < 1 || rating > 10) {
+    if (!Number.isInteger(rating) || rating < 1 || rating > 10) {
       return NextResponse.json(
-        { error: 'Rating must be a number between 1 and 10' },
+        { error: 'Rating must be a whole number between 1 and 10' },
         { status: 400 }
       );
     }

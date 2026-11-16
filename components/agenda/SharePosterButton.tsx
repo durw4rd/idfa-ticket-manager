@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Download, Loader2, Share } from 'lucide-react';
 import type { CrewMember } from '@/lib/types';
+import { redirectToSignIn } from '@/lib/api-client';
 import { Sheet } from '@/components/ui/Sheet';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
@@ -34,6 +35,10 @@ export default function SharePosterButton({ year, crew }: { year: number; crew: 
 
     fetch(`/api/agenda/poster?year=${year}&who=${who}`)
       .then((response) => {
+        if (response.status === 401) {
+          redirectToSignIn();
+          throw new Error('Your session has ended. Taking you to sign in…');
+        }
         if (!response.ok) throw new Error('Could not make the poster');
         return response.blob();
       })
