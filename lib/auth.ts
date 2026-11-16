@@ -51,6 +51,9 @@ export const authOptions: NextAuthOptions = {
   ],
   pages: {
     signIn: '/login',
+    // A refused sign-in (AccessDenied from the signIn callback) and other auth errors come back to
+    // the login page as ?error=, which explains them; NextAuth's own error page would not
+    error: '/login',
   },
   callbacks: {
     async signIn({ user }) {

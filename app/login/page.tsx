@@ -7,6 +7,7 @@ import { Loader2 } from 'lucide-react';
 import IDFALogo from '@/components/IDFALogo';
 import { Button } from '@/components/ui/Button';
 import { Notice } from '@/components/ui/Field';
+import { safeCallbackUrl } from '@/lib/safe-redirect';
 
 // What NextAuth's ?error= codes mean for someone signing in (it sends them back here)
 function signInErrorMessage(code: string | null): string | null {
@@ -17,17 +18,14 @@ function signInErrorMessage(code: string | null): string | null {
   return "Sign-in didn't work. Please try again.";
 }
 
-/** Only paths on this site: anything else (another origin, "//host") goes to the agenda */
-function safeCallbackUrl(raw: string | null): string {
-  return raw && raw.startsWith('/') && !raw.startsWith('//') && !raw.startsWith('/\\') ? raw : '/screenings';
-}
-
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = safeCallbackUrl(searchParams.get('callbackUrl'));
-  const error = signInErrorMessage(searchParams.get('error'));
   const [loading, setLoading] = useState(false);
+  // A failure before Google's page opens (e.g. offline); later failures come back as ?error=
+  const [startError, setStartError] = useState<string | null>(null);
+  const error = startError ?? signInErrorMessage(searchParams.get('error'));
 
   useEffect(() => {
     // Already signed in: go where they were heading
@@ -47,7 +45,11 @@ function LoginContent() {
   // or failed sign-in comes back here with ?error=, which is shown above the button
   const handleSignIn = () => {
     setLoading(true);
-    signIn('google', { callbackUrl });
+    setStartError(null);
+    signIn('google', { callbackUrl }).catch(() => {
+      setLoading(false);
+      setStartError("Couldn't reach Google sign-in. Check your connection and try again.");
+    });
   };
 
   return (
