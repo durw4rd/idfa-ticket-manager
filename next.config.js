@@ -1,3 +1,11 @@
+// `vercel env pull` writes VERCEL_URL="" into .env.local. next-auth/react falls back to VERCEL_URL
+// when NEXTAUTH_URL is unset and can't parse an empty string, which fails local builds. Locally,
+// default to localhost; on Vercel VERCEL_URL is set and this does nothing (see lib/auth.ts).
+if (!process.env.NEXTAUTH_URL && !process.env.VERCEL_URL) {
+  delete process.env.VERCEL_URL;
+  process.env.NEXTAUTH_URL = 'http://localhost:3000';
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
