@@ -55,9 +55,9 @@ export default async function FilmsPage({ searchParams }: { searchParams: Promis
   const lookup = makeCrewLookup(crew);
   const agenda = screenings.map(toAgendaScreening);
 
-  // Which titles are the same film ("Lonan Tché" and "Lonan Tché + Talk"); ratings already carry
-  // the film's key from getRatingsForYear
-  const keysByTitle = filmKeysByTitle(agenda);
+  // Which titles are the same film ("Lonan Tché" and "Lonan Tché + Talk"), worked out as
+  // getRatingsForYear did, so the ratings' keys and the screenings' keys agree
+  const keysByTitle = filmKeysByTitle(agenda, ratings);
   const filmOf = (screening: AgendaScreening) => keysByTitle.get(screening.act) ?? titleFilmKey(screening.act);
   const myRatings = ratings.filter((rating) => rating.userEmail === viewer.email);
   const toRate = screeningsToRate(agenda, myRatings, keysByTitle, viewer.email, now);
