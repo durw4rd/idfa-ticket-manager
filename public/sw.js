@@ -6,7 +6,8 @@
 //   is only used when the network fails. The wallet page (components/tickets/OfflineTickets.tsx)
 //   keeps the copies in step with the tickets it shows, and removes the rest.
 // - /_next/static: build files have content hashes in their names, so a stored copy never goes
-//   stale; keeping them lets the stored wallet page run offline.
+//   stale; keeping them lets the stored wallet page run offline. Each wallet sync keeps the files
+//   the stored page needs and drops the rest (older builds).
 //
 // Sign-out, a /tickets visit that redirects to the sign-in page, and a QR request answered 401
 // delete all of it. Every write is best-effort: storage being full never breaks the online app.
@@ -18,7 +19,6 @@ const STATIC = `static-${VERSION}`;
 const QR = 'ticket-qr'; // Shared with OfflineTickets.tsx and ProfileCard.tsx
 const KEEP = [PAGES, STATIC, QR];
 const WALLET = '/tickets';
-const MAX_STATIC = 200;
 
 self.addEventListener('install', () => self.skipWaiting());
 
@@ -139,14 +139,6 @@ async function cacheFirst(request) {
   const response = await fetch(request);
   if (response.ok) {
     await store(STATIC, request, response.clone(), since);
-    // Each deploy brings new file names; drop the oldest so old builds don't pile up
-    try {
-      const cache = await caches.open(STATIC);
-      const keys = await cache.keys();
-      await Promise.all(keys.slice(0, Math.max(0, keys.length - MAX_STATIC)).map((key) => cache.delete(key)));
-    } catch {
-      // Trimming is housekeeping; skip it when storage misbehaves
-    }
   }
   return response;
 }
@@ -207,8 +199,30 @@ async function sync({ assets }, since) {
     console.warn('Offline QR codes not synced:', error);
   }
 
+  // The build files the stored page needs: those it names, and those the open tab loaded (code split
+  // off and loaded later). Anything else in the cache is from an older build and goes, once these
+  // are all stored, so the stored page never loses a file it needs.
+  const needed = new Set();
+  for (const [, url] of html.matchAll(/(?:src|href)="(\/_next\/static\/[^"]+)"/g)) needed.add(url.replace(/&amp;/g, '&'));
   for (const url of assets) {
-    if (new URL(url, self.location.origin).pathname.startsWith('/_next/static/')) await fetchStored(STATIC, url, since);
+    const parsed = new URL(url, self.location.origin);
+    if (parsed.origin === self.location.origin && parsed.pathname.startsWith('/_next/static/')) {
+      needed.add(parsed.pathname + parsed.search);
+    }
+  }
+  let complete = true;
+  for (const path of needed) {
+    if ((await fetchStored(STATIC, path, since)) !== 'stored') complete = false;
+  }
+  if (!complete || since !== generation) return;
+  try {
+    const cache = await caches.open(STATIC);
+    for (const key of await cache.keys()) {
+      const url = new URL(key.url);
+      if (!needed.has(url.pathname + url.search)) await cache.delete(key);
+    }
+  } catch {
+    // Housekeeping only
   }
 }
 
