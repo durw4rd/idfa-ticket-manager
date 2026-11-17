@@ -33,6 +33,10 @@ export default async function FilmsPage({ searchParams }: { searchParams: Promis
 
   const currentYear = getCurrentFestivalYear();
   const year = Number((await searchParams).year) || currentYear;
+  // Checked before any query: festival_year is an INT, so ?year=1e20 would fail in the database
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+    redirect('/films');
+  }
   const now = getNow();
 
   const [screenings, ratings, crew, festivalYears] = await Promise.all([

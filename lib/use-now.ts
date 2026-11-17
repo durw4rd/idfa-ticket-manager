@@ -37,9 +37,18 @@ export function useNow(serverNowIso: string): Date {
     };
     document.addEventListener('visibilitychange', onVisibility);
 
+    // Restored from the back/forward cache, the page comes back with the clock where it was left
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      setNow(new Date(Date.now() + offset));
+      router.refresh();
+    };
+    window.addEventListener('pageshow', onPageShow);
+
     return () => {
       clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pageshow', onPageShow);
     };
   }, [serverNowIso, router]);
 
