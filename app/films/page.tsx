@@ -6,7 +6,7 @@ import { getCrew } from '@/lib/groups';
 import { getViewer } from '@/lib/auth-helpers';
 import { formatDate, getCurrentFestivalYear, getNow } from '@/lib/dates';
 import { makeCrewLookup, screeningHref, screeningsToRate, toAgendaScreening } from '@/lib/agenda';
-import { filmKeysByTitle, titleFilmKey } from '@/lib/films';
+import { titleFilmKey } from '@/lib/films';
 import type { AgendaScreening, Rating } from '@/lib/types';
 import PageHeader from '@/components/PageHeader';
 import YearSwitcher from '@/components/agenda/YearSwitcher';
@@ -41,7 +41,7 @@ export default async function FilmsPage({ searchParams }: { searchParams: Promis
   }
   const now = getNow();
 
-  const [screenings, ratings, crew, festivalYears] = await Promise.all([
+  const [screenings, { keysByTitle, ratings }, crew, festivalYears] = await Promise.all([
     getScreeningsForYear(viewer.visibleEmails, year),
     getRatingsForYear(viewer.visibleEmails, year),
     getCrew(viewer),
@@ -55,9 +55,8 @@ export default async function FilmsPage({ searchParams }: { searchParams: Promis
   const lookup = makeCrewLookup(crew);
   const agenda = screenings.map(toAgendaScreening);
 
-  // Which titles are the same film ("Lonan Tché" and "Lonan Tché + Talk"), worked out as
-  // getRatingsForYear did, so the ratings' keys and the screenings' keys agree
-  const keysByTitle = filmKeysByTitle(agenda, ratings);
+  // Which titles are the same film ("Lonan Tché" and "Lonan Tché + Talk"), from getRatingsForYear,
+  // so the ratings' keys and the screenings' keys agree
   const filmOf = (screening: AgendaScreening) => keysByTitle.get(screening.act) ?? titleFilmKey(screening.act);
   const myRatings = ratings.filter((rating) => rating.userEmail === viewer.email);
   const toRate = screeningsToRate(agenda, myRatings, keysByTitle, viewer.email, now);
