@@ -157,6 +157,14 @@ export async function getTicketsByScreeningKey(
   return result.rows.map(toTicket);
 }
 
+/** True if one of the owner's tickets has this QR image (for cleaning up after a failed save) */
+export async function ticketUsesQrCodeUrl(ownerEmail: string, qrCodeUrl: string): Promise<boolean> {
+  const result = await sql`
+    SELECT 1 FROM tickets WHERE owner_email = ${ownerEmail} AND qr_code_url = ${qrCodeUrl} LIMIT 1
+  `;
+  return result.rows.length > 0;
+}
+
 export async function findTicketByQrHash(visibleEmails: string[], qrHash: string): Promise<Ticket | null> {
   const result = await sql`
     SELECT id, act, date, start, owner_email as "ownerEmail"
