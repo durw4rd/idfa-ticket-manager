@@ -105,6 +105,6 @@ describe('filterByPerson and isTogether', () => {
 describe('makeCrewLookup', () => {
   it('still names people who have left the crew', () => {
     const lookup = makeCrewLookup([]);
-    expect(lookup('martina.example@gmail.com').name).toBe('Martina');
+    expect(lookup('sam.devries@example.com').name).toBe('Sam');
   });
 });
