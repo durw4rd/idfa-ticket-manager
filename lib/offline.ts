@@ -21,12 +21,30 @@ export async function keepTicketsOffline(qrIds: string[]): Promise<void> {
   }
 }
 
-/** Delete every offline copy (wallet page, QR codes, build files); called before signing out */
+/**
+ * Delete every offline copy (wallet page, QR codes, build files); called before signing out. The
+ * worker wipes them and confirms, which also stops any of its requests still in flight from
+ * storing a copy afterwards; the page then deletes whatever is left itself.
+ */
 export async function clearOfflineCopies(): Promise<void> {
-  if (!('caches' in window)) return;
   try {
-    const names = await caches.keys();
-    await Promise.all(names.map((name) => caches.delete(name)));
+    const worker = 'serviceWorker' in navigator ? navigator.serviceWorker.controller : null;
+    if (worker) {
+      await new Promise<void>((resolve) => {
+        const channel = new MessageChannel();
+        // Don't hold up signing out if the worker doesn't answer
+        const timeout = setTimeout(resolve, 2000);
+        channel.port1.onmessage = () => {
+          clearTimeout(timeout);
+          resolve();
+        };
+        worker.postMessage({ type: 'sign-out' }, [channel.port2]);
+      });
+    }
+    if ('caches' in window) {
+      const names = await caches.keys();
+      await Promise.all(names.map((name) => caches.delete(name)));
+    }
   } catch {
     // Storage blocked (private mode): nothing was stored either
   }
