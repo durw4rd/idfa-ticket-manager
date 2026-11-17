@@ -173,9 +173,10 @@ type GroupQuery = typeof sql;
  * check sees the membership as it is when the change is written.
  */
 async function withGroupLock<T>(groupId: string, change: (query: GroupQuery) => Promise<T>): Promise<T> {
-  // Lower-cased so every spelling of the same id shares one lock (the API only accepts canonical
-  // hyphenated UUIDs, whose Postgres text form is lower case)
-  return withAdvisoryLock(`group:${groupId.toLowerCase()}`, change);
+  // The same lock key as before this helper existed (hashtextextended of groupId::uuid::text), so a
+  // deployment rolling out still serializes with the one it replaces. The API only accepts
+  // canonical hyphenated UUIDs, whose Postgres text form is the lower-cased string.
+  return withAdvisoryLock(groupId.toLowerCase(), change);
 }
 
 /**
