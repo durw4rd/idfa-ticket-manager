@@ -5,7 +5,7 @@ Next.js 15 App Router app, deployed on Vercel. Server components read Postgres d
 ```
 Browser ──► middleware.ts (NextAuth JWT check; redirects to /login)
    │
-   ├─ Server pages (app/screenings, app/settings) ──► lib/db.ts, lib/groups.ts ──► Postgres (Neon)
+   ├─ Server pages (app/screenings, app/tickets, app/films, app/crew) ──► lib/db.ts, lib/groups.ts ──► Postgres (Neon)
    │
    └─ Client components ──► app/api/* route handlers
                                ├─ lib/ticket-extractor.ts ┐

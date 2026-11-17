@@ -1,5 +1,4 @@
-import { db } from '@vercel/postgres';
-import { sql } from './db';
+import { sql, withAdvisoryLock, withTransaction } from './db';
 import { CrewMember, Group, GroupMember } from './types';
 import { assignCrewLooks, type Badge, getDisplayName } from './display';
 
@@ -153,14 +152,17 @@ export async function getGroupsForUser(userEmail: string): Promise<Group[]> {
 
 export async function createGroup(userEmail: string, name: string): Promise<string> {
   const me = normalizeEmail(userEmail);
-  const result = await sql`
-    INSERT INTO groups (name, created_by) VALUES (${name}, ${me}) RETURNING id
-  `;
-  const groupId = result.rows[0].id as string;
-  await sql`
-    INSERT INTO group_members (group_id, user_email, role, status) VALUES (${groupId}, ${me}, 'owner', 'active')
-  `;
-  return groupId;
+  // Both rows or neither: a group without its owner would be invisible to everyone
+  return withTransaction(async (query) => {
+    const result = await query`
+      INSERT INTO groups (name, created_by) VALUES (${name}, ${me}) RETURNING id
+    `;
+    const groupId = result.rows[0].id as string;
+    await query`
+      INSERT INTO group_members (group_id, user_email, role, status) VALUES (${groupId}, ${me}, 'owner', 'active')
+    `;
+    return groupId;
+  });
 }
 
 type GroupQuery = typeof sql;
@@ -171,20 +173,10 @@ type GroupQuery = typeof sql;
  * check sees the membership as it is when the change is written.
  */
 async function withGroupLock<T>(groupId: string, change: (query: GroupQuery) => Promise<T>): Promise<T> {
-  const client = await db.connect();
-  try {
-    await client.sql`BEGIN`;
-    // Hash the canonical uuid text, so every spelling of the same id (e.g. upper case) shares one lock
-    await client.sql`SELECT pg_advisory_xact_lock(hashtextextended(${groupId}::uuid::text, 0))`;
-    const result = await change(client.sql.bind(client) as GroupQuery);
-    await client.sql`COMMIT`;
-    return result;
-  } catch (error) {
-    await client.sql`ROLLBACK`.catch(() => {});
-    throw error;
-  } finally {
-    client.release();
-  }
+  // The same lock key as before this helper existed (hashtextextended of groupId::uuid::text), so a
+  // deployment rolling out still serializes with the one it replaces. The API only accepts
+  // canonical hyphenated UUIDs, whose Postgres text form is the lower-cased string.
+  return withAdvisoryLock(groupId.toLowerCase(), change);
 }
 
 /**

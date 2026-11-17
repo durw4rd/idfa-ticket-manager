@@ -15,27 +15,81 @@ if (!process.env.POSTGRES_URL && !process.env.DATABASE_URL) {
 // Use the sql template tag - it will use POSTGRES_URL or DATABASE_URL
 export const sql = vercelSql;
 
+type Query = typeof sql;
+
+/** Run `work` in one transaction on its own connection; everything is rolled back if it throws */
+export async function withTransaction<T>(work: (query: Query) => Promise<T>): Promise<T> {
+  const client = await db.connect();
+  try {
+    await client.sql`BEGIN`;
+    const result = await work(client.sql.bind(client) as Query);
+    await client.sql`COMMIT`;
+    return result;
+  } catch (error) {
+    await client.sql`ROLLBACK`.catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * withTransaction, holding a transaction-scoped advisory lock on `key` throughout, so changes that
+ * use the same key run one at a time and every check sees the data as it is when the change is
+ * written. Used for ticket inserts (per QR code), group membership (per group) and voting links
+ * (per owner).
+ */
+export function withAdvisoryLock<T>(key: string, work: (query: Query) => Promise<T>): Promise<T> {
+  return withTransaction(async (query) => {
+    await query`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
+    return work(query);
+  });
+}
+
+/**
+ * A tickets row as a Ticket. Ticket queries select and return `*` and come through here, so a new
+ * column means one change here (and in lib/types.ts), not one per query.
+ */
+// Rows from @vercel/postgres are untyped
+function toTicket(row: Record<string, any>): Ticket {
+  return {
+    id: row.id,
+    act: row.act,
+    location: row.location,
+    date: row.date,
+    start: row.start,
+    qrCodeUrl: row.qr_code_url,
+    pdfUrl: row.pdf_url,
+    transactionId: row.transaction_id,
+    festivalLink: row.festival_link,
+    ownerEmail: row.owner_email,
+    holderEmail: row.holder_email,
+    festivalYear: row.festival_year,
+    startsAt: row.starts_at,
+    qrHash: row.qr_hash,
+    endsAt: row.ends_at,
+    hasQa: row.has_qa,
+    createdAt: row.created_at,
+  };
+}
+
 // Every read below is scoped to `visibleEmails`: the viewer plus their active group members
 // (see getVisibleEmails in lib/groups.ts). Writes are scoped to the owner's own email.
 
 // The holder defaults to the uploader
 type NewTicket = Omit<Ticket, 'id' | 'createdAt' | 'festivalYear' | 'startsAt' | 'holderEmail'> & { holderEmail?: string };
 
-async function insertTicket(query: typeof sql, ticket: NewTicket): Promise<Ticket> {
+async function insertTicket(query: Query, ticket: NewTicket): Promise<Ticket> {
   const festivalYear = getFestivalYear(ticket.date);
   const startsAt = parseTicketDateTime(ticket.date, ticket.start);
 
   const result = await query`
     INSERT INTO tickets (act, location, date, start, qr_code_url, pdf_url, transaction_id, festival_link, owner_email, holder_email, festival_year, starts_at, qr_hash, ends_at, has_qa)
     VALUES (${ticket.act}, ${ticket.location}, ${ticket.date}, ${ticket.start}, ${ticket.qrCodeUrl}, ${ticket.pdfUrl}, ${ticket.transactionId || null}, ${ticket.festivalLink || null}, ${ticket.ownerEmail}, ${ticket.holderEmail || ticket.ownerEmail}, ${festivalYear}, ${startsAt.toISOString()}, ${ticket.qrHash || null}, ${ticket.endsAt ? ticket.endsAt.toISOString() : null}, ${ticket.hasQa ?? null})
-    RETURNING id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", festival_link as "festivalLink", owner_email as "ownerEmail", holder_email as "holderEmail", festival_year as "festivalYear", starts_at as "startsAt", qr_hash as "qrHash", ends_at as "endsAt", has_qa as "hasQa", created_at as "createdAt"
+    RETURNING *
   `;
 
-  return result.rows[0] as Ticket;
-}
-
-export async function createTicket(ticket: NewTicket): Promise<Ticket> {
-  return insertTicket(sql, ticket);
+  return toTicket(result.rows[0]);
 }
 
 /**
@@ -48,53 +102,42 @@ export async function createTicketUnlessDuplicate(
   ticket: NewTicket
 ): Promise<{ ticket: Ticket; duplicate?: undefined } | { ticket?: undefined; duplicate: Ticket }> {
   if (!ticket.qrHash) {
-    return { ticket: await createTicket(ticket) };
+    return { ticket: await insertTicket(sql, ticket) };
   }
 
-  const client = await db.connect();
-  try {
-    await client.sql`BEGIN`;
-    await client.sql`SELECT pg_advisory_xact_lock(hashtextextended(${ticket.qrHash}, 0))`;
-    const existing = await client.sql`
+  return withAdvisoryLock(ticket.qrHash, async (query) => {
+    const existing = await query`
       SELECT id, act, date, start, owner_email as "ownerEmail"
       FROM tickets
       WHERE qr_hash = ${ticket.qrHash} AND owner_email = ANY(${visibleEmails as any}::text[])
       LIMIT 1
     `;
     if (existing.rows[0]) {
-      await client.sql`ROLLBACK`;
       return { duplicate: existing.rows[0] as Ticket };
     }
-    const inserted = await insertTicket(client.sql.bind(client) as typeof sql, ticket);
-    await client.sql`COMMIT`;
-    return { ticket: inserted };
-  } catch (error) {
-    await client.sql`ROLLBACK`.catch(() => {});
-    throw error;
-  } finally {
-    client.release();
-  }
+    return { ticket: await insertTicket(query, ticket) };
+  });
 }
 
 export async function getTicketsForYear(visibleEmails: string[], year: number): Promise<Ticket[]> {
   const result = await sql`
-    SELECT id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", festival_link as "festivalLink", owner_email as "ownerEmail", holder_email as "holderEmail", festival_year as "festivalYear", starts_at as "startsAt", qr_hash as "qrHash", ends_at as "endsAt", has_qa as "hasQa", created_at as "createdAt"
+    SELECT *
     FROM tickets
     WHERE owner_email = ANY(${visibleEmails as any}::text[]) AND festival_year = ${year}
     ORDER BY starts_at ASC, created_at ASC
   `;
 
-  return result.rows as Ticket[];
+  return result.rows.map(toTicket);
 }
 
 export async function getTicketById(visibleEmails: string[], id: string): Promise<Ticket | null> {
   const result = await sql`
-    SELECT id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", festival_link as "festivalLink", owner_email as "ownerEmail", holder_email as "holderEmail", festival_year as "festivalYear", starts_at as "startsAt", qr_hash as "qrHash", ends_at as "endsAt", has_qa as "hasQa", created_at as "createdAt"
+    SELECT *
     FROM tickets
     WHERE id = ${id} AND owner_email = ANY(${visibleEmails as any}::text[])
   `;
 
-  return (result.rows[0] as Ticket) || null;
+  return result.rows[0] ? toTicket(result.rows[0]) : null;
 }
 
 export async function getTicketsByScreeningKey(
@@ -104,14 +147,14 @@ export async function getTicketsByScreeningKey(
   start: string
 ): Promise<Ticket[]> {
   const result = await sql`
-    SELECT id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", festival_link as "festivalLink", owner_email as "ownerEmail", holder_email as "holderEmail", festival_year as "festivalYear", starts_at as "startsAt", qr_hash as "qrHash", ends_at as "endsAt", has_qa as "hasQa", created_at as "createdAt"
+    SELECT *
     FROM tickets
     WHERE act = ${act} AND date = ${date} AND start = ${start}
       AND owner_email = ANY(${visibleEmails as any}::text[])
     ORDER BY created_at ASC
   `;
 
-  return result.rows as Ticket[];
+  return result.rows.map(toTicket);
 }
 
 export async function findTicketByQrHash(visibleEmails: string[], qrHash: string): Promise<Ticket | null> {
@@ -158,10 +201,10 @@ export async function updateTicketDetails(
         ends_at = CASE WHEN act = ${fields.act} AND date = ${fields.date} AND start = ${fields.start} THEN ends_at ELSE NULL END,
         has_qa = CASE WHEN act = ${fields.act} AND date = ${fields.date} AND start = ${fields.start} THEN has_qa ELSE NULL END
     WHERE id = ${id} AND owner_email = ${ownerEmail}
-    RETURNING id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", festival_link as "festivalLink", owner_email as "ownerEmail", holder_email as "holderEmail", festival_year as "festivalYear", starts_at as "startsAt", qr_hash as "qrHash", ends_at as "endsAt", has_qa as "hasQa", created_at as "createdAt"
+    RETURNING *
   `;
 
-  return (result.rows[0] as Ticket) || null;
+  return result.rows[0] ? toTicket(result.rows[0]) : null;
 }
 
 /**
@@ -190,10 +233,10 @@ export async function updateTicketHolder(
             AND holder_m.user_email = ${holderEmail} AND holder_m.status = 'active'
         )
       )
-    RETURNING id, act, location, date, start, qr_code_url as "qrCodeUrl", pdf_url as "pdfUrl", transaction_id as "transactionId", festival_link as "festivalLink", owner_email as "ownerEmail", holder_email as "holderEmail", festival_year as "festivalYear", starts_at as "startsAt", qr_hash as "qrHash", ends_at as "endsAt", has_qa as "hasQa", created_at as "createdAt"
+    RETURNING *
   `;
 
-  return (result.rows[0] as Ticket) || null;
+  return result.rows[0] ? toTicket(result.rows[0]) : null;
 }
 
 /**
