@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { signOut } from 'next-auth/react';
+import { clearOfflineCopies } from '@/lib/offline';
 import { Loader2, LogOut } from 'lucide-react';
 import type { CrewMember } from '@/lib/types';
 import { assignCrewLooks, type Badge, BADGE_LABELS, BADGES, badgeColor } from '@/lib/display';
@@ -168,7 +169,11 @@ export default function ProfileCard({ me, crew, email }: { me: CrewMember; crew:
         size="sm"
         className="-ml-3 mt-4 text-ink-2"
         icon={<LogOut className="h-4 w-4" />}
-        onClick={() => signOut({ callbackUrl: '/login' })}
+        onClick={async () => {
+          // Tickets saved for offline use mustn't outlive the session on a shared device
+          await clearOfflineCopies();
+          signOut({ callbackUrl: '/login' });
+        }}
       >
         Sign out
       </Button>

@@ -39,7 +39,8 @@ export function useNow(serverNowIso: string): Date {
         hiddenAt = Date.now();
       } else if (hiddenAt !== null) {
         tick();
-        if (Date.now() - hiddenAt >= STALE_AFTER_MS) router.refresh();
+        // Offline (the stored wallet, see public/sw.js) there's nothing newer to fetch
+        if (Date.now() - hiddenAt >= STALE_AFTER_MS && navigator.onLine) router.refresh();
         hiddenAt = null;
       }
     };
@@ -47,7 +48,7 @@ export function useNow(serverNowIso: string): Date {
     const onPageShow = (event: PageTransitionEvent) => {
       if (!event.persisted) return;
       tick();
-      router.refresh();
+      if (navigator.onLine) router.refresh();
     };
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('pageshow', onPageShow);
