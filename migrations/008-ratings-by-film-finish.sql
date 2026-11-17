@@ -4,8 +4,7 @@
 --
 -- If someone rated a film under one title before this deploy and under another title in between,
 -- both are now the same film. One rating per person and film, and rating again replaces the old
--- one, so the most recently saved is kept and the older one deleted. To see what would go, run it
--- with the DELETE changed to a SELECT, then ROLLBACK.
+-- one, so the most recently saved score and comment are kept, on the oldest row (see below).
 
 BEGIN;
 
@@ -26,15 +25,21 @@ SELECT r.id, r.user_email, r.festival_year, r.updated_at, r.created_at, COALESCE
 ) AS key
 FROM ratings r;
 
-DELETE FROM ratings WHERE id IN (
-  SELECT id FROM (
-    SELECT id, row_number() OVER (
-      PARTITION BY user_email, festival_year, key ORDER BY updated_at DESC, created_at DESC
-    ) AS newest
-    FROM rating_keys
-  ) ranked
-  WHERE newest > 1
-);
+-- Per person, film and year: the oldest row stays (its title is the one first rated, which can be
+-- what ties an unlinked title to the film, as upsertRating keeps it) and takes the newest score and
+-- comment; the other rows go
+CREATE TEMP TABLE rating_ranks ON COMMIT DROP AS
+SELECT id,
+  first_value(id) OVER (PARTITION BY user_email, festival_year, key ORDER BY created_at, id) AS oldest,
+  first_value(id) OVER (PARTITION BY user_email, festival_year, key ORDER BY updated_at DESC, created_at DESC) AS newest
+FROM rating_keys;
+
+UPDATE ratings r SET rating = n.rating, comment = n.comment, updated_at = n.updated_at
+FROM (SELECT DISTINCT oldest, newest FROM rating_ranks WHERE oldest <> newest) pick
+JOIN ratings n ON n.id = pick.newest
+WHERE r.id = pick.oldest;
+
+DELETE FROM ratings WHERE id IN (SELECT id FROM rating_ranks WHERE id <> oldest);
 
 UPDATE ratings r SET film_key = k.key FROM rating_keys k WHERE r.id = k.id AND r.film_key IS NULL;
 
