@@ -1,7 +1,7 @@
 // Offline copy of the ticket wallet, for cinema foyers with no signal.
 //
-// - /tickets: network first; the last page that loaded is kept and shown when the network fails.
-//   Opening the app (or any page) offline lands there.
+// - /tickets: the wallet page, stored by each sync after the build files it needs, and shown when
+//   the network fails. Opening the app (or any page) offline lands there.
 // - /api/tickets/<id>/qr: network first, so the server's visibility checks still decide; a copy
 //   is only used when the network fails. The wallet page (components/tickets/OfflineTickets.tsx)
 //   keeps the copies in step with the tickets it shows, and removes the rest.
@@ -86,7 +86,6 @@ async function stored(key, options) {
 
 async function navigate(request, url) {
   const isWallet = url.pathname === WALLET && !url.search;
-  const since = generation;
   let response;
   try {
     response = await fetch(request);
@@ -96,13 +95,10 @@ async function navigate(request, url) {
     // Any page opened offline shows the wallet, under its own address so the app's router agrees
     return isWallet ? copy : Response.redirect(WALLET, 302);
   }
-  if (isWallet) {
-    if (response.ok && !response.redirected && response.type === 'basic') {
-      await store(PAGES, WALLET, response.clone(), since);
-    } else if (response.type === 'opaqueredirect' || response.redirected) {
-      // Signed out: the sign-in page answered, so nothing stored may outlive the session
-      await clearAll();
-    }
+  // The page itself is stored by the sync it starts once loaded, after its build files (see sync)
+  if (isWallet && (response.type === 'opaqueredirect' || response.redirected)) {
+    // Signed out: the sign-in page answered, so nothing stored may outlive the session
+    await clearAll();
   }
   return response;
 }
@@ -180,10 +176,36 @@ async function sync({ assets }, since) {
   const html = await response.text();
   const match = html.match(TICKET_IDS);
   if (!match) return;
+  // The build files the page needs: those it names, and those the open tab loaded (code split off
+  // and loaded later). All of them are stored before the page replaces the old one, so a failed
+  // download or write leaves the old page and its files as they were.
+  const needed = new Set();
+  for (const [, url] of html.matchAll(/(?:src|href)="(\/_next\/static\/[^"]+)"/g)) needed.add(url.replace(/&amp;/g, '&'));
+  for (const url of assets) {
+    const parsed = new URL(url, self.location.origin);
+    if (parsed.origin === self.location.origin && parsed.pathname.startsWith('/_next/static/')) {
+      needed.add(parsed.pathname + parsed.search);
+    }
+  }
+  for (const path of needed) {
+    if ((await fetchStored(STATIC, path, since)) !== 'stored') return;
+  }
+
   // Only the type: the body is already decoded, so encoding and length headers would be wrong
   const page = new Response(html, { headers: { 'Content-Type': response.headers.get('Content-Type') || 'text/html' } });
-  // Not stored (storage full, or signed out meanwhile): the old page stays, so its QR codes do too
+  // Not stored (storage full, or signed out meanwhile): the old page stays, and so do its files and QR codes
   if (!(await store(PAGES, WALLET, page, since))) return;
+
+  // Files from older builds are no longer needed by the stored page
+  try {
+    const cache = await caches.open(STATIC);
+    for (const key of await cache.keys()) {
+      const url = new URL(key.url);
+      if (since === generation && !needed.has(url.pathname + url.search)) await cache.delete(key);
+    }
+  } catch {
+    // Housekeeping only
+  }
 
   try {
     const qr = await caches.open(QR);
@@ -197,32 +219,6 @@ async function sync({ assets }, since) {
     }
   } catch (error) {
     console.warn('Offline QR codes not synced:', error);
-  }
-
-  // The build files the stored page needs: those it names, and those the open tab loaded (code split
-  // off and loaded later). Anything else in the cache is from an older build and goes, once these
-  // are all stored, so the stored page never loses a file it needs.
-  const needed = new Set();
-  for (const [, url] of html.matchAll(/(?:src|href)="(\/_next\/static\/[^"]+)"/g)) needed.add(url.replace(/&amp;/g, '&'));
-  for (const url of assets) {
-    const parsed = new URL(url, self.location.origin);
-    if (parsed.origin === self.location.origin && parsed.pathname.startsWith('/_next/static/')) {
-      needed.add(parsed.pathname + parsed.search);
-    }
-  }
-  let complete = true;
-  for (const path of needed) {
-    if ((await fetchStored(STATIC, path, since)) !== 'stored') complete = false;
-  }
-  if (!complete || since !== generation) return;
-  try {
-    const cache = await caches.open(STATIC);
-    for (const key of await cache.keys()) {
-      const url = new URL(key.url);
-      if (!needed.has(url.pathname + url.search)) await cache.delete(key);
-    }
-  } catch {
-    // Housekeeping only
   }
 }
 
