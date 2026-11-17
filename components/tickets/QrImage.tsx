@@ -51,14 +51,27 @@ export function QrImage({
     );
   }
 
+  // The query only makes a retry a new request; the route ignores it
+  const src = `/api/tickets/${ticketId}/qr${attempt ? `?attempt=${attempt}` : ''}`;
+
+  // An image can't tell no signal from a refusal. Ask once more: a 401 means the session is over
+  // (or access was taken away), and /api/access-ended signs out and explains, or opens sign-in.
+  const handleError = async () => {
+    setFailed(true);
+    try {
+      if ((await fetch(src)).status === 401) window.location.assign('/api/access-ended');
+    } catch {
+      // No signal: the message above already says so
+    }
+  };
+
   return (
     // eslint-disable-next-line @next/next/no-img-element -- private, uncached image
     <img
-      // The query only makes a retry a new request; the route ignores it
-      src={`/api/tickets/${ticketId}/qr${attempt ? `?attempt=${attempt}` : ''}`}
+      src={src}
       alt={alt}
       draggable={false}
-      onError={() => setFailed(true)}
+      onError={handleError}
       className={className}
     />
   );

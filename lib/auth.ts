@@ -32,6 +32,57 @@ async function canSignIn(rawEmail: string): Promise<boolean> {
   return ALLOWED_EMAILS.includes(email);
 }
 
+// How long a "still allowed" answer is trusted, per server instance. Removing someone (from every
+// group and from app-access) signs them out within about this long. Only "allowed" is remembered:
+// someone re-invited a moment after losing access must be able to use the session they sign in with.
+const ACCESS_RECHECK_MS = 60_000;
+const allowedAt = new Map<string, number>();
+// Which check last found each user had lost access, so an "allowed" answer from a check that
+// started before it (and finished later) can't be remembered over it. Checks are numbered in the
+// order they start.
+let checkCount = 0;
+const endedBy = new Map<string, number>();
+
+/**
+ * Whether a signed-in user has since lost access: no longer in any group (invited or active), and
+ * not allowed by the app-access flag (or the fallback allowlist when LaunchDarkly is down). Sessions
+ * are 30-day JWTs, so the sign-in check alone would let a removed user keep using the app until it
+ * expires; getViewer and requireAuth ask this on every request instead (a "still allowed" answer is reused for a minute).
+ *
+ * Only a definite answer ends a session: if the database or LaunchDarkly can't be asked, the user
+ * keeps access (a blip shouldn't sign the crew out at the cinema door). `fresh` skips the
+ * remembered answer.
+ */
+export async function hasAccessEnded(rawEmail: string, { fresh = false } = {}): Promise<boolean> {
+  const email = normalizeEmail(rawEmail);
+  const checkedAt = allowedAt.get(email);
+  if (!fresh && checkedAt !== undefined && Date.now() - checkedAt < ACCESS_RECHECK_MS) {
+    return false;
+  }
+
+  const check = ++checkCount;
+  let ended: boolean;
+  try {
+    if (await isKnownMember(email)) {
+      ended = false;
+    } else {
+      const access = await evaluateBooleanFlag(APP_ACCESS_FLAG_KEY, userContext(email), true);
+      // With LaunchDarkly down, the fallback allowlist only decides when there is one
+      ended = access.available ? !access.value : ALLOWED_EMAILS.length > 0 && !ALLOWED_EMAILS.includes(email);
+    }
+  } catch (error) {
+    console.error('Failed to re-check access:', error);
+    return false;
+  }
+  if (ended) {
+    endedBy.set(email, check);
+    allowedAt.delete(email);
+  } else if ((endedBy.get(email) ?? 0) < check) {
+    allowedAt.set(email, Date.now());
+  }
+  return ended;
+}
+
 // NextAuth needs the site's public URL for OAuth callbacks and sign-out redirects. On Vercel,
 // with NEXTAUTH_URL unset, it takes it from each request's host, so sign-in stays on whatever
 // domain the user is on. Don't derive it from VERCEL_URL: that's the per-deployment hostname,

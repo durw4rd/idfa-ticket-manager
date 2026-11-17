@@ -15,6 +15,10 @@ function signInErrorMessage(code: string | null): string | null {
   if (code === 'AccessDenied') {
     return "This Google account isn't invited yet. Ask someone in your crew to invite you.";
   }
+  if (code === 'AccessEnded') {
+    // Sent by /api/access-ended, which has just signed them out
+    return 'You no longer have access to this app, so you were signed out. Ask someone in your crew to invite you again.';
+  }
   return "Sign-in didn't work. Please try again.";
 }
 
