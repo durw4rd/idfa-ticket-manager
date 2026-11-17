@@ -44,7 +44,9 @@ export default function TicketWallet({
   const lookup = useMemo(() => makeCrewLookup(crew), [crew]);
   const me = crew.find((member) => member.isMe)!;
   const [scope, setScope] = usePersistentState<Scope>('tickets.scope', 'mine', (v) => ['mine', 'crew'].includes(v));
-  const [overlayIndex, setOverlayIndex] = useState<number | null>(null);
+  // The tickets are copied when the viewer opens, so a refresh or the minute tick can't swap the QR
+  // being shown at the door for another one
+  const [overlay, setOverlay] = useState<{ tickets: QrTicket[]; index: number } | null>(null);
 
   // Also when the crew is just you: tickets can still be held by someone who has left
   const othersHoldTickets = screenings.some((screening) =>
@@ -149,7 +151,7 @@ export default function TicketWallet({
 
                   <button
                     type="button"
-                    onClick={() => setOverlayIndex(position)}
+                    onClick={() => setOverlay({ tickets: qrTickets, index: position })}
                     aria-label={`Show QR code for ${pass.screening.act}`}
                     className={`shrink-0 overflow-hidden rounded bg-white ring-1 ring-line ${
                       first ? 'mx-auto w-full max-w-[16rem] p-3' : 'h-16 w-16 p-1'
@@ -168,9 +170,7 @@ export default function TicketWallet({
         </ol>
       )}
 
-      {overlayIndex !== null && (
-        <QrOverlay tickets={qrTickets} startIndex={overlayIndex} onClose={() => setOverlayIndex(null)} />
-      )}
+      {overlay && <QrOverlay tickets={overlay.tickets} startIndex={overlay.index} onClose={() => setOverlay(null)} />}
     </>
   );
 }
