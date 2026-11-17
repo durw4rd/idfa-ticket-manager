@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { ArrowLeft } from 'lucide-react';
+import { ButtonLink } from './ui/Button';
 import type { CrewMember } from '@/lib/types';
 import { Avatar } from './ui/Avatar';
 
@@ -13,12 +15,14 @@ export default function PageHeader({
   me,
   actions,
   back,
+  onCrewPage = false,
 }: {
   title: ReactNode;
   eyebrow?: ReactNode;
   me?: CrewMember;
   actions?: ReactNode;
   back?: ReactNode;
+  onCrewPage?: boolean; // The avatar link is the way to the Crew page; mark it as where you are
 }) {
   return (
     <header className="sticky top-0 z-40 -mx-4 mb-2 bg-paper/90 px-4 pt-safe backdrop-blur-md">
@@ -30,11 +34,30 @@ export default function PageHeader({
         </div>
         {actions}
         {me && (
-          <Link href="/crew" aria-label="Crew and settings" className="-mr-1 rounded-full p-1">
+          <Link
+            href="/crew"
+            aria-label="Crew and settings"
+            aria-current={onCrewPage ? 'page' : undefined}
+            className={`-mr-1 rounded-full p-1 ${onCrewPage ? 'ring-2 ring-spark' : ''}`}
+          >
             <Avatar member={me} size="md" />
           </Link>
         )}
       </div>
     </header>
+  );
+}
+
+/** The back arrow at the left of a detail page's header */
+export function BackLink({ href, label = 'Back to agenda' }: { href: string; label?: string }) {
+  return (
+    <ButtonLink
+      href={href}
+      variant="ghost"
+      size="icon"
+      aria-label={label}
+      className="-ml-3"
+      icon={<ArrowLeft className="h-5 w-5" />}
+    />
   );
 }

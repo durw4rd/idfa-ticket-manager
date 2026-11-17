@@ -11,7 +11,7 @@ import { holdersOf, screeningHref } from '@/lib/agenda';
 import { AvatarStack } from '@/components/ui/Avatar';
 import { Button, ButtonLink } from '@/components/ui/Button';
 import QaMark from '@/components/QaMark';
-import QrOverlay, { qrTicketsFor } from '@/components/tickets/QrOverlay';
+import QrOverlay, { qrTicketsFor, type QrTicket } from '@/components/tickets/QrOverlay';
 
 /** The next screening for the selected person, with the QR one tap away */
 export default function UpNext({
@@ -25,7 +25,9 @@ export default function UpNext({
   personEmail: string;
   lookup: (email: string) => CrewMember;
 }) {
-  const [showQr, setShowQr] = useState(false);
+  // Copied when opened: the minute tick can move "Up next" on to the following film while this
+  // film's QR is still being shown at the door
+  const [qrTickets, setQrTickets] = useState<QrTicket[] | null>(null);
   const startsAt = new Date(screening.startsAt);
   // Compare with the server's `now`, not the browser clock, so TEST_DATE works
   const when = dayKey(startsAt) === dayKey(now) ? formatTimeUntil(startsAt, now) : formatDate(startsAt);
@@ -50,7 +52,7 @@ export default function UpNext({
           </span>
         </div>
         <div className="mt-4 flex gap-2">
-          <Button variant="spark" icon={<QrCode className="h-5 w-5" />} onClick={() => setShowQr(true)} className="flex-1">
+          <Button variant="spark" icon={<QrCode className="h-5 w-5" />} onClick={() => setQrTickets(qrTicketsFor(screening, (email) => lookup(email).name, personEmail))} className="flex-1">
             Show ticket
           </Button>
           <ButtonLink
@@ -63,12 +65,7 @@ export default function UpNext({
           />
         </div>
       </div>
-      {showQr && (
-        <QrOverlay
-          tickets={qrTicketsFor(screening, (email) => lookup(email).name, personEmail)}
-          onClose={() => setShowQr(false)}
-        />
-      )}
+      {qrTickets && <QrOverlay tickets={qrTickets} onClose={() => setQrTickets(null)} />}
     </section>
   );
 }

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowRightLeft, Loader2, MoreHorizontal, Pencil, QrCode, Trash2 } from 'lucide-react';
 import type { CrewMember, ExtractedTicketFields } from '@/lib/types';
-import { makeCrewLookup } from '@/lib/agenda';
+import { makeCrewLookup, screeningHref, screeningKey } from '@/lib/agenda';
 import { readApiResponse } from '@/lib/api-client';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
@@ -24,7 +24,7 @@ export interface ScreeningTicket {
 type Panel =
   | { kind: 'holder'; ticket: ScreeningTicket }
   | { kind: 'menu'; ticket: ScreeningTicket }
-  | { kind: 'edit'; ticket: ScreeningTicket; draft: ExtractedTicketFields }
+  | { kind: 'edit'; ticket: ScreeningTicket; draft: ExtractedTicketFields; applyToAll: boolean }
   | { kind: 'delete'; ticket: ScreeningTicket };
 
 /**
@@ -46,7 +46,9 @@ export default function ScreeningTickets({
 }) {
   const router = useRouter();
   const lookup = makeCrewLookup(crew);
-  const [overlayIndex, setOverlayIndex] = useState<number | null>(null);
+  // The tickets are copied when the viewer opens, so a refresh or the minute tick can't swap the QR
+  // being shown at the door for another one
+  const [overlay, setOverlay] = useState<{ tickets: QrTicket[]; index: number } | null>(null);
   const [panel, setPanel] = useState<Panel | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -95,20 +97,38 @@ export default function ScreeningTickets({
       }
     );
 
-  const saveFields = (ticket: ScreeningTicket, fields: ExtractedTicketFields) =>
-    run(
-      () =>
-        fetch(`/api/tickets/${ticket.id}`, {
+  // Your other tickets for this showing: a misread title or time is usually the same on all of them
+  const othersOwned = (ticket: ScreeningTicket) =>
+    tickets.filter((other) => other.id !== ticket.id && other.ownerEmail === meEmail);
+
+  const saveFields = async (ticket: ScreeningTicket, fields: ExtractedTicketFields, applyToAll: boolean) => {
+    const ids = [ticket.id, ...(applyToAll ? othersOwned(ticket).map((other) => other.id) : [])];
+    setBusy(true);
+    setError(null);
+    try {
+      let saved: ExtractedTicketFields | null = null;
+      for (const id of ids) {
+        const response = await fetch(`/api/tickets/${id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ fields }),
-        }),
-      // The screening's address changes with its details, so go back to that year's agenda
-      (data) => {
-        router.push(`/screenings?year=${data.ticket.festivalYear}`);
-        router.refresh();
+        });
+        const data = await readApiResponse<{ ticket: ExtractedTicketFields }>(response, 'Could not save the details');
+        saved ??= data.ticket;
       }
-    );
+      // The screening's address is made of its details, so open it at its new one. Close the sheet
+      // first: a venue-only fix keeps the address, and the refresh alone wouldn't close it
+      close();
+      router.push(screeningHref({ id: screeningKey(saved!.act, saved!.date, saved!.start) }));
+      router.refresh();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not save the details';
+      // Some may have been saved before one failed; the agenda shows where each one ended up
+      setError(ids.length > 1 ? `${message}. Some tickets may already have the new details.` : message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const remove = (ticket: ScreeningTicket) =>
     run(
@@ -125,7 +145,7 @@ export default function ScreeningTickets({
         variant="spark"
         className="w-full"
         icon={<QrCode className="h-5 w-5" />}
-        onClick={() => setOverlayIndex(0)}
+        onClick={() => setOverlay({ tickets: qrTickets, index: 0 })}
       >
         {mineCount > 0
           ? `Show my ticket${mineCount > 1 ? 's' : ''}`
@@ -141,7 +161,7 @@ export default function ScreeningTickets({
             <li key={ticket.id} className="flex items-center gap-3 p-3">
               <button
                 type="button"
-                onClick={() => setOverlayIndex(index)}
+                onClick={() => setOverlay({ tickets: qrTickets, index: index })}
                 aria-label={`Show QR code for ${holder.name}'s ticket`}
                 className="h-14 w-14 shrink-0 overflow-hidden rounded bg-white p-1 ring-1 ring-line"
               >
@@ -181,9 +201,7 @@ export default function ScreeningTickets({
         })}
       </ul>
 
-      {overlayIndex !== null && (
-        <QrOverlay tickets={qrTickets} startIndex={overlayIndex} onClose={() => setOverlayIndex(null)} />
-      )}
+      {overlay && <QrOverlay tickets={overlay.tickets} startIndex={overlay.index} onClose={() => setOverlay(null)} />}
 
       <Sheet open={panel?.kind === 'holder'} onClose={close} title="Who's using this ticket?">
         {panel?.kind === 'holder' && (
@@ -209,7 +227,9 @@ export default function ScreeningTickets({
           <div className="space-y-1">
             <SheetOption
               icon={<Pencil className="h-5 w-5 text-ink-2" />}
-              onClick={() => setPanel({ kind: 'edit', ticket: panel.ticket, draft: panel.ticket.fields })}
+              onClick={() =>
+                setPanel({ kind: 'edit', ticket: panel.ticket, draft: panel.ticket.fields, applyToAll: true })
+              }
             >
               Fix details
             </SheetOption>
@@ -230,7 +250,7 @@ export default function ScreeningTickets({
             className="space-y-4"
             onSubmit={(event) => {
               event.preventDefault();
-              saveFields(panel.ticket, panel.draft);
+              saveFields(panel.ticket, panel.draft, panel.applyToAll);
             }}
           >
             <TicketFieldsForm
@@ -238,6 +258,19 @@ export default function ScreeningTickets({
               disabled={busy}
               onChange={(draft) => setPanel({ ...panel, draft })}
             />
+            {othersOwned(panel.ticket).length > 0 && (
+              <label className="flex items-center gap-3 text-sm text-ink-2">
+                <input
+                  type="checkbox"
+                  checked={panel.applyToAll}
+                  disabled={busy}
+                  onChange={(event) => setPanel({ ...panel, applyToAll: event.target.checked })}
+                  className="h-5 w-5 accent-ink"
+                />
+                Also fix my other {othersOwned(panel.ticket).length === 1 ? 'ticket' : `${othersOwned(panel.ticket).length} tickets`} for
+                this showing
+              </label>
+            )}
             {error && <Notice>{error}</Notice>}
             <Button type="submit" className="w-full" disabled={busy} icon={busy ? <Loader2 className="h-5 w-5 animate-spin" /> : undefined}>
               Save

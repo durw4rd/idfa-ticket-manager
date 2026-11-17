@@ -53,7 +53,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={archivo.variable}>
+    // data-fixed-clock: TEST_DATE fixes "now" on the server, and client components follow it (lib/use-now.ts)
+    <html lang="en" className={archivo.variable} data-fixed-clock={process.env.TEST_DATE ? '' : undefined}>
       <body className="min-h-dvh font-sans">
         <Providers>
           <main className="mx-auto max-w-xl px-4 pb-[calc(theme(spacing.tabbar)+env(safe-area-inset-bottom)+2rem)]">

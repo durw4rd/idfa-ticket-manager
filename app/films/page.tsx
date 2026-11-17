@@ -33,6 +33,10 @@ export default async function FilmsPage({ searchParams }: { searchParams: Promis
 
   const currentYear = getCurrentFestivalYear();
   const year = Number((await searchParams).year) || currentYear;
+  // Checked before any query: festival_year is an INT, so ?year=1e20 would fail in the database
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+    redirect('/films');
+  }
   const now = getNow();
 
   const [screenings, ratings, crew, festivalYears] = await Promise.all([
@@ -41,7 +45,11 @@ export default async function FilmsPage({ searchParams }: { searchParams: Promis
     getCrew(viewer),
     getFestivalYears(viewer.visibleEmails),
   ]);
-  const years = Array.from(new Set([currentYear, year, ...festivalYears])).sort((a, b) => b - a);
+  // Only years someone in the crew has tickets for, plus this one
+  if (year !== currentYear && !festivalYears.includes(year)) {
+    redirect('/films');
+  }
+  const years = Array.from(new Set([currentYear, ...festivalYears])).sort((a, b) => b - a);
   const lookup = makeCrewLookup(crew);
   const agenda = screenings.map(toAgendaScreening);
 

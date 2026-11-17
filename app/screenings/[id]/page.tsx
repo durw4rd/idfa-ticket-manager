@@ -1,6 +1,7 @@
 import Image from 'next/image';
 import { redirect } from 'next/navigation';
-import { ArrowLeft, ExternalLink, Navigation, Vote } from 'lucide-react';
+import { after } from 'next/server';
+import { ExternalLink, Navigation, Vote } from 'lucide-react';
 import { getScreening, getRatingsByMovie } from '@/lib/db';
 import { getCrew } from '@/lib/groups';
 import { getViewer } from '@/lib/auth-helpers';
@@ -9,10 +10,10 @@ import { holdersOf, makeCrewLookup, toAgendaScreening } from '@/lib/agenda';
 import { getVenueBackground } from '@/lib/venue-backgrounds';
 import { getFestivalLinkForScreening } from '@/lib/festival-links';
 import { getMapSearchUrl } from '@/lib/maps-utils';
-import { getAvailabilityForScreenings, getFilmOverview } from '@/lib/idfa';
-import { userContext } from '@/lib/launchdarkly';
+import { getAvailabilityForScreenings, getFilmOverview, getShowDetails, IDFA_AVAILABILITY_FLAG_KEY, refreshShowDetails } from '@/lib/idfa';
+import { evaluateBooleanFlag, userContext } from '@/lib/launchdarkly';
 import { getVoteLinksForScreening } from '@/lib/vote-links';
-import PageHeader from '@/components/PageHeader';
+import PageHeader, { BackLink } from '@/components/PageHeader';
 import { AvatarStack } from '@/components/ui/Avatar';
 import { ButtonLink } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -24,6 +25,23 @@ import AvailabilityMark from '@/components/AvailabilityMark';
 import QaMark from '@/components/QaMark';
 
 export const dynamic = 'force-dynamic';
+
+// The same budget as the availability check in lib/idfa.ts: a slow IDFA means no extra details,
+// not a slow page
+const SHOW_DETAILS_DEADLINE_MS = 3000;
+
+/** The promise's value, or null if it takes longer than `ms` or fails */
+async function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), ms);
+  });
+  try {
+    return await Promise.race([promise.catch(() => null), deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export default async function ScreeningDetailPage({
   params,
@@ -61,17 +79,35 @@ export default async function ScreeningDetailPage({
   const now = getNow();
   const started = startsAt <= now;
   const venueImage = getVenueBackground(screening.location);
-  const [{ festivalLink, overview }, availability, ratings, voteLinks] = await Promise.all([
-    getFestivalLinkForScreening(screening).then(async (link) => ({
-      festivalLink: link,
-      overview: await getFilmOverview(link, screening.act),
-    })),
+  // End time and Q&A are cleared when a ticket's details are fixed, and normally filled back in by
+  // the agenda. Coming straight here (Fix details opens the corrected screening), read them from
+  // the IDFA site now, and store them once the page is sent.
+  const missingShowDetails = screening.endsAt == null || screening.hasQa == null;
+  const [{ festivalLink, overview, liveDetails }, availability, ratings, voteLinks] = await Promise.all([
+    getFestivalLinkForScreening(screening).then(async (link) => {
+      const lookUpDetails = async () =>
+        (await evaluateBooleanFlag(IDFA_AVAILABILITY_FLAG_KEY, userContext(viewer.email), true)).value
+          ? getShowDetails(link, screening.act, startsAt)
+          : null;
+      const [overview, liveDetails] = await Promise.all([
+        getFilmOverview(link, screening.act),
+        // Bounded like the availability check (flag included): past the deadline the page shows what's
+        // stored, and the refresh after the response catches up
+        missingShowDetails && !started ? withDeadline(lookUpDetails(), SHOW_DETAILS_DEADLINE_MS) : null,
+      ]);
+      return { festivalLink: link, overview, liveDetails };
+    }),
     // Past screenings are skipped inside, so this makes no request once the film has started
     getAvailabilityForScreenings([screening], now, userContext(viewer.email)).then((marks) => marks.get(screening.id)),
     getRatingsByMovie(viewer.visibleEmails, screening.act, screening.festivalYear),
     // Audience Award links for the tickets the viewer holds; only this viewer's page gets them
     getVoteLinksForScreening(viewer, screening),
   ]);
+  const endsAt = screening.endsAt ?? liveDetails?.endsAt ?? null;
+  const hasQa = (screening.hasQa ?? liveDetails?.hasQa) === true;
+  if (missingShowDetails) {
+    after(() => refreshShowDetails(viewer.visibleEmails, [screening], now, userContext(viewer.email)));
+  }
   const myRating = ratings.find((rating) => rating.userEmail === viewer.email);
   const crewRatings = ratings.filter((rating) => rating.userEmail !== viewer.email);
   const average = ratings.length > 1 ? ratings.reduce((sum, r) => sum + r.rating, 0) / ratings.length : null;
@@ -103,12 +139,12 @@ export default async function ScreeningDetailPage({
           )}
           <h2 className="font-display text-xl text-balance">{screening.act}</h2>
           <p className="mt-2 text-base">
-            <span className="font-semibold tabular-nums">{formatTimeRange(startsAt, screening.endsAt)}</span>
+            <span className="font-semibold tabular-nums">{formatTimeRange(startsAt, endsAt)}</span>
             <span className="text-ink-2"> · {formatDate(startsAt, 'long')}</span>
           </p>
           <p className="flex flex-wrap items-center gap-x-2 text-ink-2">
             {screening.location}
-            {screening.hasQa && <QaMark />}
+            {hasQa && <QaMark />}
           </p>
           <div className="mt-3 flex items-center gap-2 text-sm text-ink-2">
             <AvatarStack members={holders} />
@@ -133,7 +169,9 @@ export default async function ScreeningDetailPage({
             </div>
           )}
 
-          <div className="-mx-4 mt-4 flex gap-2 overflow-x-auto px-4 py-1 [scrollbar-width:none]">
+          {/* Wraps rather than scrolls: nothing is cut off, and the 8px gap leaves each small button's
+              44px touch area clear of the next row's */}
+          <div className="mt-5 flex flex-wrap gap-2">
             {voteLinks.map((link, index) => (
               <ButtonLink key={link.id} href={link.url} external size="sm" icon={<Vote className="h-4 w-4" />}>
                 {voteLinks.length > 1 ? `Vote ${index + 1}` : 'Vote'}
@@ -153,12 +191,13 @@ export default async function ScreeningDetailPage({
                 title={screening.act}
                 location={screening.location}
                 startsAt={startsAt.toISOString()}
-                endsAt={screening.endsAt ? new Date(screening.endsAt).toISOString() : null}
-                hasQa={screening.hasQa === true}
+                endsAt={endsAt ? new Date(endsAt).toISOString() : null}
+                hasQa={hasQa}
                 url={festivalLink}
               />
             )}
-            {festivalLink && (
+            {/* With an overview, its "Read more on IDFA" link already goes there */}
+            {festivalLink && !overview && (
               <ButtonLink href={festivalLink} external variant="secondary" size="sm" icon={<ExternalLink className="h-4 w-4" />}>
                 IDFA page
               </ButtonLink>
@@ -180,7 +219,7 @@ export default async function ScreeningDetailPage({
             crew={crew}
             meEmail={viewer.email}
             title={screening.act}
-            meta={`${formatDate(startsAt)} · ${formatTimeRange(startsAt, screening.endsAt)} · ${screening.location}`}
+            meta={`${formatDate(startsAt)} · ${formatTimeRange(startsAt, endsAt)} · ${screening.location}`}
           />
         </section>
 
@@ -208,18 +247,5 @@ export default async function ScreeningDetailPage({
         </section>
       </article>
     </>
-  );
-}
-
-function BackLink({ href }: { href: string }) {
-  return (
-    <ButtonLink
-      href={href}
-      variant="ghost"
-      size="icon"
-      aria-label="Back to agenda"
-      className="-ml-3"
-      icon={<ArrowLeft className="h-5 w-5" />}
-    />
   );
 }

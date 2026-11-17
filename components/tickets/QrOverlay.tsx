@@ -36,7 +36,8 @@ export default function QrOverlay({
   useModal(true, dialogRef, onClose);
 
   const count = tickets.length;
-  const ticket = tickets[index];
+  // Clamped, so a shorter list never leaves the page locked behind an empty overlay
+  const ticket = tickets[Math.min(index, count - 1)];
   const go = (step: number) => setIndex((current) => (current + step + count) % count);
 
   useEffect(() => {
@@ -47,6 +48,11 @@ export default function QrOverlay({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [count]);
+
+  // Nothing left to show: close rather than keep the page inert with no way out
+  useEffect(() => {
+    if (count === 0) onClose();
+  }, [count, onClose]);
 
   // Keep the screen awake while the QR is up. Browsers drop the lock when the page is hidden,
   // so take it again on return; a lock granted after closing is released straight away.
