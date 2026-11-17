@@ -12,4 +12,4 @@ Hand-run SQL; there is no migration runner. Run each file once, in number order,
 | `005-screening-end-and-qa.sql` | `tickets.ends_at`, `tickets.has_qa` |
 | `006-vote-links.sql` | Forwarding tokens and `vote_links` |
 
-Every file is idempotent (`IF NOT EXISTS`), so re-running one is harmless. When you add a migration, give it the next number, update `lib/types.ts` and the row mapping in `lib/db.ts`, and add it to this table.
+Schema changes use `IF NOT EXISTS`, so re-running them does nothing. Data changes are a different matter: don't replay `002` on a database that has run it, because its seed only checks current membership, and if the seeded owner has since left every group it creates the group and both memberships again. When you add a migration, give it the next number, update `lib/types.ts` and the row mapping in `lib/db.ts`, and add it to this table.
