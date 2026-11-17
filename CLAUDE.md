@@ -7,7 +7,7 @@ IDFA Ticket Manager: a Next.js 15 (App Router, React 19, TypeScript, Tailwind 3)
 ```bash
 npm run dev          # http://localhost:3000 (needs .env.local; see .env.example)
 npx tsc --noEmit     # typecheck
-npm run lint         # next lint
+npm run lint         # eslint (flat config, next/core-web-vitals)
 npm test             # vitest: pure logic in lib/*.test.ts
 npm run build        # full production build
 ```

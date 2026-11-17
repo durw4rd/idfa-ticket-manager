@@ -1,7 +1,7 @@
 -- Migration: multi-user ownership, festival years, and sharing groups
--- Run this SQL in your Postgres database after add-festival-link.sql.
--- Existing tickets are assigned to owner@example.com and a group is seeded for the existing users;
--- change those emails before running this on another database.
+-- Run this SQL in your Postgres database after 001-add-festival-link.sql.
+-- Existing tickets are assigned to one owner and a first group is seeded for the existing users.
+-- Replace owner@example.com, member@example.com and the group name with your own before running.
 
 BEGIN;
 
@@ -56,14 +56,14 @@ CREATE TABLE IF NOT EXISTS group_members (
 
 CREATE INDEX IF NOT EXISTS idx_group_members_email ON group_members(user_email);
 
--- Seed the existing couple as one group
+-- Seed the existing users as one group
 DO $$
 DECLARE
   seeded_group UUID;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM group_members WHERE user_email = 'owner@example.com') THEN
     INSERT INTO groups (name, created_by)
-    VALUES ('Misa & Martina', 'owner@example.com')
+    VALUES ('Festival crew', 'owner@example.com')
     RETURNING id INTO seeded_group;
 
     INSERT INTO group_members (group_id, user_email, role, status, invited_by) VALUES

@@ -1,5 +1,5 @@
 -- Base schema: the original tickets and ratings tables.
--- For a new database, run this first, then add-festival-link.sql, then 002-multi-user-multi-year.sql.
+-- For a new database, run this first, then 001-add-festival-link.sql, then the rest in number order (see migrations/README.md).
 
 CREATE TABLE IF NOT EXISTS tickets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
