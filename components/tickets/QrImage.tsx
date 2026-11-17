@@ -6,8 +6,9 @@ import { RotateCw, WifiOff } from 'lucide-react';
 /**
  * A ticket's QR code from /api/tickets/[id]/qr. The route never lets the browser cache it; the
  * offline wallet (public/sw.js) keeps copies of the Tickets page's codes, but any other code can
- * fail with no signal in a cinema foyer: say so and offer another try instead of a broken image. `compact` (thumbnails inside a button) shows only an icon; the full-screen viewer
- * has the Try again button. Always on white, like the QR itself.
+ * fail with no signal in a cinema foyer: say so and offer another try instead of a broken image.
+ * `compact` (thumbnails inside a button) shows only an icon; the full-screen viewer has the Try
+ * again button. Always on white, like the QR itself.
  */
 export function QrImage({
   ticketId,
