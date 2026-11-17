@@ -2,7 +2,7 @@ import { NextRequest, NextResponse, after } from 'next/server';
 import { createHash } from 'crypto';
 import { extractTicketDataFromImage } from '@/lib/ticket-extractor';
 import { extractQRCodeFromImage } from '@/lib/qr-extractor';
-import { createTicketUnlessDuplicate, findTicketByQrHash, getTicketsForYear } from '@/lib/db';
+import { createTicketUnlessDuplicate, findTicketByQrHash, getTicketsForYear, ticketUsesQrCodeUrl } from '@/lib/db';
 import { PDFProcessingSummary, ProcessedTicketResult } from '@/lib/types';
 import { requireAuth } from '@/lib/auth-helpers';
 import { findFestivalLink } from '@/lib/find-festival-link';
@@ -140,8 +140,17 @@ export async function POST(request: NextRequest) {
             qrHash,
           });
         } catch (saveError) {
-          // Nothing refers to the QR file unless the ticket was saved
-          await deleteTicketFiles([qrCodeUrl]);
+          // Nothing refers to the QR file unless the ticket was saved. The insert can have committed
+          // even though the call failed (a connection lost before COMMIT was acknowledged), so only
+          // delete the file once the database confirms no ticket uses it; when that can't be
+          // checked either, keep it (a stray file is harmless, a ticket without its QR is not)
+          try {
+            if (!(await ticketUsesQrCodeUrl(viewer.email, qrCodeUrl))) {
+              await deleteTicketFiles([qrCodeUrl]);
+            }
+          } catch (checkError) {
+            console.warn('Could not check whether the QR file is in use; keeping it:', checkError);
+          }
           throw saveError;
         }
 
