@@ -19,6 +19,10 @@ describe('safeCallbackUrl', () => {
     '/\t/evil.example/x',
     '/\n/evil.example/x',
     'javascript:alert(1)',
+    '/.//evil.example/x',
+    '/%2e//evil.example/x',
+    '/%2E%2E//evil.example/x',
+    '/a/..//evil.example/x',
   ])('sends %j to the agenda instead', (raw) => {
     expect(safeCallbackUrl(raw)).toBe('/screenings');
   });
