@@ -1,6 +1,10 @@
 import { sql as vercelSql, db } from '@vercel/postgres';
 import { Ticket, Screening, Rating } from './types';
 import { getFestivalYear, parseTicketDateTime } from './dates';
+import { parseScreeningKey, screeningKey } from './agenda';
+
+// Kept importable from here too; they live in lib/agenda.ts so client components can use them
+export { parseScreeningKey, screeningKey };
 
 // Set DATABASE_URL or POSTGRES_URL before importing
 // @vercel/postgres uses POSTGRES_URL by default, but we support DATABASE_URL too
@@ -296,24 +300,6 @@ export async function deleteTicket(ownerEmail: string, id: string): Promise<Tick
   `;
 
   return (result.rows[0] as Ticket) || null;
-}
-
-export function screeningKey(act: string, date: string, start: string): string {
-  return `${act}|${date}|${start}`;
-}
-
-/**
- * Split a screening key back into its parts. The movie title may itself contain "|",
- * so date and start are taken from the end.
- */
-export function parseScreeningKey(key: string): { act: string; date: string; start: string } | null {
-  const parts = key.split('|');
-  if (parts.length < 3) {
-    return null;
-  }
-  const start = parts.pop()!;
-  const date = parts.pop()!;
-  return { act: parts.join('|'), date, start };
 }
 
 export function groupTicketsIntoScreenings(tickets: Ticket[]): Screening[] {

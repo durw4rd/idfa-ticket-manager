@@ -13,6 +13,7 @@ import {
   type PersonFilter as Filter,
 } from '@/lib/agenda';
 import { usePersistentState } from '@/lib/use-persistent-state';
+import { useNow } from '@/lib/use-now';
 import PageHeader from '@/components/PageHeader';
 import { ButtonLink } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -40,7 +41,7 @@ export default function AgendaView({
   now: string; // From the server, so TEST_DATE applies here too
   actions?: React.ReactNode;
 }) {
-  const now = useMemo(() => new Date(nowIso), [nowIso]);
+  const now = useNow(nowIso);
   const me = crew.find((member) => member.isMe)!;
   const lookup = useMemo(() => makeCrewLookup(crew), [crew]);
 
