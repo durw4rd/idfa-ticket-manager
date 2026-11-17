@@ -3,7 +3,7 @@
 // OpenAI fallback: LaunchDarkly is optional at runtime, so when this returns null they call OpenAI.
 
 import { config, type LDContext, type Message } from '@launchdarkly/ai-server';
-import { createOpenAIHandler } from '@launchdarkly/ai-openai-messages';
+import { createOpenAIMessagesHandler } from '@launchdarkly/ai-openai-messages';
 import { createClaudeMessagesHandler } from '@launchdarkly/ai-claude-messages';
 import { getLdClient } from './launchdarkly';
 
@@ -11,7 +11,7 @@ import { getLdClient } from './launchdarkly';
 // otherwise break importing these modules even for callers that never reach a model
 let handlers: ReturnType<typeof createHandlers> | undefined;
 function createHandlers() {
-  return [createOpenAIHandler(), createClaudeMessagesHandler()];
+  return [createOpenAIMessagesHandler(), createClaudeMessagesHandler()];
 }
 function getHandlers() {
   return (handlers ??= createHandlers());
