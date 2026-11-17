@@ -1,8 +1,7 @@
 import OpenAI from 'openai';
-import { config, type LDContext } from '@launchdarkly/ai-server';
-import { createOpenAIHandler } from '@launchdarkly/ai-openai-messages';
-import { createClaudeMessagesHandler } from '@launchdarkly/ai-claude-messages';
-import { evaluateBooleanFlag, getLdClient } from './launchdarkly';
+import type { LDContext } from '@launchdarkly/ai-server';
+import { evaluateBooleanFlag } from './launchdarkly';
+import { invokeAgentConfig } from './agent-config';
 import { queryIdfa, UUID_PATTERN } from './idfa';
 
 // AgentControl config with the prompt that picks a film's IDFA page from site search results.
@@ -11,15 +10,6 @@ export const FESTIVAL_LINK_CONFIG_KEY = 'festival-link-finder';
 // Kill switch for the model pick (exact title matches don't need it)
 export const FESTIVAL_LINK_FLAG_KEY = 'festival-link-ai';
 
-// Created on first use: the OpenAI handler throws when OPENAI_API_KEY isn't set, which would
-// otherwise break importing this module even for callers that never reach a model
-let handlers: ReturnType<typeof createHandlers> | undefined;
-function createHandlers() {
-  return [createOpenAIHandler(), createClaudeMessagesHandler()];
-}
-function getHandlers() {
-  return (handlers ??= createHandlers());
-}
 
 // Used as the LaunchDarkly config's user message, and by the fallback below
 export const FESTIVAL_LINK_PROMPT = `A ticket for IDFA (International Documentary Film Festival Amsterdam) {{festivalYear}} shows this title: "{{movieTitle}}"
@@ -114,20 +104,6 @@ async function searchFestival(movieTitle: string, festivalYear: number): Promise
   }
   // Only keep IDs that are safe to put in a URL
   return candidates.filter((c) => UUID_PATTERN.test(c.id));
-}
-
-async function pickWithAgentControl(
-  movieTitle: string,
-  festivalYear: number,
-  candidates: string,
-  context: LDContext
-): Promise<string> {
-  const result = await config({ key: FESTIVAL_LINK_CONFIG_KEY, handler: getHandlers() }).invoke(undefined, context, {
-    movieTitle,
-    festivalYear,
-    candidates,
-  });
-  return String(result.response ?? '');
 }
 
 async function pickWithFallback(movieTitle: string, festivalYear: number, candidates: string): Promise<string> {
@@ -287,17 +263,16 @@ export async function findFestivalLink(
 
     let content: string | undefined;
 
-    if (await getLdClient()) {
-      try {
-        content = await pickWithAgentControl(movieTitle, festivalYear, candidateList, context);
-        // A variation still on the old prompt answers with a URL; treat any answer that is
-        // neither a valid pick nor "null" as unavailable, so the fallback model picks instead
-        if (!parsePick(content, candidates) && !isNullAnswer(content)) {
-          console.warn(`AgentControl config "${FESTIVAL_LINK_CONFIG_KEY}" gave an unexpected answer, using fallback model`);
-          content = undefined;
-        }
-      } catch (error) {
-        console.warn(`AgentControl config "${FESTIVAL_LINK_CONFIG_KEY}" unavailable, using fallback model:`, error);
+    const served = await invokeAgentConfig(FESTIVAL_LINK_CONFIG_KEY, context, {
+      variables: { movieTitle, festivalYear, candidates: candidateList },
+    });
+    if (served) {
+      content = String(served.response ?? '');
+      // A variation still on the old prompt answers with a URL; treat any answer that is
+      // neither a valid pick nor "null" as unavailable, so the fallback model picks instead
+      if (!parsePick(content, candidates) && !isNullAnswer(content)) {
+        console.warn(`AgentControl config "${FESTIVAL_LINK_CONFIG_KEY}" gave an unexpected answer, using fallback model`);
+        content = undefined;
       }
     }
 
