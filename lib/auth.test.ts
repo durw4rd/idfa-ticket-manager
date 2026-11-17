@@ -58,6 +58,20 @@ describe('hasAccessEnded', () => {
     expect(await hasAccessEnded(email)).toBe(false);
   });
 
+  it("doesn't let a slower, older 'allowed' answer outlast a newer denial", async () => {
+    const email = someone();
+    let finishMembership: (value: boolean) => void = () => {};
+    isKnownMember.mockReturnValueOnce(new Promise<boolean>((resolve) => (finishMembership = resolve)));
+    const older = hasAccessEnded(email);
+    isKnownMember.mockResolvedValueOnce(false);
+    evaluateBooleanFlag.mockResolvedValue({ value: false, available: true });
+    expect(await hasAccessEnded(email)).toBe(true);
+    finishMembership(true);
+    expect(await older).toBe(false);
+    isKnownMember.mockResolvedValue(false);
+    expect(await hasAccessEnded(email)).toBe(true); // Not remembered as allowed
+  });
+
   it('remembers "allowed" for a minute', async () => {
     const email = someone();
     isKnownMember.mockResolvedValue(true);

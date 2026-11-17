@@ -37,6 +37,11 @@ async function canSignIn(rawEmail: string): Promise<boolean> {
 // someone re-invited a moment after losing access must be able to use the session they sign in with.
 const ACCESS_RECHECK_MS = 60_000;
 const allowedAt = new Map<string, number>();
+// Which check last found each user had lost access, so an "allowed" answer from a check that
+// started before it (and finished later) can't be remembered over it. Checks are numbered in the
+// order they start.
+let checkCount = 0;
+const endedBy = new Map<string, number>();
 
 /**
  * Whether a signed-in user has since lost access: no longer in any group (invited or active), and
@@ -55,6 +60,7 @@ export async function hasAccessEnded(rawEmail: string, { fresh = false } = {}): 
     return false;
   }
 
+  const check = ++checkCount;
   let ended: boolean;
   try {
     if (await isKnownMember(email)) {
@@ -69,8 +75,9 @@ export async function hasAccessEnded(rawEmail: string, { fresh = false } = {}): 
     return false;
   }
   if (ended) {
+    endedBy.set(email, check);
     allowedAt.delete(email);
-  } else {
+  } else if ((endedBy.get(email) ?? 0) < check) {
     allowedAt.set(email, Date.now());
   }
   return ended;
