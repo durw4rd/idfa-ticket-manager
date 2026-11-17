@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth-helpers';
-import { getRating, upsertRating, getAverageRating, deleteRating } from '@/lib/db';
+import { upsertRating, deleteRating } from '@/lib/db';
 
 function parseYear(value: unknown): number | null {
   const year = Number(value);
@@ -9,47 +9,6 @@ function parseYear(value: unknown): number | null {
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-// GET: Get current user's rating for a specific movie, or aggregate stats
-export async function GET(request: NextRequest) {
-  const { viewer, error } = await requireAuth();
-  if (error) return error;
-
-  const searchParams = request.nextUrl.searchParams;
-  const act = searchParams.get('act');
-  const year = parseYear(searchParams.get('year'));
-  const aggregate = searchParams.get('aggregate') === 'true';
-
-  if (!act || !year) {
-    return NextResponse.json(
-      { error: 'Movie title (act) and festival year (year) parameters are required' },
-      { status: 400 }
-    );
-  }
-
-  try {
-    if (aggregate) {
-      // Return aggregate stats for the movie
-      const stats = await getAverageRating(viewer.visibleEmails, act, year);
-      return NextResponse.json({
-        average: stats?.average || null,
-        count: stats?.count || 0,
-      });
-    } else {
-      // Return current user's rating
-      const rating = await getRating(viewer.email, act, year);
-      return NextResponse.json({
-        rating: rating || null,
-      });
-    }
-  } catch (error) {
-    console.error('Error fetching rating:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch rating', details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    );
-  }
-}
 
 // POST: Submit or update rating
 export async function POST(request: NextRequest) {
@@ -98,7 +57,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Saved for the film the title belongs to, so another screening of it shares the rating
     const savedRating = await upsertRating(
+      viewer.visibleEmails,
       viewer.email,
       act,
       year,
@@ -136,7 +97,7 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    await deleteRating(viewer.email, act, year);
+    await deleteRating(viewer.visibleEmails, viewer.email, act, year);
 
     return NextResponse.json({
       success: true,
