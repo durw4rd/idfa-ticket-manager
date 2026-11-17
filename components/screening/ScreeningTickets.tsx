@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ArrowRightLeft, Loader2, MoreHorizontal, Pencil, QrCode, Trash2 } from 'lucide-react';
 import type { CrewMember, ExtractedTicketFields } from '@/lib/types';
 import { makeCrewLookup } from '@/lib/agenda';
+import { readApiResponse } from '@/lib/api-client';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Notice } from '@/components/ui/Field';
@@ -71,10 +72,7 @@ export default function ScreeningTickets({
     setBusy(true);
     setError(null);
     try {
-      const response = await request();
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Something went wrong');
-      after(data);
+      after(await readApiResponse(await request(), 'Something went wrong'));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
