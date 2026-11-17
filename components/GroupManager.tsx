@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Check, Loader2, LogOut, Pencil, UserPlus, X } from 'lucide-react';
 import type { CrewMember, Group } from '@/lib/types';
 import { makeCrewLookup } from '@/lib/agenda';
+import { readApiResponse } from '@/lib/api-client';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { inputClasses, Notice } from '@/components/ui/Field';
@@ -38,10 +39,7 @@ export default function GroupManager({ initialGroups, crew }: { initialGroups: G
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Something went wrong');
-      }
+      const data = await readApiResponse<{ groups: Group[] }>(response, 'Something went wrong');
       setGroups(data.groups);
       // Membership decides whose tickets you see, so every page's data changes with it
       router.refresh();

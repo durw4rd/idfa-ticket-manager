@@ -7,50 +7,49 @@ import { Loader2 } from 'lucide-react';
 import IDFALogo from '@/components/IDFALogo';
 import { Button } from '@/components/ui/Button';
 import { Notice } from '@/components/ui/Field';
+import { safeCallbackUrl } from '@/lib/safe-redirect';
+
+// What NextAuth's ?error= codes mean for someone signing in (it sends them back here)
+function signInErrorMessage(code: string | null): string | null {
+  if (!code) return null;
+  if (code === 'AccessDenied') {
+    return "This Google account isn't invited yet. Ask someone in your crew to invite you.";
+  }
+  return "Sign-in didn't work. Please try again.";
+}
 
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const callbackUrl = safeCallbackUrl(searchParams.get('callbackUrl'));
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // A failure before Google's page opens (e.g. offline); later failures come back as ?error=
+  const [startError, setStartError] = useState<string | null>(null);
+  const error = startError ?? signInErrorMessage(searchParams.get('error'));
 
   useEffect(() => {
-    // Check if user is already logged in
+    // Already signed in: go where they were heading
     getSession().then((session) => {
-      if (session) {
-        const callbackUrl = searchParams.get('callbackUrl') || '/screenings';
-        router.push(callbackUrl);
-      }
+      if (session) router.replace(callbackUrl);
     });
-  }, [router, searchParams]);
+  }, [router, callbackUrl]);
 
-  const handleSignIn = async () => {
+  // Coming back with the browser's Back button restores this page as it was left, spinner and all
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => event.persisted && setLoading(false);
+    window.addEventListener('pageshow', onPageShow);
+    return () => window.removeEventListener('pageshow', onPageShow);
+  }, []);
+
+  // Google sign-in always leaves the page (NextAuth ignores redirect: false for OAuth), and a refused
+  // or failed sign-in comes back here with ?error=, which is shown above the button
+  const handleSignIn = () => {
     setLoading(true);
-    setError(null);
-    
-    try {
-      const callbackUrl = searchParams.get('callbackUrl') || '/screenings';
-      const result = await signIn('google', {
-        callbackUrl,
-        redirect: false,
-      });
-
-      if (result?.error) {
-        // Handle sign-in error
-        if (result.error === 'AccessDenied') {
-          setError('This Google account isn\'t invited yet. Ask someone in your crew to invite you.');
-        } else {
-          setError('An error occurred during sign-in. Please try again.');
-        }
-        setLoading(false);
-      } else if (result?.url) {
-        // Success - NextAuth will handle the redirect
-        router.push(result.url);
-      }
-    } catch (err) {
-      setError('An unexpected error occurred. Please try again.');
+    setStartError(null);
+    signIn('google', { callbackUrl }).catch(() => {
       setLoading(false);
-    }
+      setStartError("Couldn't reach Google sign-in. Check your connection and try again.");
+    });
   };
 
   return (
