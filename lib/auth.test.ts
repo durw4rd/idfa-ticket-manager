@@ -49,7 +49,16 @@ describe('hasAccessEnded', () => {
     expect(await hasAccessEnded(someone())).toBe(false); // No fallback allowlist in tests
   });
 
-  it('remembers the answer for a minute', async () => {
+  it("doesn't remember a denial, so someone re-invited can use their new session", async () => {
+    const email = someone();
+    isKnownMember.mockResolvedValue(false);
+    evaluateBooleanFlag.mockResolvedValue({ value: false, available: true });
+    expect(await hasAccessEnded(email)).toBe(true);
+    isKnownMember.mockResolvedValue(true);
+    expect(await hasAccessEnded(email)).toBe(false);
+  });
+
+  it('remembers "allowed" for a minute', async () => {
     const email = someone();
     isKnownMember.mockResolvedValue(true);
     await hasAccessEnded(email);

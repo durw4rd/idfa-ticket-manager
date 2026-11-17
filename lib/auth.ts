@@ -33,24 +33,25 @@ async function canSignIn(rawEmail: string): Promise<boolean> {
 }
 
 // How long a "still allowed" answer is trusted, per server instance. Removing someone (from every
-// group and from app-access) signs them out within about this long.
+// group and from app-access) signs them out within about this long. Only "allowed" is remembered:
+// someone re-invited a moment after losing access must be able to use the session they sign in with.
 const ACCESS_RECHECK_MS = 60_000;
-const accessChecks = new Map<string, { ended: boolean; at: number }>();
+const allowedAt = new Map<string, number>();
 
 /**
  * Whether a signed-in user has since lost access: no longer in any group (invited or active), and
  * not allowed by the app-access flag (or the fallback allowlist when LaunchDarkly is down). Sessions
  * are 30-day JWTs, so the sign-in check alone would let a removed user keep using the app until it
- * expires; getViewer and requireAuth ask this on every request instead.
+ * expires; getViewer and requireAuth ask this on every request instead (a "still allowed" answer is reused for a minute).
  *
  * Only a definite answer ends a session: if the database or LaunchDarkly can't be asked, the user
  * keeps access (a blip shouldn't sign the crew out at the cinema door).
  */
 export async function hasAccessEnded(rawEmail: string): Promise<boolean> {
   const email = normalizeEmail(rawEmail);
-  const cached = accessChecks.get(email);
-  if (cached && Date.now() - cached.at < ACCESS_RECHECK_MS) {
-    return cached.ended;
+  const checkedAt = allowedAt.get(email);
+  if (checkedAt !== undefined && Date.now() - checkedAt < ACCESS_RECHECK_MS) {
+    return false;
   }
 
   let ended: boolean;
@@ -66,7 +67,11 @@ export async function hasAccessEnded(rawEmail: string): Promise<boolean> {
     console.error('Failed to re-check access:', error);
     return false;
   }
-  accessChecks.set(email, { ended, at: Date.now() });
+  if (ended) {
+    allowedAt.delete(email);
+  } else {
+    allowedAt.set(email, Date.now());
+  }
   return ended;
 }
 
