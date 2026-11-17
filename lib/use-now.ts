@@ -32,7 +32,8 @@ export function useNow(serverNowIso: string): Date {
     tick();
     const timer = setInterval(tick, MINUTE);
 
-    let hiddenAt: number | null = null;
+    // A tab opened in the background starts out hidden; count that as time away too
+    let hiddenAt: number | null = document.visibilityState === 'hidden' ? Date.now() : null;
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') {
         hiddenAt = Date.now();
