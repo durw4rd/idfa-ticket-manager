@@ -3,6 +3,7 @@
 import type { AgendaScreening, CrewMember, Rating, Screening, TicketAvailability } from './types';
 import { festivalDayKey, festivalDayStart, screeningEnd } from './dates';
 import { CREW_COLOR_COUNT, getDisplayName } from './display';
+import { titleFilmKey } from './films';
 
 /** Strip a screening down to what the browser may see: no blob URLs, no QR hashes */
 export function toAgendaScreening(screening: Screening): AgendaScreening {
@@ -108,22 +109,26 @@ export function findClashes(screenings: AgendaScreening[]): Map<string, string[]
 
 /**
  * Films you held a ticket for that have started, and that you haven't rated yet. Most recent
- * first, one entry per film (ratings are per film and year, not per screening).
+ * first, one entry per film (ratings are per film and year, not per screening; `keysByTitle`
+ * from filmKeysByTitle in lib/films.ts says which titles are the same film).
  */
 export function screeningsToRate(
   screenings: AgendaScreening[],
-  myRatings: Pick<Rating, 'act' | 'festivalYear'>[],
+  myRatings: Pick<Rating, 'filmKey' | 'festivalYear'>[],
+  keysByTitle: Map<string, string>,
   me: string,
   now: Date
 ): AgendaScreening[] {
-  const rated = new Set(myRatings.map((rating) => `${rating.festivalYear}|${rating.act}`));
+  const filmOf = (screening: AgendaScreening) =>
+    `${screening.festivalYear}|${keysByTitle.get(screening.act) ?? titleFilmKey(screening.act)}`;
+  const rated = new Set(myRatings.map((rating) => `${rating.festivalYear}|${rating.filmKey}`));
   const seen = new Set<string>();
   return screenings
     .filter((screening) => new Date(screening.startsAt) <= now)
     .filter((screening) => screening.tickets.some((ticket) => ticket.holderEmail === me))
     .sort((a, b) => b.startsAt.localeCompare(a.startsAt))
     .filter((screening) => {
-      const key = `${screening.festivalYear}|${screening.act}`;
+      const key = filmOf(screening);
       if (rated.has(key) || seen.has(key)) return false;
       seen.add(key);
       return true;

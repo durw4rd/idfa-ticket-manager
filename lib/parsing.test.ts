@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parseScreeningKey, screeningKey } from './db';
-import { comparableTitle } from './find-festival-link';
+import { comparableTitle } from './films';
 import { assignCrewLooks, CREW_COLOR_COUNT, formatTimeUntil, getDisplayName } from './display';
 import { extractVoteLinks, findGmailConfirmationLink } from './vote-link-extractor';
 

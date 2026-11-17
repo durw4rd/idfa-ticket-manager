@@ -68,11 +68,25 @@ describe('screeningsToRate', () => {
         screening('Friend only', '2026-11-17T11:00:00.000Z', [FRIEND]),
         screening('Upcoming', '2026-11-19T19:00:00.000Z', [ME]),
       ],
-      [{ act: 'Rated', festivalYear: 2026 }],
+      [{ filmKey: 'title:rated', festivalYear: 2026 }],
+      new Map(),
       ME,
       now
     );
     expect(queue.map((s) => s.id)).toEqual(['Seen-2']);
+  });
+
+  it('treats titles of the same film as one, so rating one screening rates the other', () => {
+    const keysByTitle = new Map([
+      ['IDFA Hit: Siege', 'film:1'],
+      ['Siege', 'film:1'],
+    ]);
+    const screenings = [
+      screening('IDFA Hit: Siege', '2026-11-13T10:30:00.000Z', [ME]),
+      screening('Siege', '2026-11-17T13:00:00.000Z', [ME]),
+    ];
+    expect(screeningsToRate(screenings, [{ filmKey: 'film:1', festivalYear: 2026 }], keysByTitle, ME, now)).toEqual([]);
+    expect(screeningsToRate(screenings, [], keysByTitle, ME, now).map((s) => s.id)).toEqual(['Siege']);
   });
 });
 

@@ -2,6 +2,7 @@ import { sql as vercelSql, db } from '@vercel/postgres';
 import { Ticket, Screening, Rating } from './types';
 import { getFestivalYear, parseTicketDateTime } from './dates';
 import { parseScreeningKey, screeningKey } from './agenda';
+import { filmKeysByTitle, latestRatingPerFilm, ratingFilmKey, titleFilmKey } from './films';
 
 // Kept importable from here too; they live in lib/agenda.ts so client components can use them
 export { parseScreeningKey, screeningKey };
@@ -40,8 +41,8 @@ export async function withTransaction<T>(work: (query: Query) => Promise<T>): Pr
 /**
  * withTransaction, holding a transaction-scoped advisory lock on `key` throughout, so changes that
  * use the same key run one at a time and every check sees the data as it is when the change is
- * written. Used for ticket inserts (per QR code), group membership (per group) and voting links
- * (per owner).
+ * written. Used for ticket inserts (per QR code), group membership (per group), voting links
+ * (per owner) and ratings (per person and year).
  */
 export function withAdvisoryLock<T>(key: string, work: (query: Query) => Promise<T>): Promise<T> {
   return withTransaction(async (query) => {
@@ -350,107 +351,123 @@ export async function getScreening(visibleEmails: string[], key: string): Promis
   return groupTicketsIntoScreenings(tickets)[0] || null;
 }
 
-// Rating functions
-export async function getRating(userEmail: string, act: string, year: number): Promise<Rating | null> {
-  const result = await sql`
-    SELECT id, user_email as "userEmail", act, festival_year as "festivalYear", rating, comment, created_at as "createdAt", updated_at as "updatedAt"
-    FROM ratings
-    WHERE user_email = ${userEmail} AND act = ${act} AND festival_year = ${year}
-    LIMIT 1
-  `;
+// Rating functions. A rating is per person, film and festival year; the film is the IDFA page
+// its title is linked to (see lib/films.ts), so a film shown under two titles gets one rating.
 
-  return (result.rows[0] as Rating) || null;
-}
-
-export async function getRatingsByMovie(visibleEmails: string[], act: string, year: number): Promise<Rating[]> {
-  const result = await sql`
-    SELECT id, user_email as "userEmail", act, festival_year as "festivalYear", rating, comment, created_at as "createdAt", updated_at as "updatedAt"
-    FROM ratings
-    WHERE act = ${act} AND festival_year = ${year} AND user_email = ANY(${visibleEmails as any}::text[])
-    ORDER BY created_at DESC
-  `;
-
-  return result.rows as Rating[];
-}
-
-export async function getRatingsForYear(visibleEmails: string[], year: number): Promise<Rating[]> {
-  const result = await sql`
-    SELECT id, user_email as "userEmail", act, festival_year as "festivalYear", rating, comment, created_at as "createdAt", updated_at as "updatedAt"
-    FROM ratings
-    WHERE festival_year = ${year} AND user_email = ANY(${visibleEmails as any}::text[])
-    ORDER BY rating DESC, act ASC
-  `;
-
-  return result.rows as Rating[];
-}
-
-/**
- * Average ratings for every movie of a festival year, in one query.
- */
-export async function getAverageRatings(
-  visibleEmails: string[],
-  year: number
-): Promise<Map<string, { average: number; count: number }>> {
-  const result = await sql`
-    SELECT act, AVG(rating) as average, COUNT(*)::int as count
-    FROM ratings
-    WHERE festival_year = ${year} AND user_email = ANY(${visibleEmails as any}::text[])
-    GROUP BY act
-  `;
-
-  return new Map(
-    result.rows.map((row) => [row.act as string, { average: parseFloat(row.average), count: row.count as number }])
-  );
-}
-
-export async function getAverageRating(
-  visibleEmails: string[],
-  act: string,
-  year: number
-): Promise<{ average: number; count: number } | null> {
-  const result = await sql`
-    SELECT
-      AVG(rating) as average,
-      COUNT(*)::int as count
-    FROM ratings
-    WHERE act = ${act} AND festival_year = ${year} AND user_email = ANY(${visibleEmails as any}::text[])
-  `;
-
-  const row = result.rows[0];
-  if (!row || row.count === 0) {
-    return null;
-  }
-
+// Rows from @vercel/postgres are untyped; rating queries select and return `*` and come through here
+function toRating(row: Record<string, any>): Rating {
   return {
-    average: parseFloat(row.average),
-    count: row.count,
+    id: row.id,
+    userEmail: row.user_email,
+    // Null only for a rating saved by the old code before migration 008
+    filmKey: row.film_key ?? titleFilmKey(row.act),
+    act: row.act,
+    festivalYear: row.festival_year,
+    rating: row.rating,
+    comment: row.comment,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
+/**
+ * Film key for every title the crew has a ticket for or rated in a festival year (see
+ * filmKeysByTitle), and the crew's ratings with their filmKey moved to the film's current key,
+ * one per person and film.
+ */
+async function getRatingsAndFilmKeys(
+  visibleEmails: string[],
+  year: number
+): Promise<{ keysByTitle: Map<string, string>; ratings: Rating[] }> {
+  const [tickets, stored] = await Promise.all([
+    sql`
+      SELECT DISTINCT act, festival_link AS "festivalLink"
+      FROM tickets
+      WHERE festival_year = ${year} AND owner_email = ANY(${visibleEmails as any}::text[])
+    `,
+    sql`
+      SELECT * FROM ratings
+      WHERE festival_year = ${year} AND user_email = ANY(${visibleEmails as any}::text[])
+      ORDER BY rating DESC, act ASC
+    `,
+  ]);
+  const raw = stored.rows.map(toRating);
+  const keysByTitle = filmKeysByTitle(tickets.rows as Array<{ act: string; festivalLink: string | null }>, raw);
+  const ratings = latestRatingPerFilm(raw.map((rating) => ({ ...rating, filmKey: ratingFilmKey(rating, keysByTitle) })));
+  return { keysByTitle, ratings };
+}
+
+/**
+ * Every rating the crew gave in a festival year, under the film's current key, and which film each
+ * title belongs to. Pages use these keys rather than working them out again: the ratings that
+ * link a title to its film can be among those left out as duplicates.
+ */
+export async function getRatingsForYear(
+  visibleEmails: string[],
+  year: number
+): Promise<{ keysByTitle: Map<string, string>; ratings: Rating[] }> {
+  return getRatingsAndFilmKeys(visibleEmails, year);
+}
+
+/** The crew's ratings for the film a title belongs to, newest first */
+export async function getRatingsForFilm(visibleEmails: string[], act: string, year: number): Promise<Rating[]> {
+  const { keysByTitle, ratings } = await getRatingsAndFilmKeys(visibleEmails, year);
+  const key = filmKeyForTitle(keysByTitle, act);
+  return ratings
+    .filter((rating) => rating.filmKey === key)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+function filmKeyForTitle(keysByTitle: Map<string, string>, act: string): string {
+  return keysByTitle.get(act) ?? titleFilmKey(act);
+}
+
+/**
+ * Save the user's rating for the film `act` belongs to. One rating per film: a rating the user
+ * gave the same film under another key (before its IDFA page was known) is replaced.
+ */
 export async function upsertRating(
+  visibleEmails: string[],
   userEmail: string,
   act: string,
   year: number,
   rating: number,
   comment?: string | null
 ): Promise<Rating> {
-  const result = await sql`
-    INSERT INTO ratings (user_email, act, festival_year, rating, comment)
-    VALUES (${userEmail}, ${act}, ${year}, ${rating}, ${comment || null})
-    ON CONFLICT (user_email, act, festival_year)
-    DO UPDATE SET
-      rating = ${rating},
-      comment = ${comment || null},
-      updated_at = NOW()
-    RETURNING id, user_email as "userEmail", act, festival_year as "festivalYear", rating, comment, created_at as "createdAt", updated_at as "updatedAt"
-  `;
-
-  return result.rows[0] as Rating;
+  const { keysByTitle } = await getRatingsAndFilmKeys(visibleEmails, year);
+  const key = filmKeyForTitle(keysByTitle, act);
+  return withAdvisoryLock(`rating:${userEmail}:${year}`, async (query) => {
+    const mine = await query`SELECT id, film_key, act FROM ratings WHERE user_email = ${userEmail} AND festival_year = ${year}`;
+    const replaced = mine.rows
+      .filter((row) => row.film_key !== key && ratingFilmKey({ filmKey: row.film_key, act: row.act }, keysByTitle) === key)
+      .map((row) => row.id as string);
+    if (replaced.length > 0) {
+      await query`DELETE FROM ratings WHERE user_email = ${userEmail} AND id = ANY(${replaced as any}::uuid[])`;
+    }
+    const result = await query`
+      INSERT INTO ratings (user_email, film_key, act, festival_year, rating, comment)
+      VALUES (${userEmail}, ${key}, ${act}, ${year}, ${rating}, ${comment || null})
+      ON CONFLICT (user_email, film_key, festival_year)
+      -- act stays the title first rated: a title known to be this film only through that rating
+      -- (no link of its own) would otherwise lose its film when the rating is saved from another title
+      DO UPDATE SET rating = EXCLUDED.rating, comment = EXCLUDED.comment, updated_at = NOW()
+      RETURNING *
+    `;
+    return toRating(result.rows[0]);
+  });
 }
 
-export async function deleteRating(userEmail: string, act: string, year: number): Promise<void> {
-  await sql`
-    DELETE FROM ratings
-    WHERE user_email = ${userEmail} AND act = ${act} AND festival_year = ${year}
-  `;
+/** Remove the user's rating for the film `act` belongs to, under whichever key it was saved */
+export async function deleteRating(visibleEmails: string[], userEmail: string, act: string, year: number): Promise<void> {
+  const { keysByTitle } = await getRatingsAndFilmKeys(visibleEmails, year);
+  const key = filmKeyForTitle(keysByTitle, act);
+  await withAdvisoryLock(`rating:${userEmail}:${year}`, async (query) => {
+    const mine = await query`SELECT id, film_key, act FROM ratings WHERE user_email = ${userEmail} AND festival_year = ${year}`;
+    const ids = mine.rows
+      .filter((row) => ratingFilmKey({ filmKey: row.film_key, act: row.act }, keysByTitle) === key)
+      .map((row) => row.id as string);
+    if (ids.length > 0) {
+      await query`DELETE FROM ratings WHERE user_email = ${userEmail} AND id = ANY(${ids as any}::uuid[])`;
+    }
+  });
 }

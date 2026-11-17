@@ -8,9 +8,12 @@ import { getFestivalLinkForScreening } from './festival-links';
 import { evaluateBooleanFlag } from './launchdarkly';
 import { updateScreeningShowDetails } from './db';
 import { getCurrentFestivalYear } from './dates';
+import { parseFestivalLink, type FestivalPage } from './films';
+
+// Kept importable from here for the festival-link finder
+export { parseFestivalLink, UUID_PATTERN } from './films';
 
 export const IDFA_GRAPHQL_URL = 'https://my.idfa.nl/api/graphql';
-export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Kill switch for the availability lookup, which calls IDFA on every agenda and poster load
 export const IDFA_AVAILABILITY_FLAG_KEY = 'idfa-availability';
@@ -35,30 +38,6 @@ export async function queryIdfa<T>(
     throw new Error(`IDFA API query failed: ${body.errors[0].message}`);
   }
   return body.data as T;
-}
-
-interface FestivalPage {
-  kind: 'film' | 'composition';
-  id: string;
-}
-
-const FESTIVAL_PAGE_HOSTS = new Set(['festival.idfa.nl', 'www.idfa.nl']);
-
-/** The kind and ID of an IDFA festival page URL, as built by festivalUrl in lib/find-festival-link.ts */
-export function parseFestivalLink(url: string): FestivalPage | null {
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== 'https:' || !FESTIVAL_PAGE_HOSTS.has(parsed.hostname)) {
-      return null;
-    }
-    const match = parsed.pathname.match(/\/(film|composition)\/([^/]+)/);
-    if (!match || !UUID_PATTERN.test(match[2])) {
-      return null;
-    }
-    return { kind: match[1] as FestivalPage['kind'], id: match[2].toLowerCase() };
-  } catch {
-    return null;
-  }
 }
 
 interface IdfaShow {

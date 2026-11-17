@@ -2,7 +2,7 @@ import Image from 'next/image';
 import { redirect } from 'next/navigation';
 import { after } from 'next/server';
 import { ExternalLink, Navigation, Vote } from 'lucide-react';
-import { getScreening, getRatingsByMovie } from '@/lib/db';
+import { getScreening, getRatingsForFilm } from '@/lib/db';
 import { getCrew } from '@/lib/groups';
 import { getViewer } from '@/lib/auth-helpers';
 import { formatDate, formatTime, formatTimeRange, getNow } from '@/lib/dates';
@@ -99,7 +99,7 @@ export default async function ScreeningDetailPage({
     }),
     // Past screenings are skipped inside, so this makes no request once the film has started
     getAvailabilityForScreenings([screening], now, userContext(viewer.email)).then((marks) => marks.get(screening.id)),
-    getRatingsByMovie(viewer.visibleEmails, screening.act, screening.festivalYear),
+    getRatingsForFilm(viewer.visibleEmails, screening.act, screening.festivalYear),
     // Audience Award links for the tickets the viewer holds; only this viewer's page gets them
     getVoteLinksForScreening(viewer, screening),
   ]);

@@ -18,7 +18,7 @@ Browser ──► middleware.ts (NextAuth JWT check; redirects to /login)
 
 - **Ticket**: one row in `tickets`, one per PDF page. Fields `act` (film title), `location`, `date` (`DD-MM-YYYY` string), `start` (`HH:MM AM/PM` string), plus `owner_email` (the uploader), `holder_email` (who will use it; starts as the uploader), `festival_year`, `starts_at` (absolute `timestamptz`), `qr_hash` (SHA-256 of the decoded QR payload), `qr_code_url` and `pdf_url` (Blob URLs, never sent to the browser), `festival_link`, and `ends_at` / `has_qa` (from the IDFA site, null when unknown).
 - **Screening**: not a table. Tickets with the same `act|date|start` are grouped in memory (`groupTicketsIntoScreenings` in `lib/db.ts`). The screening id in URLs is that key, URL-encoded; `parseScreeningKey` splits from the right because titles can contain `|`.
-- **Rating**: one per `(user_email, act, festival_year)`, 1–10 plus optional comment.
+- **Rating**: one per `(user_email, film_key, festival_year)`, 1–10 plus optional comment. `film_key` names the film rather than the ticket title, so "IDFA Hit: X" and "X + Talk" share one rating: the IDFA page ID from the title's festival link (`film:<id>`), else `title:<comparable title>` (`lib/films.ts`). A rating saved under a title key joins the film once that title's page is found; `act` keeps the title it was first rated under, which can be what ties an unlinked title to its film. `getRatingsForYear` returns the title-to-film map along with the ratings, so pages don't rebuild it.
 - **Group / group_members**: sharing groups. Members are `owner` or `member`, `invited` or `active`.
 - **Crew**: the viewer plus everyone in `visibleEmails`, with a display name, a badge and a colour (`getCrew` in `lib/groups.ts`, `assignCrewLooks` in `lib/display.ts`). A badge brings its own colour; people without one get a colour derived from their email, so everyone sees the same look for the same person.
 - **Profile**: `profiles(email, name, badge)`, set on the Crew page. `name` is an optional display name; without one, `getDisplayName` derives it from the email ("alex.jansen@…" → "Alex"). `badge` is one of the cinema icons in `BADGES` (`lib/display.ts`), or null for their initial. A badge is unique within a crew: picking one someone in your crew has is refused, joining a group where someone has yours clears it, and when overlapping crews still put two of the same badge in front of a viewer, whoever joined any group first keeps it (then by email), so every viewer agrees.
@@ -91,6 +91,7 @@ All ticket times are Amsterdam wall-clock times; servers run in UTC. Always go t
 | `components/ui/` | Design-system primitives (Button, Avatar, Chip, Sheet, …) |
 | `components/` | Feature components by area (`agenda/`, `tickets/`, `screening/`, `upload/`); client components are marked `'use client'` |
 | `lib/agenda.ts` | Client-safe agenda logic: serialisation, filters, clashes, rating queue |
+| `lib/films.ts` | Which titles are the same film (film keys for ratings), festival link parsing, `comparableTitle` |
 | `lib/db.ts` | All ticket and rating SQL, screening grouping |
 | `lib/idfa.ts` | IDFA website GraphQL client: search, film overviews, ticket availability, end times and Q&A |
 | `lib/vote-link-extractor.ts`, `lib/vote-links.ts` | Reading forwarded voting emails; forwarding addresses and vote link SQL |
