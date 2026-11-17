@@ -9,9 +9,11 @@
 
 BEGIN;
 
--- The app keeps saving ratings while this runs. Hold off its writes until COMMIT, so nothing
--- changes between ranking the duplicates below and deleting them.
-LOCK TABLE ratings IN SHARE ROW EXCLUSIVE MODE;
+-- The app keeps reading and saving ratings while this runs. Take the strongest lock up front, as
+-- the ALTER TABLEs below need it anyway: requests wait until COMMIT, nothing changes between ranking
+-- the duplicates and deleting them, and no weaker lock has to be upgraded later (which could
+-- deadlock with a request that had already read the table).
+LOCK TABLE ratings IN ACCESS EXCLUSIVE MODE;
 
 CREATE TEMP TABLE rating_keys ON COMMIT DROP AS
 SELECT r.id, r.user_email, r.festival_year, r.updated_at, r.created_at, COALESCE(
