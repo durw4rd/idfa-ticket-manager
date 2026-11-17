@@ -12,7 +12,12 @@ export function safeCallbackUrl(raw: string | null | undefined): string {
   }
   try {
     const url = new URL(raw, BASE);
-    return url.origin === BASE ? `${url.pathname}${url.search}${url.hash}` : DEFAULT_PATH;
+    // Dot segments normalize away ("/.//evil.example" parses to the path "//evil.example"), and a
+    // path starting with "//" is itself a link to another host once handed to the router
+    if (url.origin !== BASE || url.pathname.startsWith('//')) {
+      return DEFAULT_PATH;
+    }
+    return `${url.pathname}${url.search}${url.hash}`;
   } catch {
     return DEFAULT_PATH;
   }
