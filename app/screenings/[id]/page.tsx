@@ -133,7 +133,7 @@ export default async function ScreeningDetailPage({
             </div>
           )}
 
-          <div className="-mx-4 mt-5 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none]">
+          <div className="-mx-4 mt-4 flex gap-2 overflow-x-auto px-4 py-1 [scrollbar-width:none]">
             {voteLinks.map((link, index) => (
               <ButtonLink key={link.id} href={link.url} external size="sm" icon={<Vote className="h-4 w-4" />}>
                 {voteLinks.length > 1 ? `Vote ${index + 1}` : 'Vote'}
