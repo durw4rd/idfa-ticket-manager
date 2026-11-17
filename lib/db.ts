@@ -2,7 +2,7 @@ import { sql as vercelSql, db } from '@vercel/postgres';
 import { Ticket, Screening, Rating } from './types';
 import { getFestivalYear, parseTicketDateTime } from './dates';
 import { parseScreeningKey, screeningKey } from './agenda';
-import { filmKeysByTitle, ratingFilmKey, titleFilmKey } from './films';
+import { filmKeysByTitle, latestRatingPerFilm, ratingFilmKey, titleFilmKey } from './films';
 
 // Kept importable from here too; they live in lib/agenda.ts so client components can use them
 export { parseScreeningKey, screeningKey };
@@ -359,7 +359,8 @@ function toRating(row: Record<string, any>): Rating {
   return {
     id: row.id,
     userEmail: row.user_email,
-    filmKey: row.film_key,
+    // Null only for a rating saved by the old code before migration 008
+    filmKey: row.film_key ?? titleFilmKey(row.act),
     act: row.act,
     festivalYear: row.festival_year,
     rating: row.rating,
@@ -369,44 +370,45 @@ function toRating(row: Record<string, any>): Rating {
   };
 }
 
-/** Film key for every title the crew has a ticket for in a festival year (see filmKeysByTitle) */
-async function getFilmKeysForYear(visibleEmails: string[], year: number): Promise<Map<string, string>> {
-  const result = await sql`
-    SELECT DISTINCT act, festival_link AS "festivalLink"
-    FROM tickets
-    WHERE festival_year = ${year} AND owner_email = ANY(${visibleEmails as any}::text[])
-  `;
-  return filmKeysByTitle(result.rows as Array<{ act: string; festivalLink: string | null }>);
+/**
+ * Film key for every title the crew has a ticket for or rated in a festival year (see
+ * filmKeysByTitle), and the crew's ratings with their filmKey moved to the film's current key,
+ * one per person and film.
+ */
+async function getRatingsAndFilmKeys(
+  visibleEmails: string[],
+  year: number
+): Promise<{ keysByTitle: Map<string, string>; ratings: Rating[] }> {
+  const [tickets, stored] = await Promise.all([
+    sql`
+      SELECT DISTINCT act, festival_link AS "festivalLink"
+      FROM tickets
+      WHERE festival_year = ${year} AND owner_email = ANY(${visibleEmails as any}::text[])
+    `,
+    sql`
+      SELECT * FROM ratings
+      WHERE festival_year = ${year} AND user_email = ANY(${visibleEmails as any}::text[])
+      ORDER BY rating DESC, act ASC
+    `,
+  ]);
+  const raw = stored.rows.map(toRating);
+  const keysByTitle = filmKeysByTitle(tickets.rows as Array<{ act: string; festivalLink: string | null }>, raw);
+  const ratings = latestRatingPerFilm(raw.map((rating) => ({ ...rating, filmKey: ratingFilmKey(rating, keysByTitle) })));
+  return { keysByTitle, ratings };
 }
 
-/** Every rating the crew gave in a festival year, with filmKey moved to the film's current key */
+/** Every rating the crew gave in a festival year, under the film's current key */
 export async function getRatingsForYear(visibleEmails: string[], year: number): Promise<Rating[]> {
-  const [keysByTitle, ratings] = await Promise.all([
-    getFilmKeysForYear(visibleEmails, year),
-    getStoredRatings(visibleEmails, year),
-  ]);
-  return ratings.map((rating) => ({ ...rating, filmKey: ratingFilmKey(rating, keysByTitle) }));
+  return (await getRatingsAndFilmKeys(visibleEmails, year)).ratings;
 }
 
 /** The crew's ratings for the film a title belongs to, newest first */
 export async function getRatingsForFilm(visibleEmails: string[], act: string, year: number): Promise<Rating[]> {
-  const [keysByTitle, ratings] = await Promise.all([
-    getFilmKeysForYear(visibleEmails, year),
-    getStoredRatings(visibleEmails, year),
-  ]);
+  const { keysByTitle, ratings } = await getRatingsAndFilmKeys(visibleEmails, year);
   const key = filmKeyForTitle(keysByTitle, act);
   return ratings
-    .filter((rating) => ratingFilmKey(rating, keysByTitle) === key)
+    .filter((rating) => rating.filmKey === key)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-}
-
-async function getStoredRatings(visibleEmails: string[], year: number): Promise<Rating[]> {
-  const result = await sql`
-    SELECT * FROM ratings
-    WHERE festival_year = ${year} AND user_email = ANY(${visibleEmails as any}::text[])
-    ORDER BY rating DESC, act ASC
-  `;
-  return result.rows.map(toRating);
 }
 
 function filmKeyForTitle(keysByTitle: Map<string, string>, act: string): string {
@@ -425,7 +427,7 @@ export async function upsertRating(
   rating: number,
   comment?: string | null
 ): Promise<Rating> {
-  const keysByTitle = await getFilmKeysForYear(visibleEmails, year);
+  const { keysByTitle } = await getRatingsAndFilmKeys(visibleEmails, year);
   const key = filmKeyForTitle(keysByTitle, act);
   return withAdvisoryLock(`rating:${userEmail}:${year}`, async (query) => {
     const mine = await query`SELECT id, film_key, act FROM ratings WHERE user_email = ${userEmail} AND festival_year = ${year}`;
@@ -448,7 +450,7 @@ export async function upsertRating(
 
 /** Remove the user's rating for the film `act` belongs to, under whichever key it was saved */
 export async function deleteRating(visibleEmails: string[], userEmail: string, act: string, year: number): Promise<void> {
-  const keysByTitle = await getFilmKeysForYear(visibleEmails, year);
+  const { keysByTitle } = await getRatingsAndFilmKeys(visibleEmails, year);
   const key = filmKeyForTitle(keysByTitle, act);
   await withAdvisoryLock(`rating:${userEmail}:${year}`, async (query) => {
     const mine = await query`SELECT id, film_key, act FROM ratings WHERE user_email = ${userEmail} AND festival_year = ${year}`;

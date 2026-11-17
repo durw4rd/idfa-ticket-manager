@@ -60,14 +60,28 @@ export function filmKey(festivalLink: string | null | undefined, act: string): s
 
 /**
  * The film key for every title in a festival year's screenings. A title takes the IDFA page of
- * any of its screenings; a title with none takes the page of a linked title that reads the same
- * (so a ticket whose link isn't found yet still joins its film).
+ * any of its screenings, else the page a rating of it was saved under (so deleting the one linked
+ * ticket doesn't cut a title off from its film's ratings). A title with neither takes the page of a
+ * linked title that reads the same (so a ticket whose link isn't found yet still joins its film).
  */
-export function filmKeysByTitle(screenings: Array<{ act: string; festivalLink?: string | null }>): Map<string, string> {
+export function filmKeysByTitle(
+  screenings: Array<{ act: string; festivalLink?: string | null }>,
+  ratings: Array<{ act: string; filmKey: string | null }> = []
+): Map<string, string> {
   const linked = new Map<string, string>();
   for (const { act, festivalLink } of screenings) {
     const key = filmKey(festivalLink, act);
     if (!key.startsWith('title:') && !linked.has(act)) linked.set(act, key);
+  }
+  // Pages that ratings remember for a title, used only when they all agree
+  const remembered = new Map<string, Set<string>>();
+  for (const { act, filmKey: key } of ratings) {
+    if (key && !key.startsWith('title:') && !linked.has(act)) {
+      remembered.set(act, (remembered.get(act) ?? new Set()).add(key));
+    }
+  }
+  for (const [act, keys] of remembered) {
+    if (keys.size === 1) linked.set(act, [...keys][0]);
   }
 
   // Same-reading titles, only when they all point at one page
@@ -78,7 +92,7 @@ export function filmKeysByTitle(screenings: Array<{ act: string; festivalLink?: 
   }
 
   const keys = new Map(linked);
-  for (const { act } of screenings) {
+  for (const { act } of [...screenings, ...ratings]) {
     if (keys.has(act)) continue;
     const pages = byComparable.get(comparableTitle(act));
     keys.set(act, pages?.size === 1 ? [...pages][0] : titleFilmKey(act));
@@ -90,6 +104,26 @@ export function filmKeysByTitle(screenings: Array<{ act: string; festivalLink?: 
  * The film a stored rating belongs to now. A rating made under a title key, before the film's
  * IDFA page was known, joins the film its title has since been linked to.
  */
-export function ratingFilmKey(rating: { filmKey: string; act: string }, keysByTitle: Map<string, string>): string {
-  return rating.filmKey.startsWith('title:') ? keysByTitle.get(rating.act) ?? rating.filmKey : rating.filmKey;
+export function ratingFilmKey(rating: { filmKey: string | null; act: string }, keysByTitle: Map<string, string>): string {
+  // No key: saved by the code before film keys, while migration 008 hadn't run yet
+  const key = rating.filmKey ?? titleFilmKey(rating.act);
+  return key.startsWith('title:') ? keysByTitle.get(rating.act) ?? key : key;
+}
+
+/**
+ * One rating per person, film and year, the most recently saved, for when two of someone's
+ * ratings turn out to be the same film (two titles rated before either's IDFA page was known).
+ * Saving a rating removes the others (upsertRating); this covers the time until then.
+ */
+export function latestRatingPerFilm<T extends { userEmail: string; filmKey: string; festivalYear: number; updatedAt: Date | string }>(
+  ratings: T[]
+): T[] {
+  const latest = new Map<string, T>();
+  for (const rating of ratings) {
+    const id = `${rating.userEmail}|${rating.festivalYear}|${rating.filmKey}`;
+    const known = latest.get(id);
+    if (!known || new Date(rating.updatedAt) > new Date(known.updatedAt)) latest.set(id, rating);
+  }
+  const kept = new Set(latest.values());
+  return ratings.filter((rating) => kept.has(rating));
 }
