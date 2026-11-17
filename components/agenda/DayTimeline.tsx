@@ -1,8 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { useEffect, useRef } from 'react';
 import type { AgendaScreening, CrewMember } from '@/lib/types';
 import { formatDate, formatTime, formatTimeRange, hourOfDay, screeningEnd } from '@/lib/dates';
 import { type AgendaDay, holdersOf, screeningHref } from '@/lib/agenda';
@@ -56,8 +55,6 @@ export default function DayTimeline({
   marks: RowMarks;
 }) {
   const todayRef = useRef<HTMLElement>(null);
-  // Blocks are too narrow for titles, so a tap shows a caption under the day instead of navigating
-  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
     todayRef.current?.scrollIntoView({ block: 'center' });
@@ -134,28 +131,25 @@ export default function DayTimeline({
                       const clash = marks.clashes.get(screening.id)?.includes(person.email);
                       const past = start < marks.now;
                       return (
-                        <button
-                          type="button"
+                        <Link
                           key={screening.id}
-                          onClick={() => setSelectedId(selectedId === screening.id ? null : screening.id)}
-                          aria-pressed={selectedId === screening.id}
+                          href={screeningHref(screening)}
                           aria-label={`${formatTimeRange(start, screening.endsAt)} ${screening.act}, ${screening.location}`}
-                          className={`absolute h-8 overflow-hidden rounded px-1.5 text-left text-[11px] font-semibold leading-8
+                          className={`absolute h-8 overflow-hidden rounded
                               ${
                                 past
                                   ? `border-l-4 bg-surface text-ink-2 ring-1 ring-inset ring-line ${crewBorder(person.color)}`
                                   : `text-on-crew ${crewBg(person.color)}`
                               }
-                              ${clash ? 'ring-2 ring-danger ring-offset-1 ring-offset-paper' : ''}
-                              ${selectedId === screening.id ? 'outline outline-2 outline-offset-1 outline-ink' : ''}`}
+                              ${clash ? 'ring-2 ring-danger ring-offset-1 ring-offset-paper' : ''}`}
                           style={{
                             top: (rows.get(screening.id) || 0) * ROW_PX + 2,
                             left: pct(axisHour(start) - firstHour),
                             width: `calc(${pct(lengthHours(screening))} - 2px)`,
                           }}
                         >
-                          <span className="block truncate [font-stretch:75%]">{screening.act}</span>
-                        </button>
+                          {/* No text: blocks are often too narrow even for a time; the line under the day names them */}
+                        </Link>
                       );
                     })}
                   </div>
@@ -170,30 +164,25 @@ export default function DayTimeline({
                 )}
               </div>
             </div>
-            {(() => {
-              const selected = day.screenings.find((screening) => screening.id === selectedId);
-              if (!selected) return null;
-              const start = new Date(selected.startsAt);
-              return (
-                <Link
-                  href={screeningHref(selected)}
-                  className="mt-2 flex items-center gap-3 rounded border border-line bg-surface px-3 py-2.5"
-                >
-                  <span className="text-sm font-semibold tabular-nums">{formatTimeRange(start, selected.endsAt)}</span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-display text-base leading-tight">{selected.act}</span>
-                    <span className="flex items-center gap-2 text-xs text-ink-2">
-                      <span className="min-w-0 truncate">{selected.location}</span>
-                      {selected.hasQa && <QaMark />}
-                      {start > marks.now && selected.availability && (
-                        <AvailabilityMark availability={selected.availability} />
-                      )}
-                    </span>
-                  </span>
-                  <ChevronRight className="h-5 w-5 shrink-0 text-ink-3" />
-                </Link>
-              );
-            })()}
+            {/* What's on, in order: the blocks show when, this says what */}
+            <ul className="mt-1.5 flex flex-wrap gap-x-3 pl-[1.875rem] text-xs" aria-label={`Screenings on ${formatDate(day.date)}`}>
+              {day.screenings.map((screening) => {
+                const start = new Date(screening.startsAt);
+                return (
+                  <li key={screening.id} className="min-w-0 max-w-full">
+                    <Link
+                      href={screeningHref(screening)}
+                      className={`flex items-baseline gap-1 py-1.5 hover:underline ${start < marks.now ? 'text-ink-3' : 'text-ink-2'}`}
+                    >
+                      <span className="font-semibold tabular-nums text-ink">{formatTime(start)}</span>
+                      <span className="min-w-0 truncate">{screening.act}</span>
+                      {screening.hasQa && <QaMark />}
+                      {start > marks.now && screening.availability && <AvailabilityMark availability={screening.availability} />}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
           </section>
         );
       })}

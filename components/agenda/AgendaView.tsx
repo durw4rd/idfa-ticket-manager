@@ -160,7 +160,7 @@ export default function AgendaView({
                   type="button"
                   onClick={() => setShowEarlier(!showEarlier)}
                   aria-expanded={showEarlier}
-                  className="-mx-4 mb-2 flex w-[calc(100%+2rem)] items-center gap-2 px-4 py-2 text-sm font-semibold text-ink-2 hover:text-ink"
+                  className="-mx-4 mb-2 flex w-[calc(100%+2rem)] items-center gap-2 px-4 py-3 text-sm font-semibold text-ink-2 hover:text-ink"
                 >
                   <ChevronUp className={`h-4 w-4 transition-transform ${showEarlier ? '' : 'rotate-180'}`} />
                   {showEarlier ? 'Hide' : 'Show'} {earlierCount} earlier{' '}

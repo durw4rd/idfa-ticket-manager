@@ -18,7 +18,7 @@ export function Chip({
     <button
       type="button"
       aria-pressed={selected}
-      className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border pl-1.5 pr-3 text-sm font-semibold transition
+      className={`hit-44 inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border pl-1.5 pr-3 text-sm font-semibold transition
         ${icon ? '' : 'pl-3'}
         ${selected ? 'border-ink bg-ink text-paper' : 'border-line-strong bg-surface text-ink hover:border-ink'} ${className}`}
       {...props}

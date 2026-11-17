@@ -79,6 +79,21 @@ body {
     letter-spacing: 0.08em;
   }
 
+  /* A touch target of at least 44×44px around a smaller control, without changing how it looks.
+     Not for absolutely positioned elements (it sets position: relative). */
+  .hit-44 {
+    position: relative;
+  }
+  .hit-44::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+
   .pb-safe {
     padding-bottom: env(safe-area-inset-bottom);
   }
