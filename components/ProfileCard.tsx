@@ -145,7 +145,7 @@ export default function ProfileCard({ me, crew, email }: { me: CrewMember; crew:
               onKeyDown={(event) =>
                 !busy && handleRadioKeys(event, index, available.length, (next) => pickBadge(available[next]))
               }
-              className={`rounded-full p-0.5 ring-offset-surface transition focus-visible:outline-none
+              className={`hit-44 rounded-full p-0.5 ring-offset-surface transition focus-visible:outline-none
                 focus-visible:ring-2 focus-visible:ring-ink/40 ${selected ? 'ring-2 ring-ink' : 'hover:ring-1 hover:ring-line-strong'}`}
             >
               <Avatar member={look} size="md" />

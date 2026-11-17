@@ -14,6 +14,7 @@ import QaMark from '@/components/QaMark';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import QrOverlay, { type QrTicket } from './QrOverlay';
+import { QrImage } from '@/components/tickets/QrImage';
 
 type Scope = 'mine' | 'crew';
 
@@ -117,7 +118,7 @@ export default function TicketWallet({
                 <div className={`flex gap-4 p-4 ${first ? 'flex-col pl-6' : 'items-center'}`}>
                   <div className="min-w-0 flex-1">
                     <p className="label">{when}</p>
-                    <Link href={screeningHref(pass.screening)} className="group mt-1 flex items-start gap-1">
+                    <Link href={screeningHref(pass.screening)} className="hit-44 group mt-1 flex items-start gap-1">
                       <span className={`font-display leading-tight ${first ? 'text-xl' : 'text-lg'}`}>
                         {pass.screening.act}
                       </span>
@@ -152,12 +153,7 @@ export default function TicketWallet({
                     }`}
                   >
                     {first ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- private, uncached image
-                      <img
-                        src={`/api/tickets/${pass.ticketId}/qr`}
-                        alt=""
-                        className="aspect-square w-full object-contain"
-                      />
+                      <QrImage ticketId={pass.ticketId} alt="" compact className="aspect-square w-full object-contain" />
                     ) : (
                       <QrCode className="m-auto h-8 w-8 text-[#111]" />
                     )}

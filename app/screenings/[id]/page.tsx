@@ -124,7 +124,7 @@ export default async function ScreeningDetailPage({
                   href={festivalLink}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-1.5 inline-flex items-center gap-1 font-semibold text-ink underline-offset-4 hover:underline"
+                  className="hit-44 mt-1.5 inline-flex items-center gap-1 font-semibold text-ink underline-offset-4 hover:underline"
                 >
                   Read more on IDFA
                   <ExternalLink className="h-3.5 w-3.5" aria-hidden />

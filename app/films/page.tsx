@@ -132,7 +132,7 @@ export default async function FilmsPage({ searchParams }: { searchParams: Promis
                 <div className="flex items-start gap-3">
                   <Link
                     href={screeningHref(film.screening)}
-                    className="min-w-0 flex-1 font-display text-lg leading-tight underline-offset-4 hover:underline"
+                    className="hit-44 min-w-0 flex-1 font-display text-lg leading-tight underline-offset-4 hover:underline"
                   >
                     {film.act}
                   </Link>
