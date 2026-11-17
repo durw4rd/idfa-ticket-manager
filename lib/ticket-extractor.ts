@@ -1,22 +1,11 @@
 import OpenAI from 'openai';
-import { config, type LDContext, type Message } from '@launchdarkly/ai-server';
-import { createOpenAIHandler } from '@launchdarkly/ai-openai-messages';
-import { createClaudeMessagesHandler } from '@launchdarkly/ai-claude-messages';
-import { getLdClient } from './launchdarkly';
+import type { LDContext, Message } from '@launchdarkly/ai-server';
+import { invokeAgentConfig } from './agent-config';
 
 // AgentControl config that holds the model, parameters, and prompt for ticket extraction.
 // The variation served decides the provider (OpenAI or Anthropic) at runtime.
 export const TICKET_EXTRACTION_CONFIG_KEY = 'ticket-extraction';
 
-// Created on first use: the OpenAI handler throws when OPENAI_API_KEY isn't set, which would
-// otherwise break importing this module even for callers that never reach a model
-let handlers: ReturnType<typeof createHandlers> | undefined;
-function createHandlers() {
-  return [createOpenAIHandler(), createClaudeMessagesHandler()];
-}
-function getHandlers() {
-  return (handlers ??= createHandlers());
-}
 
 export interface ExtractedTicketData {
   act: string;
@@ -89,8 +78,8 @@ function parseExtractedTicket(content: unknown): ExtractedTicketData {
 }
 
 /**
- * Extract with the model and prompt served by LaunchDarkly AgentControl.
- * Throws when the config is disabled, missing, or LaunchDarkly is unreachable.
+ * Extract with the model and prompt served by LaunchDarkly AgentControl, or undefined when
+ * LaunchDarkly can't serve the config (the caller then uses the fallback below).
  */
 async function extractWithAgentControl(base64Image: string, context: LDContext): Promise<unknown> {
   const { mediaType, data } = splitDataUrl(base64Image);
@@ -100,14 +89,11 @@ async function extractWithAgentControl(base64Image: string, context: LDContext):
       content: [{ type: 'image', source: { type: 'base64', media_type: mediaType, data } }],
     },
   ];
-
-  const result = await config({ key: TICKET_EXTRACTION_CONFIG_KEY, handler: getHandlers() }).invoke(
-    'Extract the ticket information from this ticket page.',
-    context,
-    {},
-    history
-  );
-  return result.response;
+  const served = await invokeAgentConfig(TICKET_EXTRACTION_CONFIG_KEY, context, {
+    input: 'Extract the ticket information from this ticket page.',
+    history,
+  });
+  return served?.response;
 }
 
 /**
@@ -157,13 +143,7 @@ export async function extractTicketDataFromImage(
   let content: unknown;
 
   try {
-    if (await getLdClient()) {
-      try {
-        content = await extractWithAgentControl(base64Image, context);
-      } catch (error) {
-        console.warn(`AgentControl config "${TICKET_EXTRACTION_CONFIG_KEY}" unavailable, using fallback model:`, error);
-      }
-    }
+    content = await extractWithAgentControl(base64Image, context);
 
     if (content === undefined) {
       content = await extractWithFallback(base64Image);

@@ -37,6 +37,10 @@ export async function POST(request: NextRequest) {
     if (!pageImages || !Array.isArray(pageImages) || pageImages.length === 0) {
       return NextResponse.json({ error: 'Page images array required' }, { status: 400 });
     }
+    // One page per request keeps the body under Vercel's 4.5 MB limit and each call short
+    if (pageImages.length > 1) {
+      return NextResponse.json({ error: 'Send one page per request' }, { status: 400 });
+    }
 
     const context = userContext(viewer.email);
     const totalPages = pageImages.length;
