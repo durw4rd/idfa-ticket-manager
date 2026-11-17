@@ -10,12 +10,12 @@ import { keepTicketsOffline } from '@/lib/offline';
  */
 export default function OfflineTickets({ ticketIds }: { ticketIds: string[] }) {
   const [offline, setOffline] = useState(false);
-  const key = ticketIds.join(',');
-
-  // Again whenever the tickets change, e.g. after a refresh brings a new one
+  // Again on every fresh server render (a new ticketIds array), not only when the IDs change: a
+  // refresh can bring a corrected time, venue or holder for the same tickets, and the stored page
+  // should have it
   useEffect(() => {
     if (navigator.onLine) keepTicketsOffline();
-  }, [key]);
+  }, [ticketIds]);
 
   useEffect(() => {
     const update = () => setOffline(!navigator.onLine);

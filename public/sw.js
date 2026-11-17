@@ -54,15 +54,20 @@ self.addEventListener('fetch', (event) => {
 // that was already on its way when the user signed out can't put the wallet back.
 let generation = 0;
 
-/** Store a copy unless a wipe happened since `since`. Storage errors (a full disk) are ignored. */
+/**
+ * Store a copy unless a wipe happened since `since`. Storage errors (a full disk) are logged, not
+ * thrown. Returns whether the copy was stored.
+ */
 async function store(cacheName, key, response, since) {
-  if (since !== generation) return;
+  if (since !== generation) return false;
   try {
     const cache = await caches.open(cacheName);
-    if (since !== generation) return;
+    if (since !== generation) return false;
     await cache.put(key, response);
+    return true;
   } catch (error) {
     console.warn('Offline copy not stored:', error);
+    return false;
   }
 }
 
@@ -185,7 +190,8 @@ async function sync({ assets }, since) {
   if (!match) return;
   // Only the type: the body is already decoded, so encoding and length headers would be wrong
   const page = new Response(html, { headers: { 'Content-Type': response.headers.get('Content-Type') || 'text/html' } });
-  await store(PAGES, WALLET, page, since);
+  // Not stored (storage full, or signed out meanwhile): the old page stays, so its QR codes do too
+  if (!(await store(PAGES, WALLET, page, since))) return;
 
   try {
     const qr = await caches.open(QR);
