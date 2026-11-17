@@ -32,6 +32,44 @@ async function canSignIn(rawEmail: string): Promise<boolean> {
   return ALLOWED_EMAILS.includes(email);
 }
 
+// How long a "still allowed" answer is trusted, per server instance. Removing someone (from every
+// group and from app-access) signs them out within about this long.
+const ACCESS_RECHECK_MS = 60_000;
+const accessChecks = new Map<string, { ended: boolean; at: number }>();
+
+/**
+ * Whether a signed-in user has since lost access: no longer in any group (invited or active), and
+ * not allowed by the app-access flag (or the fallback allowlist when LaunchDarkly is down). Sessions
+ * are 30-day JWTs, so the sign-in check alone would let a removed user keep using the app until it
+ * expires; getViewer and requireAuth ask this on every request instead.
+ *
+ * Only a definite answer ends a session: if the database or LaunchDarkly can't be asked, the user
+ * keeps access (a blip shouldn't sign the crew out at the cinema door).
+ */
+export async function hasAccessEnded(rawEmail: string): Promise<boolean> {
+  const email = normalizeEmail(rawEmail);
+  const cached = accessChecks.get(email);
+  if (cached && Date.now() - cached.at < ACCESS_RECHECK_MS) {
+    return cached.ended;
+  }
+
+  let ended: boolean;
+  try {
+    if (await isKnownMember(email)) {
+      ended = false;
+    } else {
+      const access = await evaluateBooleanFlag(APP_ACCESS_FLAG_KEY, userContext(email), true);
+      // With LaunchDarkly down, the fallback allowlist only decides when there is one
+      ended = access.available ? !access.value : ALLOWED_EMAILS.length > 0 && !ALLOWED_EMAILS.includes(email);
+    }
+  } catch (error) {
+    console.error('Failed to re-check access:', error);
+    return false;
+  }
+  accessChecks.set(email, { ended, at: Date.now() });
+  return ended;
+}
+
 // NextAuth needs the site's public URL for OAuth callbacks and sign-out redirects. On Vercel,
 // with NEXTAUTH_URL unset, it takes it from each request's host, so sign-in stays on whatever
 // domain the user is on. Don't derive it from VERCEL_URL: that's the per-deployment hostname,
