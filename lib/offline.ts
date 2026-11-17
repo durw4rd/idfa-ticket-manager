@@ -1,11 +1,11 @@
 // The offline ticket wallet (public/sw.js). Client-only helpers.
 
 /**
- * Register the service worker and have it keep an offline copy of the wallet and of these
- * tickets' QR codes (and nothing else). Only in production builds, where file names are stable;
+ * Register the service worker and have it keep an offline copy of the wallet and of the QR codes
+ * of the tickets on it (marked in the page by OfflineTickets), and nothing else. Only in production builds, where file names are stable;
  * in development the worker would hold on to stale code.
  */
-export async function keepTicketsOffline(qrIds: string[]): Promise<void> {
+export async function keepTicketsOffline(): Promise<void> {
   if (process.env.NODE_ENV !== 'production' || !('serviceWorker' in navigator)) return;
   try {
     await navigator.serviceWorker.register('/sw.js');
@@ -15,7 +15,7 @@ export async function keepTicketsOffline(qrIds: string[]): Promise<void> {
       .getEntriesByType('resource')
       .map((entry) => entry.name)
       .filter((url) => new URL(url).origin === location.origin && new URL(url).pathname.startsWith('/_next/static/'));
-    registration.active?.postMessage({ type: 'sync', qrIds, assets });
+    registration.active?.postMessage({ type: 'sync', assets });
   } catch (error) {
     console.warn('Offline tickets unavailable:', error);
   }
