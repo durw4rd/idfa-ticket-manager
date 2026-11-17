@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { pdfFileToImages } from '@/lib/pdf-client-utils';
 import { readApiResponse } from '@/lib/api-client';
+import { useLeaveGuard } from '@/lib/use-leave-guard';
 import { CrewMember, ExtractedTicketFields, PDFProcessingSummary, ProcessedTicketResult } from '@/lib/types';
 import UploadSelect from './upload/UploadSelect';
 import UploadProgress from './upload/UploadProgress';
@@ -76,19 +77,17 @@ export default function UploadTicket({ crew }: { crew: CrewMember[] }) {
   // The ticket being removed or the page being read again ("page-<index>"), for its spinner
   const [busyKey, setBusyKey] = useState<string | null>(null);
 
-  // Leaving now would lose the upload's progress, or review changes that aren't saved yet
+  // Leaving now would lose the upload's progress, a page being read again, or review changes that
+  // aren't saved yet (tickets themselves are saved as they're read)
   const unsavedReview =
     step === 'review' &&
     reviewItems.some((item) => !item.saved && (fieldsChanged(item.original, item.draft) || item.holderEmail !== me.email));
-  useEffect(() => {
-    if (step !== 'processing' && !unsavedReview) return;
-    const warn = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = '';
-    };
-    window.addEventListener('beforeunload', warn);
-    return () => window.removeEventListener('beforeunload', warn);
-  }, [step, unsavedReview]);
+  useLeaveGuard(
+    step === 'processing' || busyKey !== null || unsavedReview,
+    step === 'review' && busyKey === null
+      ? 'Leave without saving your changes to these tickets?'
+      : "Tickets are still being read. Leave anyway? The ones not read yet won't be added."
+  );
 
   const handleUpload = async (files: File[]) => {
     const pdfFiles = files.filter((file) => file.type === 'application/pdf');
