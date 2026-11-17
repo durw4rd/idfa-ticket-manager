@@ -8,10 +8,14 @@ const MINUTE = 60_000;
 const STALE_AFTER_MS = 5 * MINUTE;
 
 /**
- * "Now" for client components, starting from the server's `now` (so TEST_DATE applies) and moving
- * on every minute, so a page left open (often an installed home-screen app) keeps "in 20 min", the
- * next screening and the past greying current. The first render uses the server value exactly, so
- * server and client markup match.
+ * "Now" for client components. The first render uses the server's `now`, so server and client
+ * markup match. After that it's this device's clock, moving on every minute, so a page left open
+ * (often an installed home-screen app) keeps "in 20 min", the next screening and the past greying
+ * current. It never infers anything from the age of `now`: a page restored from a cache (the
+ * router's or the browser's back/forward cache) can carry a `now` from long ago.
+ *
+ * With TEST_DATE set the server's clock is fixed (see getNow in lib/dates.ts); the root layout
+ * marks that with data-fixed-clock, and then the client keeps the server's `now` too.
  *
  * Also refreshes the page's server data when it comes back into view after a while.
  */
@@ -20,29 +24,31 @@ export function useNow(serverNowIso: string): Date {
   const [now, setNow] = useState(() => new Date(serverNowIso));
 
   useEffect(() => {
-    // The server's clock (or TEST_DATE) minus this device's, measured when the page arrives
-    const offset = new Date(serverNowIso).getTime() - Date.now();
-    setNow(new Date(serverNowIso));
-    const timer = setInterval(() => setNow(new Date(Date.now() + offset)), MINUTE);
+    if (document.documentElement.dataset.fixedClock !== undefined) {
+      setNow(new Date(serverNowIso));
+      return;
+    }
+    const tick = () => setNow(new Date());
+    tick();
+    const timer = setInterval(tick, MINUTE);
 
     let hiddenAt: number | null = null;
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') {
         hiddenAt = Date.now();
       } else if (hiddenAt !== null) {
-        setNow(new Date(Date.now() + offset));
+        tick();
         if (Date.now() - hiddenAt >= STALE_AFTER_MS) router.refresh();
         hiddenAt = null;
       }
     };
-    document.addEventListener('visibilitychange', onVisibility);
-
-    // Restored from the back/forward cache, the page comes back with the clock where it was left
+    // Restored from the browser's back/forward cache: the timer was paused and the data may be old
     const onPageShow = (event: PageTransitionEvent) => {
       if (!event.persisted) return;
-      setNow(new Date(Date.now() + offset));
+      tick();
       router.refresh();
     };
+    document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('pageshow', onPageShow);
 
     return () => {
