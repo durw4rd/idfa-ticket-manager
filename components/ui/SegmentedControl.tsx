@@ -35,7 +35,7 @@ export function SegmentedControl<T extends string>({
             onKeyDown={(event) =>
               handleRadioKeys(event, index, options.length, (next) => onChange(options[next].value))
             }
-            className={`inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-sm font-semibold transition ${
+            className={`hit-44 inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-sm font-semibold transition ${
               selected ? 'bg-surface text-ink shadow-sm' : 'text-ink-2 hover:text-ink'
             }`}
           >

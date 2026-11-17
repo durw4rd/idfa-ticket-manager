@@ -12,6 +12,7 @@ import { Notice } from '@/components/ui/Field';
 import { Sheet, SheetOption } from '@/components/ui/Sheet';
 import TicketFieldsForm from '@/components/TicketFieldsForm';
 import QrOverlay, { type QrTicket } from '@/components/tickets/QrOverlay';
+import { QrImage } from '@/components/tickets/QrImage';
 
 export interface ScreeningTicket {
   id: string;
@@ -144,8 +145,7 @@ export default function ScreeningTickets({
                 aria-label={`Show QR code for ${holder.name}'s ticket`}
                 className="h-14 w-14 shrink-0 overflow-hidden rounded bg-white p-1 ring-1 ring-line"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element -- private, uncached image */}
-                <img src={`/api/tickets/${ticket.id}/qr`} alt="" className="h-full w-full object-contain" />
+                <QrImage ticketId={ticket.id} alt="" compact className="h-full w-full object-contain" />
               </button>
               <div className="min-w-0 flex-1">
                 <p className="flex items-center gap-2 font-semibold">
@@ -160,7 +160,7 @@ export default function ScreeningTickets({
                   <button
                     type="button"
                     onClick={() => setPanel({ kind: 'holder', ticket })}
-                    className="-ml-1 mt-1 inline-flex h-8 items-center gap-1.5 rounded-full px-1 text-sm font-semibold text-ink underline decoration-line-strong underline-offset-4 hover:decoration-ink"
+                    className="hit-44 -ml-1 mt-1 inline-flex h-8 items-center gap-1.5 rounded-full px-1 text-sm font-semibold text-ink underline decoration-line-strong underline-offset-4 hover:decoration-ink"
                   >
                     <ArrowRightLeft className="h-3.5 w-3.5" />
                     Hand over

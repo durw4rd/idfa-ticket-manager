@@ -21,7 +21,7 @@ export default function YearSwitcher({
           key={year}
           href={`${basePath}?year=${year}`}
           aria-current={year === selectedYear ? 'page' : undefined}
-          className={`inline-flex h-9 items-center rounded-full px-2 text-sm font-semibold tabular-nums transition-colors ${
+          className={`hit-44 inline-flex h-9 items-center rounded-full px-2 text-sm font-semibold tabular-nums transition-colors ${
             year === selectedYear ? 'text-ink underline decoration-spark decoration-[3px] underline-offset-[6px]' : 'text-ink-3 hover:text-ink'
           }`}
         >
