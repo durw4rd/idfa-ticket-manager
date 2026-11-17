@@ -232,8 +232,8 @@ async function fetchStored(cacheName, path, since) {
   try {
     const response = await fetch(path, { redirect: 'manual' });
     if (response.type === 'opaqueredirect' || response.status === 401) return 'signed-out';
-    if (response.ok) await store(cacheName, path, response, since);
-    return response.ok ? 'stored' : 'missing';
+    // 'stored' only when the copy really is: a full disk must not count as done
+    return response.ok && (await store(cacheName, path, response, since)) ? 'stored' : 'missing';
   } catch {
     return 'missing';
   }
