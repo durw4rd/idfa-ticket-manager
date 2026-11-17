@@ -46,7 +46,9 @@ export default function ScreeningTickets({
 }) {
   const router = useRouter();
   const lookup = makeCrewLookup(crew);
-  const [overlayIndex, setOverlayIndex] = useState<number | null>(null);
+  // The tickets are copied when the viewer opens, so a refresh or the minute tick can't swap the QR
+  // being shown at the door for another one
+  const [overlay, setOverlay] = useState<{ tickets: QrTicket[]; index: number } | null>(null);
   const [panel, setPanel] = useState<Panel | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -114,7 +116,9 @@ export default function ScreeningTickets({
         const data = await readApiResponse<{ ticket: ExtractedTicketFields }>(response, 'Could not save the details');
         saved ??= data.ticket;
       }
-      // The screening's address is made of its details, so open it at its new one
+      // The screening's address is made of its details, so open it at its new one. Close the sheet
+      // first: a venue-only fix keeps the address, and the refresh alone wouldn't close it
+      close();
       router.push(screeningHref({ id: screeningKey(saved!.act, saved!.date, saved!.start) }));
       router.refresh();
     } catch (err) {
@@ -141,7 +145,7 @@ export default function ScreeningTickets({
         variant="spark"
         className="w-full"
         icon={<QrCode className="h-5 w-5" />}
-        onClick={() => setOverlayIndex(0)}
+        onClick={() => setOverlay({ tickets: qrTickets, index: 0 })}
       >
         {mineCount > 0
           ? `Show my ticket${mineCount > 1 ? 's' : ''}`
@@ -157,7 +161,7 @@ export default function ScreeningTickets({
             <li key={ticket.id} className="flex items-center gap-3 p-3">
               <button
                 type="button"
-                onClick={() => setOverlayIndex(index)}
+                onClick={() => setOverlay({ tickets: qrTickets, index: index })}
                 aria-label={`Show QR code for ${holder.name}'s ticket`}
                 className="h-14 w-14 shrink-0 overflow-hidden rounded bg-white p-1 ring-1 ring-line"
               >
@@ -197,9 +201,7 @@ export default function ScreeningTickets({
         })}
       </ul>
 
-      {overlayIndex !== null && (
-        <QrOverlay tickets={qrTickets} startIndex={overlayIndex} onClose={() => setOverlayIndex(null)} />
-      )}
+      {overlay && <QrOverlay tickets={overlay.tickets} startIndex={overlay.index} onClose={() => setOverlay(null)} />}
 
       <Sheet open={panel?.kind === 'holder'} onClose={close} title="Who's using this ticket?">
         {panel?.kind === 'holder' && (
