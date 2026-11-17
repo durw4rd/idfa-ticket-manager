@@ -41,6 +41,8 @@ self.addEventListener('fetch', (event) => {
 
   if (request.mode === 'navigate') {
     event.respondWith(navigate(request, url));
+  } else if (url.pathname === WALLET && request.headers.has('RSC')) {
+    event.respondWith(walletData(request));
   } else if (/^\/api\/tickets\/[^/]+\/qr$/.test(url.pathname)) {
     event.respondWith(networkFirst(request, QR));
   } else if (url.pathname.startsWith('/_next/static/')) {
@@ -100,6 +102,16 @@ async function navigate(request, url) {
   return response;
 }
 
+// The app's own links fetch the wallet as router data, not a page. Nothing is stored from it, but a
+// redirect to sign-in or a 401 means the session is over, and the copies go.
+async function walletData(request) {
+  const response = await fetch(request);
+  if (response.status === 401 || (response.redirected && new URL(response.url).pathname !== WALLET)) {
+    await clearAll();
+  }
+  return response;
+}
+
 async function networkFirst(request, cacheName) {
   let response;
   try {
@@ -135,27 +147,52 @@ async function cacheFirst(request) {
 }
 
 // From the pages:
-// - { type: 'sync', qrIds, assets } from the wallet on every load. Keeps a QR copy for each ticket
-//   the wallet shows and drops the rest (a ticket handed over, deleted or no longer visible), and
-//   stores the build files and the page itself (a visit through the app's own links doesn't load it).
+// - { type: 'sync', assets } from the wallet on every load. Stores the wallet page fresh (a visit
+//   through the app's own links doesn't load the page itself), a QR copy for each ticket that
+//   stored page lists, and the build files; drops QR copies of tickets no longer on it.
 // - { type: 'sign-out' } before signing out, answered on the given port once everything is gone.
 self.addEventListener('message', (event) => {
   if (event.origin && event.origin !== self.location.origin) return;
   if (event.data?.type === 'sync') {
-    event.waitUntil(sync(event.data, generation));
+    // One at a time, in order, so an older sync finishing late can't undo a newer one. The wipe
+    // generation is taken now: a sync queued before a sign-out stores nothing.
+    const since = generation;
+    syncs = syncs.then(() => sync(event.data, since)).catch((error) => console.warn('Offline sync failed:', error));
+    event.waitUntil(syncs);
   } else if (event.data?.type === 'sign-out') {
     event.waitUntil(clearAll().then(() => event.ports[0]?.postMessage('cleared')));
   }
 });
 
-async function sync({ qrIds, assets }, since) {
-  if (await fetchStored(PAGES, WALLET, since, true) === 'signed-out') return clearAll();
+let syncs = Promise.resolve();
+
+// The wallet marks its tickets in the page (components/tickets/OfflineTickets.tsx), so the QR
+// copies always match the stored page rather than whatever the open tab was showing
+const TICKET_IDS = /data-offline-tickets="([0-9a-fA-F -]*)"/;
+
+async function sync({ assets }, since) {
+  if (since !== generation) return;
+  let response;
+  try {
+    response = await fetch(WALLET, { redirect: 'manual' });
+  } catch {
+    return; // Offline: keep what's stored
+  }
+  if (response.type === 'opaqueredirect' || response.status === 401) return clearAll();
+  if (!response.ok) return;
+  const html = await response.text();
+  const match = html.match(TICKET_IDS);
+  if (!match) return;
+  // Only the type: the body is already decoded, so encoding and length headers would be wrong
+  const page = new Response(html, { headers: { 'Content-Type': response.headers.get('Content-Type') || 'text/html' } });
+  await store(PAGES, WALLET, page, since);
 
   try {
     const qr = await caches.open(QR);
-    const wanted = new Set(qrIds.map((id) => `/api/tickets/${encodeURIComponent(id)}/qr`));
+    const ids = match[1].split(' ').filter(Boolean);
+    const wanted = new Set(ids.map((id) => `/api/tickets/${encodeURIComponent(id)}/qr`));
     for (const key of await qr.keys()) {
-      if (!wanted.has(new URL(key.url).pathname)) await qr.delete(key);
+      if (since === generation && !wanted.has(new URL(key.url).pathname)) await qr.delete(key);
     }
     for (const path of wanted) {
       if (await fetchStored(QR, path, since) === 'signed-out') return clearAll();
@@ -169,12 +206,9 @@ async function sync({ qrIds, assets }, since) {
   }
 }
 
-/**
- * Store `path` in the cache, unless it's there already and `refresh` isn't set. A network error
- * keeps what's stored, for next time.
- */
-async function fetchStored(cacheName, path, since, refresh = false) {
-  if (!refresh && (await stored(path, { cacheName }))) return 'stored';
+/** Store `path` in the cache unless it's there already. A network error is left for next time. */
+async function fetchStored(cacheName, path, since) {
+  if (await stored(path, { cacheName })) return 'stored';
   try {
     const response = await fetch(path, { redirect: 'manual' });
     if (response.type === 'opaqueredirect' || response.status === 401) return 'signed-out';
