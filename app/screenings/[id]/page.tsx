@@ -26,6 +26,23 @@ import QaMark from '@/components/QaMark';
 
 export const dynamic = 'force-dynamic';
 
+// The same budget as the availability check in lib/idfa.ts: a slow IDFA means no extra details,
+// not a slow page
+const SHOW_DETAILS_DEADLINE_MS = 3000;
+
+/** The promise's value, or null if it takes longer than `ms` or fails */
+async function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), ms);
+  });
+  try {
+    return await Promise.race([promise.catch(() => null), deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export default async function ScreeningDetailPage({
   params,
 }: {
@@ -68,11 +85,15 @@ export default async function ScreeningDetailPage({
   const missingShowDetails = screening.endsAt == null || screening.hasQa == null;
   const [{ festivalLink, overview, liveDetails }, availability, ratings, voteLinks] = await Promise.all([
     getFestivalLinkForScreening(screening).then(async (link) => {
+      const lookUpDetails = async () =>
+        (await evaluateBooleanFlag(IDFA_AVAILABILITY_FLAG_KEY, userContext(viewer.email), true)).value
+          ? getShowDetails(link, screening.act, startsAt)
+          : null;
       const [overview, liveDetails] = await Promise.all([
         getFilmOverview(link, screening.act),
-        missingShowDetails && !started && (await evaluateBooleanFlag(IDFA_AVAILABILITY_FLAG_KEY, userContext(viewer.email), true)).value
-          ? getShowDetails(link, screening.act, startsAt)
-          : null,
+        // Bounded like the availability check (flag included): past the deadline the page shows what's
+        // stored, and the refresh after the response catches up
+        missingShowDetails && !started ? withDeadline(lookUpDetails(), SHOW_DETAILS_DEADLINE_MS) : null,
       ]);
       return { festivalLink: link, overview, liveDetails };
     }),
