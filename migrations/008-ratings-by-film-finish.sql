@@ -9,6 +9,10 @@
 
 BEGIN;
 
+-- The app keeps saving ratings while this runs. Hold off its writes until COMMIT, so nothing
+-- changes between ranking the duplicates below and deleting them.
+LOCK TABLE ratings IN SHARE ROW EXCLUSIVE MODE;
+
 CREATE TEMP TABLE rating_keys ON COMMIT DROP AS
 SELECT r.id, r.user_email, r.festival_year, r.updated_at, r.created_at, COALESCE(
   r.film_key,
