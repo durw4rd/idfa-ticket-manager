@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import { requireAuth } from '@/lib/auth-helpers';
-import { deleteTicket, updateTicketDetails, updateTicketFestivalLink } from '@/lib/db';
+import { deleteTicket, getTicketsForYear, updateTicketDetails, updateTicketFestivalLink } from '@/lib/db';
 import { findFestivalLink } from '@/lib/find-festival-link';
 import { getFestivalLink } from '@/lib/festival-links';
 import { deleteTicketFiles } from '@/lib/storage';
@@ -9,6 +9,9 @@ import { validateTicketFields } from '@/lib/ticket-fields';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+// How long a title correction waits for the new film's IDFA link before answering (see PATCH)
+const FESTIVAL_LINK_WAIT_MS = 4000;
 
 // LaunchDarkly metric: 1 when a user had to correct AI-extracted ticket fields, 0 when they were right
 const EXTRACTION_CORRECTED_EVENT = 'ticket-extraction-corrected';
@@ -44,22 +47,49 @@ export async function PATCH(
         return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
       }
 
-      // A corrected title drops the old film's IDFA page. Find the new one once the response is
-      // sent; the overview, availability, end time and Q&A all hang off that link.
+      // A corrected title drops the old film's IDFA page, and the overview, availability, end time
+      // and Q&A all hang off that link. The client opens the corrected screening straight after
+      // this, so have the link stored by then when we can: reuse one a crew-mate's ticket already
+      // has for this film, or look it up, waiting a few seconds. A slower lookup finishes after the
+      // response, and the next page load picks it up.
       if (!ticket.festivalLink) {
         const { id: ticketId, act: title, festivalYear } = ticket;
-        after(async () => {
+        const save = (async () => {
           try {
+            const known = (await getTicketsForYear(viewer.visibleEmails, festivalYear)).find(
+              (other) => other.act === title && other.festivalLink
+            )?.festivalLink;
             const link =
+              known ||
               (await findFestivalLink(title, festivalYear, userContext(viewer.email))) ||
               getFestivalLink(title, festivalYear);
-            if (link) await updateTicketFestivalLink(viewer.email, ticketId, title, festivalYear, link);
+            if (!link) return null;
+            await updateTicketFestivalLink(viewer.email, ticketId, title, festivalYear, link);
+            return link;
           } catch (linkError) {
             console.warn(`Could not find the festival link for "${title}":`, linkError);
-          } finally {
-            await flushLdEvents();
+            return null;
           }
-        });
+        })();
+
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const outcome = await Promise.race([
+          save.then((link) => ({ done: true as const, link })),
+          new Promise<{ done: false }>((resolve) => {
+            timer = setTimeout(() => resolve({ done: false }), FESTIVAL_LINK_WAIT_MS);
+          }),
+        ]);
+        clearTimeout(timer);
+
+        if (outcome.done) {
+          if (outcome.link) ticket = { ...ticket, festivalLink: outcome.link };
+          after(flushLdEvents);
+        } else {
+          after(async () => {
+            await save;
+            await flushLdEvents();
+          });
+        }
       }
     }
 
