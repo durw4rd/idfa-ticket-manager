@@ -3,10 +3,9 @@
 // finds nothing, e.g. after IDFA changes the email.
 
 import OpenAI from 'openai';
-import { config, type LDContext } from '@launchdarkly/ai-server';
-import { createOpenAIHandler } from '@launchdarkly/ai-openai-messages';
-import { createClaudeMessagesHandler } from '@launchdarkly/ai-claude-messages';
-import { evaluateBooleanFlag, getLdClient } from './launchdarkly';
+import type { LDContext } from '@launchdarkly/ai-server';
+import { evaluateBooleanFlag } from './launchdarkly';
+import { invokeAgentConfig } from './agent-config';
 
 // AgentControl config that holds the model, parameters and prompt for reading a voting email the
 // code couldn't parse. Its messages use the {{subject}}, {{body}} and {{links}} variables.
@@ -19,15 +18,6 @@ export const VOTE_LINK_FLAG_KEY = 'vote-link-ai';
 export const VOTE_EMAIL_SENDER = 'noreply@mailgun.idfa.nl';
 const VOTE_LINK_HOSTS = ['idfa.nl', 'eventpoll.eu'];
 
-// Created on first use: the OpenAI handler throws when OPENAI_API_KEY isn't set, which would
-// otherwise break importing this module even for callers that never reach a model
-let handlers: ReturnType<typeof createHandlers> | undefined;
-function createHandlers() {
-  return [createOpenAIHandler(), createClaudeMessagesHandler()];
-}
-function getHandlers() {
-  return (handlers ??= createHandlers());
-}
 
 // Used as the LaunchDarkly config's user message, and by the fallback below
 export const VOTE_LINK_PROMPT = `After a screening, IDFA (International Documentary Film Festival Amsterdam) emails visitors an invitation to vote for the Audience Award. The email names one film and has one voting link per ticket. Read the email below and report the film and the voting links.
@@ -166,11 +156,6 @@ function promptVariables(email: InboundEmail, links: EmailLink[], body: string) 
 
 type PromptVariables = ReturnType<typeof promptVariables>;
 
-async function readWithAgentControl(variables: PromptVariables, context: LDContext): Promise<unknown> {
-  const result = await config({ key: VOTE_LINK_CONFIG_KEY, handler: getHandlers() }).invoke(undefined, context, variables);
-  return result.response;
-}
-
 async function readWithFallback(variables: PromptVariables): Promise<unknown> {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const response = await openai.chat.completions.create({
@@ -240,14 +225,11 @@ export async function extractVoteLinks(email: InboundEmail, context: LDContext):
   const variables = promptVariables(email, links, body);
   let answer: ReturnType<typeof parseModelAnswer> = null;
 
-  if (await getLdClient()) {
-    try {
-      answer = parseModelAnswer(await readWithAgentControl(variables, context), links);
-      if (!answer) {
-        console.warn(`AgentControl config "${VOTE_LINK_CONFIG_KEY}" gave an unexpected answer, using fallback model`);
-      }
-    } catch (error) {
-      console.warn(`AgentControl config "${VOTE_LINK_CONFIG_KEY}" unavailable, using fallback model:`, error);
+  const served = await invokeAgentConfig(VOTE_LINK_CONFIG_KEY, context, { variables });
+  if (served) {
+    answer = parseModelAnswer(served.response, links);
+    if (!answer) {
+      console.warn(`AgentControl config "${VOTE_LINK_CONFIG_KEY}" gave an unexpected answer, using fallback model`);
     }
   }
 

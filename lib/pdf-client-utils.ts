@@ -85,11 +85,3 @@ export async function pdfFileToImages(file: File): Promise<PDFPageImage[]> {
 
   return images;
 }
-
-/**
- * Split a multi-page PDF into individual page images
- */
-export async function splitPDFIntoPageImages(file: File): Promise<PDFPageImage[]> {
-  return pdfFileToImages(file);
-}
-

@@ -4,8 +4,7 @@
 // ever sent to that one person's browser.
 
 import { randomBytes } from 'crypto';
-import { db } from '@vercel/postgres';
-import { sql } from './db';
+import { sql, withAdvisoryLock } from './db';
 import { comparableTitle } from './find-festival-link';
 import { normalizeEmail } from './groups';
 
@@ -75,18 +74,14 @@ export async function saveVoteLinks(
   now: Date
 ): Promise<number> {
   const owner = normalizeEmail(ownerEmail);
-  const client = await db.connect();
-  try {
-    await client.sql`BEGIN`;
-    await client.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`vote-links:${owner}`}, 0))`;
-
-    const known = await client.sql`
+  return withAdvisoryLock(`vote-links:${owner}`, async (query) => {
+    const known = await query`
       SELECT url FROM vote_links WHERE owner_email = ${owner} AND url = ANY(${urls as any}::text[])
     `;
     const knownUrls = new Set(known.rows.map((row) => row.url as string));
     const fresh = urls.filter((url) => !knownUrls.has(url));
 
-    const tickets = await client.sql`
+    const tickets = await query`
       SELECT t.id, t.act, t.starts_at as "startsAt",
              EXISTS (SELECT 1 FROM vote_links v WHERE v.ticket_id = t.id) as "taken"
       FROM tickets t
@@ -107,21 +102,15 @@ export async function saveVoteLinks(
     let saved = 0;
     for (const [index, url] of Array.from(fresh.entries())) {
       const ticket = free[index];
-      const result = await client.sql`
+      const result = await query`
         INSERT INTO vote_links (owner_email, festival_year, act, url, ticket_id, message_id)
         VALUES (${owner}, ${festivalYear}, ${(ticket?.act as string) ?? (seen?.act as string) ?? title.slice(0, 255)}, ${url}, ${ticket?.id ?? null}, ${messageId})
         ON CONFLICT (owner_email, url) DO NOTHING
       `;
       saved += result.rowCount || 0;
     }
-    await client.sql`COMMIT`;
     return saved;
-  } catch (error) {
-    await client.sql`ROLLBACK`.catch(() => {});
-    throw error;
-  } finally {
-    client.release();
-  }
+  });
 }
 
 export interface VoteLink {
