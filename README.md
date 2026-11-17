@@ -50,7 +50,7 @@ Open http://localhost:3000. To pull env vars from the linked Vercel project inst
 
 ### Database
 
-There is no migration runner; run the SQL by hand. For a new database, run [`migrations/000-base-schema.sql`](migrations/000-base-schema.sql), then [`migrations/add-festival-link.sql`](migrations/add-festival-link.sql), then [`migrations/002-multi-user-multi-year.sql`](migrations/002-multi-user-multi-year.sql), [`migrations/003-ticket-holders-and-profiles.sql`](migrations/003-ticket-holders-and-profiles.sql) , [`migrations/004-profile-badges.sql`](migrations/004-profile-badges.sql), [`migrations/005-screening-end-and-qa.sql`](migrations/005-screening-end-and-qa.sql) and [`migrations/006-vote-links.sql`](migrations/006-vote-links.sql). Run a new migration before deploying the code that needs it. Migration 002 assigns existing tickets to a hardcoded owner and seeds a group; edit the emails in it first.
+There is no migration runner; run the SQL by hand, in number order. See [`migrations/README.md`](migrations/README.md) for the order and what to edit first. Run a new migration before deploying the code that needs it.
 
 ### LaunchDarkly
 

@@ -1,7 +1,7 @@
 -- Migration: multi-user ownership, festival years, and sharing groups
--- Run this SQL in your Postgres database after add-festival-link.sql.
--- Existing tickets are assigned to misa.fasa@gmail.com and a group is seeded for the existing users;
--- change those emails before running this on another database.
+-- Run this SQL in your Postgres database after 001-add-festival-link.sql.
+-- Existing tickets are assigned to one owner and a first group is seeded for the existing users.
+-- Replace owner@example.com, member@example.com and the group name with your own before running.
 
 BEGIN;
 
@@ -11,7 +11,7 @@ ALTER TABLE tickets ADD COLUMN IF NOT EXISTS festival_year INT;
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS starts_at TIMESTAMPTZ;
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS qr_hash VARCHAR(64);
 
-UPDATE tickets SET owner_email = 'misa.fasa@gmail.com' WHERE owner_email IS NULL;
+UPDATE tickets SET owner_email = 'owner@example.com' WHERE owner_email IS NULL;
 UPDATE tickets SET festival_year = CAST(split_part(date, '-', 3) AS INT) WHERE festival_year IS NULL;
 -- date is DD-MM-YYYY and start is HH:MM AM/PM, both in Amsterdam local time
 UPDATE tickets
@@ -56,19 +56,19 @@ CREATE TABLE IF NOT EXISTS group_members (
 
 CREATE INDEX IF NOT EXISTS idx_group_members_email ON group_members(user_email);
 
--- Seed the existing couple as one group
+-- Seed the existing users as one group
 DO $$
 DECLARE
   seeded_group UUID;
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM group_members WHERE user_email = 'misa.fasa@gmail.com') THEN
+  IF NOT EXISTS (SELECT 1 FROM group_members WHERE user_email = 'owner@example.com') THEN
     INSERT INTO groups (name, created_by)
-    VALUES ('Misa & Martina', 'misa.fasa@gmail.com')
+    VALUES ('Festival crew', 'owner@example.com')
     RETURNING id INTO seeded_group;
 
     INSERT INTO group_members (group_id, user_email, role, status, invited_by) VALUES
-      (seeded_group, 'misa.fasa@gmail.com', 'owner', 'active', NULL),
-      (seeded_group, 'martina.chylkova@gmail.com', 'member', 'active', 'misa.fasa@gmail.com');
+      (seeded_group, 'owner@example.com', 'owner', 'active', NULL),
+      (seeded_group, 'member@example.com', 'member', 'active', 'owner@example.com');
   END IF;
 END $$;
 
