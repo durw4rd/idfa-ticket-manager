@@ -2,14 +2,15 @@ import { NextRequest, NextResponse, after } from 'next/server';
 import { createHash } from 'crypto';
 import { extractTicketDataFromImage } from '@/lib/ticket-extractor';
 import { extractQRCodeFromImage } from '@/lib/qr-extractor';
-import { createTicketUnlessDuplicate, findTicketByQrHash, getTicketsForYear } from '@/lib/db';
+import { createTicketUnlessDuplicate, findTicketByQrHash, getTicketsForYear, ticketUsesQrCodeUrl } from '@/lib/db';
 import { PDFProcessingSummary, ProcessedTicketResult } from '@/lib/types';
 import { requireAuth } from '@/lib/auth-helpers';
 import { findFestivalLink } from '@/lib/find-festival-link';
 import { getFestivalLink } from '@/lib/festival-links';
 import { flushLdEvents, userContext } from '@/lib/launchdarkly';
 import { deleteTicketFiles, isOwnTicketPdfUrl, uploadTicketFile } from '@/lib/storage';
-import { getFestivalYear, normalizeStartTime, parseTicketDateTime } from '@/lib/dates';
+import { getFestivalYear, parseTicketDateTime } from '@/lib/dates';
+import { validateTicketFields } from '@/lib/ticket-fields';
 import { getShowDetails } from '@/lib/idfa';
 
 export const runtime = 'nodejs';
@@ -91,49 +92,67 @@ export async function POST(request: NextRequest) {
           throw aiError;
         }
 
-        const start = normalizeStartTime(extractedData.start);
-        const festivalYear = getFestivalYear(extractedData.date);
+        // Check what the model read before storing anything, so a bad read leaves no file behind
+        const checked = validateTicketFields(extractedData);
+        if (!checked.ok) {
+          throw new Error(`Couldn't read this ticket: ${checked.error}`);
+        }
+        const { act, location, date, start } = checked.fields;
+        const festivalYear = getFestivalYear(date);
+        const screeningKey = `${act}|${date}|${start}`;
 
         const qrCodeUrl = await uploadTicketFile(viewer.email, 'qr-codes', qrCode.image, 'image/png');
 
-        // Create screening key
-        const screeningKey = `${extractedData.act}|${extractedData.date}|${start}`;
+        let created: Awaited<ReturnType<typeof createTicketUnlessDuplicate>>;
+        try {
+          // Reuse a festival link we already found for this film, then try AI, then the hardcoded mapping
+          const knownTickets = await getTicketsForYear(viewer.visibleEmails, festivalYear);
+          let festivalLink: string | null = knownTickets.find((t) => t.act === act && t.festivalLink)?.festivalLink || null;
 
-        // Reuse a festival link we already found for this film, then try AI, then the hardcoded mapping
-        const knownTickets = await getTicketsForYear(viewer.visibleEmails, festivalYear);
-        let festivalLink: string | null =
-          knownTickets.find((t) => t.act === extractedData.act && t.festivalLink)?.festivalLink || null;
-
-        if (!festivalLink) {
-          try {
-            festivalLink = await findFestivalLink(extractedData.act, festivalYear, context);
-          } catch (error) {
-            console.warn(`AI search failed for "${extractedData.act}":`, error);
+          if (!festivalLink) {
+            try {
+              festivalLink = await findFestivalLink(act, festivalYear, context);
+            } catch (error) {
+              console.warn(`AI search failed for "${act}":`, error);
+            }
           }
+
+          if (!festivalLink) {
+            festivalLink = getFestivalLink(act, festivalYear);
+          }
+
+          // The end time and Q&A aren't on the ticket; the film's IDFA page has them
+          const showDetails = await getShowDetails(festivalLink, act, parseTicketDateTime(date, start));
+
+          // Create ticket in database, unless a group member saved the same ticket in the meantime
+          created = await createTicketUnlessDuplicate(viewer.visibleEmails, {
+            act,
+            location,
+            date,
+            start,
+            qrCodeUrl,
+            // Only keep a PDF link this app stored for this user (the client sends it back to us)
+            pdfUrl: pageImage.pdfUrl && isOwnTicketPdfUrl(viewer.email, pageImage.pdfUrl) ? pageImage.pdfUrl : '',
+            festivalLink: festivalLink || undefined,
+            endsAt: showDetails?.endsAt,
+            hasQa: showDetails?.hasQa,
+            ownerEmail: viewer.email,
+            qrHash,
+          });
+        } catch (saveError) {
+          // Nothing refers to the QR file unless the ticket was saved. The insert can have committed
+          // even though the call failed (a connection lost before COMMIT was acknowledged), so only
+          // delete the file once the database confirms no ticket uses it; when that can't be
+          // checked either, keep it (a stray file is harmless, a ticket without its QR is not)
+          try {
+            if (!(await ticketUsesQrCodeUrl(viewer.email, qrCodeUrl))) {
+              await deleteTicketFiles([qrCodeUrl]);
+            }
+          } catch (checkError) {
+            console.warn('Could not check whether the QR file is in use; keeping it:', checkError);
+          }
+          throw saveError;
         }
-
-        if (!festivalLink) {
-          festivalLink = getFestivalLink(extractedData.act, festivalYear);
-        }
-
-        // The end time and Q&A aren't on the ticket; the film's IDFA page has them
-        const showDetails = await getShowDetails(festivalLink, extractedData.act, parseTicketDateTime(extractedData.date, start));
-
-        // Create ticket in database, unless a group member saved the same ticket in the meantime
-        const created = await createTicketUnlessDuplicate(viewer.visibleEmails, {
-          act: extractedData.act,
-          location: extractedData.location,
-          date: extractedData.date,
-          start,
-          qrCodeUrl,
-          // Only keep a PDF link this app stored for this user (the client sends it back to us)
-          pdfUrl: pageImage.pdfUrl && isOwnTicketPdfUrl(viewer.email, pageImage.pdfUrl) ? pageImage.pdfUrl : '',
-          festivalLink: festivalLink || undefined,
-          endsAt: showDetails?.endsAt,
-          hasQa: showDetails?.hasQa,
-          ownerEmail: viewer.email,
-          qrHash,
-        });
 
         if (created.duplicate) {
           await deleteTicketFiles([qrCodeUrl]);
