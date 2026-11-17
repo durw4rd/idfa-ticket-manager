@@ -71,7 +71,7 @@ export function assignCrewLooks(
 
 /**
  * Default display name from an email address, for users who haven't picked one:
- * "owner@example.com" → "Misa"
+ * "alex.jansen@example.com" → "Alex"
  */
 export function getDisplayName(email: string): string {
   const username = email.split('@')[0];
@@ -79,7 +79,7 @@ export function getDisplayName(email: string): string {
   return first.charAt(0).toUpperCase() + first.slice(1);
 }
 
-/** One or two letters for an avatar: "Misa" → "M" */
+/** One or two letters for an avatar: "Alex" → "A" */
 export function getInitials(name: string): string {
   return name.trim().charAt(0).toUpperCase() || '?';
 }

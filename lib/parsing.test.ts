@@ -47,7 +47,7 @@ describe('crew looks', () => {
   });
 
   it('derives a display name from the email', () => {
-    expect(getDisplayName('misa.fasa@example.com')).toBe('Misa');
+    expect(getDisplayName('alex.jansen@example.com')).toBe('Alex');
     expect(getDisplayName('j_doe99@example.com')).toBe('J');
   });
 
