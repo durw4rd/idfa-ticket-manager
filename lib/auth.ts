@@ -45,12 +45,13 @@ const allowedAt = new Map<string, number>();
  * expires; getViewer and requireAuth ask this on every request instead (a "still allowed" answer is reused for a minute).
  *
  * Only a definite answer ends a session: if the database or LaunchDarkly can't be asked, the user
- * keeps access (a blip shouldn't sign the crew out at the cinema door).
+ * keeps access (a blip shouldn't sign the crew out at the cinema door). `fresh` skips the
+ * remembered answer.
  */
-export async function hasAccessEnded(rawEmail: string): Promise<boolean> {
+export async function hasAccessEnded(rawEmail: string, { fresh = false } = {}): Promise<boolean> {
   const email = normalizeEmail(rawEmail);
   const checkedAt = allowedAt.get(email);
-  if (checkedAt !== undefined && Date.now() - checkedAt < ACCESS_RECHECK_MS) {
+  if (!fresh && checkedAt !== undefined && Date.now() - checkedAt < ACCESS_RECHECK_MS) {
     return false;
   }
 

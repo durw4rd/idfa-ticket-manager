@@ -17,7 +17,9 @@ export async function GET(request: NextRequest) {
   if (!email) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
-  if (!(await hasAccessEnded(email))) {
+  // Asked afresh: another server instance sent them here, and this one may still remember them as
+  // allowed, which would bounce them back and forth until that memory expired
+  if (!(await hasAccessEnded(email, { fresh: true }))) {
     return NextResponse.redirect(new URL('/', request.url));
   }
 

@@ -67,6 +67,11 @@ describe('hasAccessEnded', () => {
     expect(await hasAccessEnded(email)).toBe(false);
     expect(isKnownMember).toHaveBeenCalledTimes(1);
 
+    expect(await hasAccessEnded(email, { fresh: true })).toBe(true);
+    isKnownMember.mockResolvedValue(true);
+    await hasAccessEnded(email);
+    isKnownMember.mockResolvedValue(false);
+
     vi.useFakeTimers({ now: Date.now() + 61_000 });
     try {
       expect(await hasAccessEnded(email)).toBe(true);
