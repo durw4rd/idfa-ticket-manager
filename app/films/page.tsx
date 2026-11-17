@@ -6,6 +6,7 @@ import { getCrew } from '@/lib/groups';
 import { getViewer } from '@/lib/auth-helpers';
 import { formatDate, getCurrentFestivalYear, getNow } from '@/lib/dates';
 import { makeCrewLookup, screeningHref, screeningsToRate, toAgendaScreening } from '@/lib/agenda';
+import { filmKeysByTitle, titleFilmKey } from '@/lib/films';
 import type { AgendaScreening, Rating } from '@/lib/types';
 import PageHeader from '@/components/PageHeader';
 import YearSwitcher from '@/components/agenda/YearSwitcher';
@@ -17,7 +18,8 @@ import { EmptyState } from '@/components/ui/EmptyState';
 export const dynamic = 'force-dynamic';
 
 interface Film {
-  act: string;
+  key: string; // See lib/films.ts
+  title: string;
   screening: AgendaScreening; // The first showing, for the link
   mine: Rating | undefined;
   ratings: Rating[]; // Yours first, then the crew's
@@ -53,23 +55,35 @@ export default async function FilmsPage({ searchParams }: { searchParams: Promis
   const lookup = makeCrewLookup(crew);
   const agenda = screenings.map(toAgendaScreening);
 
+  // Which titles are the same film ("Lonan Tché" and "Lonan Tché + Talk"); ratings already carry
+  // the film's key from getRatingsForYear
+  const keysByTitle = filmKeysByTitle(agenda);
+  const filmOf = (screening: AgendaScreening) => keysByTitle.get(screening.act) ?? titleFilmKey(screening.act);
   const myRatings = ratings.filter((rating) => rating.userEmail === viewer.email);
-  const toRate = screeningsToRate(agenda, myRatings, viewer.email, now);
+  const toRate = screeningsToRate(agenda, myRatings, keysByTitle, viewer.email, now);
+
+  // Each film's first screening, which its entry links to; the shortest title names it, as the
+  // longer ones add a series or a talk ("IDFA Hit: …", "… + Talk")
+  const showings = new Map<string, { screening: AgendaScreening; title: string }>();
+  for (const screening of agenda) {
+    const key = filmOf(screening);
+    const known = showings.get(key);
+    if (!known) showings.set(key, { screening, title: screening.act });
+    else if (screening.act.length < known.title.length) known.title = screening.act;
+  }
 
   // Every film someone in the crew has rated, best (by your score, then the crew's) first
-  const firstShowing = new Map<string, AgendaScreening>();
-  for (const screening of agenda) {
-    if (!firstShowing.has(screening.act)) firstShowing.set(screening.act, screening);
-  }
-  const films: Film[] = Array.from(new Set(ratings.map((rating) => rating.act)))
-    .filter((act) => firstShowing.has(act))
-    .map((act) => {
-      const mine = ratings.find((rating) => rating.act === act && rating.userEmail === viewer.email);
-      const others = ratings.filter((rating) => rating.act === act && rating.userEmail !== viewer.email);
+  const films: Film[] = Array.from(new Set(ratings.map((rating) => rating.filmKey)))
+    .filter((key) => showings.has(key))
+    .map((key) => {
+      const mine = ratings.find((rating) => rating.filmKey === key && rating.userEmail === viewer.email);
+      const others = ratings.filter((rating) => rating.filmKey === key && rating.userEmail !== viewer.email);
       const filmRatings = mine ? [mine, ...others] : others;
+      const { screening, title } = showings.get(key)!;
       return {
-        act,
-        screening: firstShowing.get(act)!,
+        key,
+        title,
+        screening,
         mine,
         ratings: filmRatings,
         comments: filmRatings.filter((rating) => !!rating.comment),
@@ -93,7 +107,7 @@ export default async function FilmsPage({ searchParams }: { searchParams: Promis
 
       {year < currentYear && (
         <dl className="mb-8 grid grid-cols-3 divide-x divide-line rounded border border-line bg-surface">
-          <Stat label="Films" value={String(firstShowing.size)} />
+          <Stat label="Films" value={String(showings.size)} />
           <Stat label="Tickets" value={String(ticketCount)} />
           <Stat label="Your avg" value={myAverage ? myAverage.toFixed(1) : '–'} />
         </dl>
@@ -136,13 +150,13 @@ export default async function FilmsPage({ searchParams }: { searchParams: Promis
           </h2>
           <ol className="divide-y divide-line">
             {films.map((film) => (
-              <li key={film.act} className="py-4">
+              <li key={film.key} className="py-4">
                 <div className="flex items-start gap-3">
                   <Link
                     href={screeningHref(film.screening)}
                     className="hit-44 min-w-0 flex-1 font-display text-lg leading-tight underline-offset-4 hover:underline"
                   >
-                    {film.act}
+                    {film.title}
                   </Link>
                   <p className="shrink-0 text-right">
                     <span className="font-display text-xl tabular-nums">{film.average.toFixed(1)}</span>

@@ -2,7 +2,10 @@ import OpenAI from 'openai';
 import type { LDContext } from '@launchdarkly/ai-server';
 import { evaluateBooleanFlag } from './launchdarkly';
 import { invokeAgentConfig } from './agent-config';
-import { queryIdfa, UUID_PATTERN } from './idfa';
+import { queryIdfa } from './idfa';
+import { comparableTitle, UUID_PATTERN } from './films';
+
+export { comparableTitle } from './films';
 
 // AgentControl config with the prompt that picks a film's IDFA page from site search results.
 // Its messages use the {{movieTitle}}, {{festivalYear}} and {{candidates}} variables.
@@ -138,22 +141,6 @@ function parsePick(content: string, candidates: FestivalCandidate[]): FestivalCa
 // The model's deliberate "no match" answer, as opposed to a response in some other format
 function isNullAnswer(content: string): boolean {
   return /^["'`]?null["'`]?\.?$/i.test(content.trim());
-}
-
-/**
- * A title reduced to what tickets and the website reliably agree on: no accents, case,
- * punctuation or leading article ("Kabul, Between Prayers" and "Kabul Between Prayers" match).
- */
-export function comparableTitle(title: string): string {
-  return title
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/&/g, ' and ')
-    // Any script's letters and digits count, so "Love 愛" and "Love 恨" stay different
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim()
-    .replace(/^(the|a|an) /, '');
 }
 
 /**

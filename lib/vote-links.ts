@@ -5,7 +5,7 @@
 
 import { randomBytes } from 'crypto';
 import { sql, withAdvisoryLock } from './db';
-import { comparableTitle } from './find-festival-link';
+import { comparableTitle } from './films';
 import { normalizeEmail } from './groups';
 
 const TOKEN_PATTERN = /^[0-9a-f]{24}$/;

@@ -61,7 +61,8 @@ export interface PDFProcessingSummary {
 export interface Rating {
   id: string;
   userEmail: string;
-  act: string;
+  filmKey: string; // Which film (see lib/films.ts); one rating per person, film and year
+  act: string; // The title it was last rated under
   festivalYear: number;
   rating: number; // 1-10
   comment?: string | null; // Optional user comment
