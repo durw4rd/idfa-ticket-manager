@@ -62,7 +62,7 @@ export interface Rating {
   id: string;
   userEmail: string;
   filmKey: string; // Which film (see lib/films.ts); one rating per person, film and year
-  act: string; // The title it was last rated under
+  act: string; // The title it was first rated under (see upsertRating)
   festivalYear: number;
   rating: number; // 1-10
   comment?: string | null; // Optional user comment

@@ -397,9 +397,16 @@ async function getRatingsAndFilmKeys(
   return { keysByTitle, ratings };
 }
 
-/** Every rating the crew gave in a festival year, under the film's current key */
-export async function getRatingsForYear(visibleEmails: string[], year: number): Promise<Rating[]> {
-  return (await getRatingsAndFilmKeys(visibleEmails, year)).ratings;
+/**
+ * Every rating the crew gave in a festival year, under the film's current key, and which film each
+ * title belongs to. Pages use these keys rather than working them out again: the ratings that
+ * link a title to its film can be among those left out as duplicates.
+ */
+export async function getRatingsForYear(
+  visibleEmails: string[],
+  year: number
+): Promise<{ keysByTitle: Map<string, string>; ratings: Rating[] }> {
+  return getRatingsAndFilmKeys(visibleEmails, year);
 }
 
 /** The crew's ratings for the film a title belongs to, newest first */
@@ -441,7 +448,9 @@ export async function upsertRating(
       INSERT INTO ratings (user_email, film_key, act, festival_year, rating, comment)
       VALUES (${userEmail}, ${key}, ${act}, ${year}, ${rating}, ${comment || null})
       ON CONFLICT (user_email, film_key, festival_year)
-      DO UPDATE SET act = EXCLUDED.act, rating = EXCLUDED.rating, comment = EXCLUDED.comment, updated_at = NOW()
+      -- act stays the title first rated: a title known to be this film only through that rating
+      -- (no link of its own) would otherwise lose its film when the rating is saved from another title
+      DO UPDATE SET rating = EXCLUDED.rating, comment = EXCLUDED.comment, updated_at = NOW()
       RETURNING *
     `;
     return toRating(result.rows[0]);
