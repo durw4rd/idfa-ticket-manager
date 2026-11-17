@@ -88,7 +88,7 @@ export default function SharePosterButton({ year, crew }: { year: number; crew: 
       />
       <Sheet open={open} onClose={() => setOpen(false)} title="Share your festival">
         {crew.length > 1 && (
-          <div className="-mx-5 mb-4 flex gap-2 overflow-x-auto px-5 [scrollbar-width:none]">
+          <div className="-mx-5 -mt-1 mb-3 flex gap-2 overflow-x-auto px-5 py-1 [scrollbar-width:none]">
             {crew.map((member, index) => (
               <Chip
                 key={member.email}

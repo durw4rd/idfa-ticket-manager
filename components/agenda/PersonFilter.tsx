@@ -20,7 +20,7 @@ export default function PersonFilter({
   total: number;
 }) {
   return (
-    <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none]" role="group" aria-label="Whose agenda">
+    <div className="-mx-4 -mt-1 flex gap-2 overflow-x-auto px-4 pb-1 pt-1 [scrollbar-width:none]" role="group" aria-label="Whose agenda">
       <Chip selected={value === 'all'} count={total} onClick={() => onChange('all')}>
         Everyone
       </Chip>

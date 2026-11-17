@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import type { AgendaScreening } from '@/lib/types';
 import { useModal } from '@/lib/use-modal';
 import { formatDate, formatTimeRange } from '@/lib/dates';
+import { QrImage } from '@/components/tickets/QrImage';
 
 export interface QrTicket {
   id: string;
@@ -116,12 +117,10 @@ export default function QrOverlay({
       </div>
 
       <div className="flex flex-1 items-center justify-center px-5">
-        {/* eslint-disable-next-line @next/next/no-img-element -- private, uncached image */}
-        <img
+        <QrImage
           key={ticket.id}
-          src={`/api/tickets/${ticket.id}/qr`}
+          ticketId={ticket.id}
           alt={`QR code, ticket ${index + 1} of ${count}`}
-          draggable={false}
           className="aspect-square w-[min(88vw,62vh)] select-none object-contain [image-rendering:pixelated]"
         />
       </div>
