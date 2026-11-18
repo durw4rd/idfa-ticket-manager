@@ -7,7 +7,7 @@ import OpenAI from 'openai';
 import type { LDContext } from '@launchdarkly/ai-server';
 import { invokeAgentConfig } from './agent-config';
 import { getFilmFacts, type FilmFacts } from './idfa';
-import { getFilmPlacesForYear, recordFilmPlaceAttempt, saveFilmPlace } from './db';
+import { claimFilmPlaceLookup, getFilmPlacesForYear, hasStoredFilmPlace, releaseFilmPlaceClaim, saveFilmPlace } from './db';
 import { titleFilmKey } from './films';
 import {
   FILM_PLACE_CONFIG_KEY,
@@ -165,15 +165,41 @@ export async function ensureFilmPlace(viewer: Viewer, act: string, year: number,
   }
 }
 
-async function placeFilm(viewer: Viewer, act: string, year: number, key: string, link: string, context: LDContext) {
+export type PlaceOutcome = 'placed' | 'none' | 'failed' | 'skipped';
+
+/**
+ * Look up and store one film's place, holding a claim on it (claimFilmPlaceLookup) so concurrent
+ * requests don't pay for the same lookup twice. 'skipped' when someone else holds the claim or the
+ * film got a place meanwhile; 'failed' leaves the claim as the "try again later" mark. `force`
+ * takes the claim even within the retry wait (the backfill's --retry).
+ */
+export async function placeFilm(
+  viewer: Viewer,
+  act: string,
+  year: number,
+  key: string,
+  link: string,
+  context: LDContext,
+  { force = false } = {}
+): Promise<{ outcome: PlaceOutcome; place?: FoundPlace }> {
+  if (!(await claimFilmPlaceLookup(key, year, force))) {
+    return { outcome: 'skipped' };
+  }
+  // Placed between the caller's check and the claim (by a request that just finished)
+  if (await hasStoredFilmPlace(key, year)) {
+    await releaseFilmPlaceClaim(key, year);
+    return { outcome: 'skipped' };
+  }
   const found = await findFilmPlace(link, act, context);
   if (found === null) {
-    await recordFilmPlaceAttempt(key, year);
-  } else if (found === 'none') {
-    await saveFilmPlace(viewer.visibleEmails, act, year, null, 'none');
-  } else {
-    await saveFilmPlace(viewer.visibleEmails, act, year, found, 'ai');
+    return { outcome: 'failed' };
   }
+  if (found === 'none') {
+    await saveFilmPlace(viewer.visibleEmails, act, year, null, 'none');
+    return { outcome: 'none' };
+  }
+  await saveFilmPlace(viewer.visibleEmails, act, year, found, 'ai');
+  return { outcome: 'placed', place: found };
 }
 
 /**

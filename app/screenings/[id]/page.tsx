@@ -158,11 +158,11 @@ export default async function ScreeningDetailPage({
             act={screening.act}
             festivalYear={screening.festivalYear}
             place={
-              place?.country && place.source !== 'none'
+              place?.country
                 ? { name: place.placeName, country: place.country, countryName: countryName(place.country) }
                 : null
             }
-            noPlace={place?.source === 'none'}
+            noPlace={!!place && !place.country}
           />
           <div className="mt-3 flex items-center gap-2 text-sm text-ink-2">
             <AvatarStack members={holders} />

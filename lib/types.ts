@@ -76,7 +76,7 @@ export interface FilmPlace {
   country: string | null; // ISO 3166-1 alpha-2; null when source is 'none'
   lat: number | null;
   lon: number | null;
-  source: 'ai' | 'manual' | 'none'; // 'none': looked, the film has no single real-world place
+  source: 'ai' | 'manual' | 'none'; // 'none': the AI found no single real-world place; 'manual' with no country: a person said so
 }
 
 /** A film as the agenda's map view gets it (toMapFilms in lib/agenda.ts): plain JSON */

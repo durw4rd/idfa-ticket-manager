@@ -2,7 +2,7 @@ import { sql as vercelSql, db } from '@vercel/postgres';
 import { Ticket, Screening, Rating, FilmPlace } from './types';
 import { getFestivalYear, parseTicketDateTime } from './dates';
 import { parseScreeningKey, screeningKey } from './agenda';
-import { filmKeysByTitle, latestRatingPerFilm, ratingFilmKey, titleFilmKey } from './films';
+import { filmKeysByTitle, latestRatingPerFilm, pickStoredPlace, ratingFilmKey, titleFilmKey } from './films';
 
 // Kept importable from here too; they live in lib/agenda.ts so client components can use them
 export { parseScreeningKey, screeningKey };
@@ -487,13 +487,16 @@ export async function deleteRating(visibleEmails: string[], userEmail: string, a
 // rows: anyone whose crew has a ticket for the film may set it, and reads only cover films the
 // viewer's crew has tickets for.
 
-function toFilmPlace(row: Record<string, any>): FilmPlace {
+type StoredPlace = FilmPlace & { updatedAt: Date };
+
+function toFilmPlace(row: Record<string, any>): StoredPlace {
   return {
     placeName: row.place_name,
     country: row.country,
     lat: row.lat,
     lon: row.lon,
     source: row.source,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -504,17 +507,19 @@ export interface FilmPlaces {
   keysByTitle: Map<string, string>;
   /** Stored places by film key */
   places: Map<string, FilmPlace>;
-  /** Films whose lookup failed recently (see recordFilmPlaceAttempt) */
+  /** Films with a lookup claimed or failed recently (see claimFilmPlaceLookup) */
   recentlyAttempted: Set<string>;
 }
 
-// How long a failed lookup waits before the next try
+// How long a claimed lookup holds the film: a failed one waits this long before the next try, and
+// one that died without finishing doesn't block it longer than this
 const ATTEMPT_RETRY_HOURS = 6;
 
 /**
- * The places of the films the crew has tickets for in a festival year. A place set while a title
- * had no IDFA page yet is stored under its title key; it still counts once the title is linked,
- * unless the film's own key has one.
+ * The places of the films the crew has tickets for in a festival year. A place saved while a title
+ * had no IDFA page yet is stored under its title key; once the title is linked, it counts for the
+ * film (a person's correction beating the AI's place, see pickStoredPlace) and is moved onto the
+ * film's key, so the film's other titles show it too.
  */
 export async function getFilmPlacesForYear(visibleEmails: string[], year: number): Promise<FilmPlaces> {
   const titles = await getFilmTitles(visibleEmails, year);
@@ -526,7 +531,7 @@ export async function getFilmPlacesForYear(visibleEmails: string[], year: number
 
   const [stored, attempts] = await Promise.all([
     sql`
-      SELECT film_key, place_name, country, lat, lon, source
+      SELECT film_key, place_name, country, lat, lon, source, updated_at
       FROM film_places
       WHERE festival_year = ${year} AND film_key = ANY(${keys as any}::text[])
     `,
@@ -538,10 +543,17 @@ export async function getFilmPlacesForYear(visibleEmails: string[], year: number
   ]);
   const byKey = new Map(stored.rows.map((row) => [row.film_key as string, toFilmPlace(row)]));
   const places = new Map<string, FilmPlace>();
+  const toPromote: Array<{ titleKey: string; filmKey: string }> = [];
   for (const { act } of titles) {
     const key = keysByTitle.get(act) ?? titleFilmKey(act);
-    const place = byKey.get(key) ?? byKey.get(titleFilmKey(act));
-    if (place && !places.has(key)) places.set(key, place);
+    const titleKey = titleFilmKey(act);
+    if (key !== titleKey && byKey.has(titleKey)) toPromote.push({ titleKey, filmKey: key });
+    // Several titles can be one film: each one's title-key place is weighed against what the film has so far
+    const place = pickStoredPlace((places.get(key) as StoredPlace | undefined) ?? byKey.get(key), byKey.get(titleKey));
+    if (place) places.set(key, place);
+  }
+  if (toPromote.length > 0) {
+    await promoteTitlePlaces(toPromote, year);
   }
   return {
     titles,
@@ -551,6 +563,33 @@ export async function getFilmPlacesForYear(visibleEmails: string[], year: number
   };
 }
 
+/**
+ * Move places saved under a title key onto the film key the title now belongs to, keeping a
+ * person's correction over the AI's place (and the newer of two corrections). Best effort: the
+ * reads above already show the right place, and the next load tries again.
+ */
+async function promoteTitlePlaces(moves: Array<{ titleKey: string; filmKey: string }>, year: number): Promise<void> {
+  try {
+    await withTransaction(async (query) => {
+      for (const { titleKey, filmKey } of moves) {
+        await query`
+          INSERT INTO film_places (film_key, festival_year, place_name, country, lat, lon, source, updated_at)
+          SELECT ${filmKey}, festival_year, place_name, country, lat, lon, source, updated_at
+          FROM film_places WHERE film_key = ${titleKey} AND festival_year = ${year}
+          ON CONFLICT (film_key, festival_year) DO UPDATE
+            SET place_name = EXCLUDED.place_name, country = EXCLUDED.country, lat = EXCLUDED.lat,
+                lon = EXCLUDED.lon, source = EXCLUDED.source, updated_at = EXCLUDED.updated_at
+            WHERE EXCLUDED.source = 'manual'
+              AND (film_places.source <> 'manual' OR EXCLUDED.updated_at > film_places.updated_at)
+        `;
+        await query`DELETE FROM film_places WHERE film_key = ${titleKey} AND festival_year = ${year}`;
+      }
+    });
+  } catch (error) {
+    console.warn('Could not move title places onto their films:', error);
+  }
+}
+
 /** The place of the film `act` belongs to, or null when none is stored */
 export async function getFilmPlace(visibleEmails: string[], act: string, year: number): Promise<FilmPlace | null> {
   const { keysByTitle, places } = await getFilmPlacesForYear(visibleEmails, year);
@@ -558,9 +597,10 @@ export async function getFilmPlace(visibleEmails: string[], act: string, year: n
 }
 
 /**
- * Store where the film `act` belongs to takes place. Returns false when nobody in the crew has a
- * ticket with that title this year. A manual place is never replaced by the AI's: only another
- * manual one overwrites it.
+ * Store where the film `act` belongs to takes place: a place, or null for "no single place" (the
+ * AI's finding with source 'none', or a person's choice with source 'manual'). Returns false when
+ * nobody in the crew has a ticket with that title this year. A person's choice, place or no place,
+ * is never replaced by the AI's: only another manual one overwrites it.
  */
 export async function saveFilmPlace(
   visibleEmails: string[],
@@ -574,24 +614,50 @@ export async function saveFilmPlace(
     return false;
   }
   const key = filmKeysByTitle(titles).get(act) ?? titleFilmKey(act);
-  const value = source === 'none' || !place ? { placeName: null, country: null, lat: null, lon: null } : place;
-  await sql`
-    INSERT INTO film_places (film_key, festival_year, place_name, country, lat, lon, source)
-    VALUES (${key}, ${year}, ${value.placeName}, ${value.country}, ${value.lat}, ${value.lon}, ${source})
-    ON CONFLICT (film_key, festival_year) DO UPDATE
-      SET place_name = EXCLUDED.place_name, country = EXCLUDED.country, lat = EXCLUDED.lat,
-          lon = EXCLUDED.lon, source = EXCLUDED.source, updated_at = NOW()
-      WHERE film_places.source <> 'manual' OR EXCLUDED.source = 'manual'
-  `;
-  await sql`DELETE FROM film_place_attempts WHERE film_key = ${key} AND festival_year = ${year}`;
+  const value = !place || source === 'none' ? { placeName: null, country: null, lat: null, lon: null } : place;
+  await withTransaction(async (query) => {
+    await query`
+      INSERT INTO film_places (film_key, festival_year, place_name, country, lat, lon, source)
+      VALUES (${key}, ${year}, ${value.placeName}, ${value.country}, ${value.lat}, ${value.lon}, ${source})
+      ON CONFLICT (film_key, festival_year) DO UPDATE
+        SET place_name = EXCLUDED.place_name, country = EXCLUDED.country, lat = EXCLUDED.lat,
+            lon = EXCLUDED.lon, source = EXCLUDED.source, updated_at = NOW()
+        WHERE film_places.source <> 'manual' OR EXCLUDED.source = 'manual'
+    `;
+    // A correction made under the title before its page was known is replaced by a manual save
+    // for the film; an AI result leaves it to win (see pickStoredPlace)
+    if (source === 'manual' && key !== titleFilmKey(act)) {
+      await query`DELETE FROM film_places WHERE film_key = ${titleFilmKey(act)} AND festival_year = ${year}`;
+    }
+    await query`DELETE FROM film_place_attempts WHERE film_key = ${key} AND festival_year = ${year}`;
+  });
   return true;
 }
 
-/** Note that looking up a film's place failed, so it isn't retried for a while */
-export async function recordFilmPlaceAttempt(filmKey: string, year: number): Promise<void> {
-  await sql`
+/**
+ * Claim the lookup of a film's place, so two requests (an upload and an agenda load, say) don't
+ * both pay for it. True when this caller may look it up: nobody claimed it in the last few hours,
+ * or `force`. The claim stays as the "failed recently" mark if the lookup can't finish, and
+ * saveFilmPlace clears it.
+ */
+export async function claimFilmPlaceLookup(filmKey: string, year: number, force = false): Promise<boolean> {
+  const result = await sql`
     INSERT INTO film_place_attempts (film_key, festival_year, attempted_at)
     VALUES (${filmKey}, ${year}, NOW())
     ON CONFLICT (film_key, festival_year) DO UPDATE SET attempted_at = NOW()
+      WHERE ${force} OR film_place_attempts.attempted_at <= NOW() - make_interval(hours => ${ATTEMPT_RETRY_HOURS})
+    RETURNING film_key
   `;
+  return (result.rowCount ?? 0) > 0;
+}
+
+/** Whether a place (or a deliberate "no single place") is stored under this film key */
+export async function hasStoredFilmPlace(filmKey: string, year: number): Promise<boolean> {
+  const result = await sql`SELECT 1 FROM film_places WHERE film_key = ${filmKey} AND festival_year = ${year} LIMIT 1`;
+  return (result.rowCount ?? 0) > 0;
+}
+
+/** Give up a claim without a result (the film turned out to be placed already) */
+export async function releaseFilmPlaceClaim(filmKey: string, year: number): Promise<void> {
+  await sql`DELETE FROM film_place_attempts WHERE film_key = ${filmKey} AND festival_year = ${year}`;
 }

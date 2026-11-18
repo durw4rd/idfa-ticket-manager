@@ -31,7 +31,8 @@ export async function PUT(request: NextRequest) {
     }
 
     if (body.country === null) {
-      const saved = await saveFilmPlace(viewer.visibleEmails, act, year, null, 'none');
+      // A person's "no single place" is manual, so a lookup finishing later can't put a pin back
+      const saved = await saveFilmPlace(viewer.visibleEmails, act, year, null, 'manual');
       return saved
         ? NextResponse.json({ success: true, place: null })
         : NextResponse.json({ error: 'Film not found' }, { status: 404 });

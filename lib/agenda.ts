@@ -183,7 +183,7 @@ export function toMapFilms(
     let film = films.get(key);
     if (!film) {
       const stored = places.get(key);
-      const placed = stored && stored.source !== 'none' && stored.country && stored.lat != null && stored.lon != null;
+      const placed = stored && stored.country && stored.lat != null && stored.lon != null;
       film = {
         key,
         title: screening.act,
@@ -191,7 +191,8 @@ export function toMapFilms(
         startsAt: screening.startsAt,
         location: screening.location,
         place: placed ? { name: stored.placeName, country: stored.country!, lat: stored.lat!, lon: stored.lon! } : null,
-        noPlace: stored?.source === 'none',
+        // No country: the AI found no single place ('none'), or a person said so ('manual')
+        noPlace: !!stored && !stored.country,
         holders: [],
         isMine: false,
       };

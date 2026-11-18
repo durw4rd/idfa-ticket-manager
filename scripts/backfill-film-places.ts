@@ -8,8 +8,8 @@
  * lookup failed within the past few hours. Environment variables come from .env.local.
  */
 
-import { sql, getFilmPlacesForYear, recordFilmPlaceAttempt, saveFilmPlace } from '../lib/db';
-import { findFilmPlace } from '../lib/find-film-place';
+import { sql, getFilmPlacesForYear } from '../lib/db';
+import { findFilmPlace, placeFilm, type FoundPlace, type PlaceOutcome } from '../lib/find-film-place';
 import { titleFilmKey } from '../lib/films';
 import { countryName } from '../lib/countries';
 import { flushLdEvents, userContext } from '../lib/launchdarkly';
@@ -50,21 +50,30 @@ async function backfillFilmPlaces() {
     for (const [key, { act, link }] of pending) {
       console.log(`Processing: "${act}"...`);
       // Evaluated for the script's own context; a disabled film-place-finder AI config stops the lookups
-      const found = await findFilmPlace(link, act, userContext('backfill-film-places'));
+      const context = userContext('backfill-film-places');
+      let outcome: PlaceOutcome;
+      let place: FoundPlace | undefined;
+      if (dryRun) {
+        const found = await findFilmPlace(link, act, context);
+        outcome = found === null ? 'failed' : found === 'none' ? 'none' : 'placed';
+        place = found && found !== 'none' ? found : undefined;
+      } else {
+        // The same claimed path as the app, so a lookup running in the app isn't repeated
+        ({ outcome, place } = await placeFilm({ email: 'backfill', visibleEmails }, act, year, key, link, context, { force: retry }));
+      }
 
-      if (found === null) {
+      if (outcome === 'failed') {
         failed++;
         console.log('  ✗ Could not tell now (IDFA or the model unavailable, the AI config disabled, or no description)\n');
-        if (!dryRun) await recordFilmPlaceAttempt(key, year);
-      } else if (found === 'none') {
+      } else if (outcome === 'skipped') {
+        console.log('  · Skipped: being placed elsewhere, or placed meanwhile\n');
+      } else if (outcome === 'none') {
         none++;
         console.log('  – No single real-world place\n');
-        if (!dryRun) await saveFilmPlace(visibleEmails, act, year, null, 'none');
       } else {
         placed++;
-        const where = [found.placeName, countryName(found.country!)].filter(Boolean).join(', ');
-        console.log(`  ✓ ${where} (${found.lat!.toFixed(3)}, ${found.lon!.toFixed(3)})\n`);
-        if (!dryRun) await saveFilmPlace(visibleEmails, act, year, found, 'ai');
+        const where = [place!.placeName, countryName(place!.country!)].filter(Boolean).join(', ');
+        console.log(`  ✓ ${where} (${place!.lat!.toFixed(3)}, ${place!.lon!.toFixed(3)})\n`);
       }
 
       // Small delay to go easy on IDFA, the model and the geocoder

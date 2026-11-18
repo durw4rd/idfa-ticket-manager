@@ -132,6 +132,7 @@ describe('toMapFilms', () => {
   const places = new Map([
     [SIEGE_KEY, { placeName: 'Gaza', country: 'PS', lat: 31.5, lon: 34.47, source: 'ai' as const }],
     ['title:shorts', { placeName: null, country: null, lat: null, lon: null, source: 'none' as const }],
+    ['title:set by hand', { placeName: null, country: null, lat: null, lon: null, source: 'manual' as const }],
   ]);
 
   it('merges every title and showing of a film, holders from all of them, first showing first', () => {
@@ -158,7 +159,11 @@ describe('toMapFilms', () => {
 
   it("tells a film looked up with no place from one not placed yet, and marks films you aren't seeing", () => {
     const films = toMapFilms(
-      [screening('Shorts', '2026-11-18T10:00:00.000Z', [FRIEND]), screening('Unplaced', '2026-11-19T10:00:00.000Z', [FRIEND])],
+      [
+        screening('Shorts', '2026-11-18T10:00:00.000Z', [FRIEND]),
+        screening('Unplaced', '2026-11-19T10:00:00.000Z', [FRIEND]),
+        screening('Set by hand', '2026-11-20T10:00:00.000Z', [FRIEND]),
+      ],
       keysByTitle,
       places,
       ME
@@ -166,6 +171,7 @@ describe('toMapFilms', () => {
     expect(films.map((f) => [f.title, f.place, f.noPlace, f.isMine])).toEqual([
       ['Shorts', null, true, false],
       ['Unplaced', null, false, false],
+      ['Set by hand', null, true, false],
     ]);
   });
 

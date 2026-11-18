@@ -189,12 +189,26 @@ async function main() {
   // there can still be picked, checked and pinned
   for (const feature of detailed) {
     const code = codeOf(feature);
-    if (!code || SKIP.has(code) || countries.has(code) || MERGE_INTO[feature.properties.NAME]) continue;
+    if (!code || SKIP.has(code)) continue;
+    const detailedBox = bboxOf(polygonsOf(feature).map((polygon) => polygon[0]));
+    const known = countries.get(code);
+    if (known) {
+      // The 110m outlines leave out small islands (the Azores, Madeira), so the box used to check
+      // places takes the detailed geometry as well; the drawn outline stays at 110m
+      known.bbox = [
+        Math.min(known.bbox[0], detailedBox[0]),
+        Math.min(known.bbox[1], detailedBox[1]),
+        Math.max(known.bbox[2], detailedBox[2]),
+        Math.max(known.bbox[3], detailedBox[3]),
+      ];
+      continue;
+    }
+    if (MERGE_INTO[feature.properties.NAME]) continue;
     countries.set(code, {
       code,
       name: NAME_OVERRIDES[code] ?? feature.properties.NAME_EN,
       center: [Math.round(feature.properties.LABEL_X * 100) / 100, Math.round(feature.properties.LABEL_Y * 100) / 100],
-      bbox: bboxOf(polygonsOf(feature).map((polygon) => polygon[0])),
+      bbox: detailedBox,
       paths: [],
       main: null,
     });

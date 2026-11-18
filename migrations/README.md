@@ -14,5 +14,6 @@ Hand-run SQL; there is no migration runner. Run each file once, in number order,
 | `007-ratings-by-film.sql` | `ratings.film_key`, filled in from the tickets' IDFA links, with a unique index per person, film and year |
 | `008-ratings-by-film-finish.sql` | **After deploying** the code that uses `film_key`: makes it required and drops the old per-title constraint |
 | `009-film-places.sql` | `film_places` (where each film takes place, for the agenda's map view) and `film_place_attempts` |
+| `010-film-places-manual-none.sql` | Lets a person's "no single place" be stored as a manual row (`source = 'manual'`, no country) |
 
 Schema changes use `IF NOT EXISTS`, so re-running them does nothing. Data changes are a different matter: don't replay `002` on a database that has run it, because its seed only checks current membership, and if the seeded owner has since left every group it creates the group and both memberships again. When you add a migration, give it the next number, update `lib/types.ts` and the row mapping in `lib/db.ts`, and add it to this table.

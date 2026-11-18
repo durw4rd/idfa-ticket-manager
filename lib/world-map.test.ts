@@ -120,6 +120,9 @@ describe('countries', () => {
   it('accepts points in or just off a country and rejects ones elsewhere', () => {
     expect(inCountryBox('AF', 34.53, 69.17)).toBe(true);
     expect(inCountryBox('PT', 38.72, -9.15)).toBe(true);
+    // Islands the drawn outline leaves out: Ponta Delgada (Azores), Galápagos
+    expect(inCountryBox('PT', 37.7412, -25.6756)).toBe(true);
+    expect(inCountryBox('EC', -0.74, -90.31)).toBe(true);
     expect(inCountryBox('PT', 34.53, 69.17)).toBe(false);
     expect(inCountryBox('ZZ', 0, 0)).toBe(false);
     expect(inCountryBox('AF', NaN, 69)).toBe(false);

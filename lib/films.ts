@@ -127,3 +127,20 @@ export function latestRatingPerFilm<T extends { userEmail: string; filmKey: stri
   const kept = new Set(latest.values());
   return ratings.filter((rating) => kept.has(rating));
 }
+
+/**
+ * Which stored place a film shows when it has one under its IDFA page's key and one under a title
+ * key (saved before that title's page was known): a person's correction beats the AI's, and
+ * between two corrections the newer one counts. Otherwise the film's own key wins.
+ */
+export function pickStoredPlace<T extends { source: string; updatedAt: Date | string }>(
+  byFilm: T | undefined,
+  byTitle: T | undefined
+): T | undefined {
+  if (!byFilm || !byTitle) return byFilm ?? byTitle;
+  const filmManual = byFilm.source === 'manual';
+  const titleManual = byTitle.source === 'manual';
+  if (titleManual && !filmManual) return byTitle;
+  if (titleManual && filmManual && new Date(byTitle.updatedAt) > new Date(byFilm.updatedAt)) return byTitle;
+  return byFilm;
+}
