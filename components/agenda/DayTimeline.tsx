@@ -148,12 +148,16 @@ export default function DayTimeline({
                         const clash = marks.clashes.get(screening.id)?.includes(person.email);
                         const past = start < marks.now;
                         const availability = !past ? screening.availability : undefined;
+                        // The title comes first: short blocks drop the icons (still in the aria-label)
+                        // and padding so their few pixels go to the name
+                        const blockPx = lengthHours(screening) * HOUR_PX;
+                        const showIcons = blockPx >= 96;
                         return (
                           <Link
                             key={screening.id}
                             href={screeningHref(screening)}
                             aria-label={`${formatTimeRange(start, screening.endsAt)} ${screening.act}, ${screening.location}${screening.hasQa ? ', Q&A' : ''}${availability ? (availability === 'sold-out' ? ', sold out' : ', few left') : ''}`}
-                            className={`absolute flex h-11 items-center gap-1 overflow-hidden rounded px-1.5 text-xs leading-tight
+                            className={`absolute flex h-11 items-center gap-1 overflow-hidden rounded text-xs leading-tight ${blockPx < 48 ? 'px-1' : 'px-1.5'}
                                 ${
                                   past
                                     ? `border-l-4 bg-surface text-ink-2 ring-1 ring-inset ring-line ${crewBorder(person.color)}`
@@ -166,13 +170,16 @@ export default function DayTimeline({
                               width: `calc(${pct(lengthHours(screening))} - 2px)`,
                             }}
                           >
-                            <span className="line-clamp-2 min-w-0 flex-1 font-semibold">{screening.act}</span>
-                            {screening.hasQa && (
+                            <span className="line-clamp-2 min-w-0 flex-1 break-words font-semibold" title={screening.act}>
+                              {screening.act}
+                            </span>
+                            {showIcons && screening.hasQa && (
                               <MessagesSquare className="h-3.5 w-3.5 shrink-0" aria-hidden>
                                 <title>Q&amp;A after the film</title>
                               </MessagesSquare>
                             )}
-                            {availability &&
+                            {showIcons &&
+                              availability &&
                               (availability === 'sold-out' ? (
                                 <TicketX className="h-3.5 w-3.5 shrink-0" aria-hidden>
                                   <title>Sold out</title>
