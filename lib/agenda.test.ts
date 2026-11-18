@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgendaScreening } from './types';
-import { filterByPerson, findClashes, groupByDay, isTogether, makeCrewLookup, screeningsToRate, toMapFilms } from './agenda';
+import { buildTodo, filterByPerson, findClashes, groupByDay, isTogether, makeCrewLookup, screeningsToRate, toMapFilms } from './agenda';
 
 const ME = 'me@example.com';
 const FRIEND = 'friend@example.com';
@@ -59,7 +59,13 @@ describe('findClashes', () => {
 describe('screeningsToRate', () => {
   const now = new Date('2026-11-18T12:00:00.000Z');
 
-  it('lists started films you held a ticket for, newest first, once per film, without rated ones', () => {
+  it('waits until a film has finished', () => {
+    const running = screening('Running', '2026-11-18T11:00:00.000Z', [ME]);
+    const short = screening('Short', '2026-11-18T10:00:00.000Z', [ME], { endsAt: '2026-11-18T11:30:00.000Z' });
+    expect(screeningsToRate([running, short], [], new Map(), ME, now).map((s) => s.id)).toEqual(['Short']);
+  });
+
+  it('lists finished films you held a ticket for, newest first, once per film, without rated ones', () => {
     const queue = screeningsToRate(
       [
         screening('Seen', '2026-11-16T19:00:00.000Z', [ME]),
@@ -87,6 +93,120 @@ describe('screeningsToRate', () => {
     ];
     expect(screeningsToRate(screenings, [{ filmKey: 'film:1', festivalYear: 2026 }], keysByTitle, ME, now)).toEqual([]);
     expect(screeningsToRate(screenings, [], keysByTitle, ME, now).map((s) => s.id)).toEqual(['Siege']);
+  });
+});
+
+describe('buildTodo', () => {
+  const now = new Date('2026-11-18T12:00:00.000Z');
+  const a = screening('A', '2026-11-17T19:00:00.000Z', [ME]);
+  const b = screening('B', '2026-11-16T19:00:00.000Z', [ME]);
+  const base = { screenings: [a, b], keysByTitle: new Map<string, string>(), me: ME, now };
+
+  it('puts a rating and a vote for the same film in one entry, newest first', () => {
+    const todo = buildTodo({
+      ...base,
+      toRate: [a, b],
+      voteLinks: [{ id: 'v1', act: 'A', screeningId: 'A', festivalYear: 2026 }],
+    });
+    expect(todo.map((item) => [item.title, item.rate, item.votes.map((v) => v.id)])).toEqual([
+      ['A', true, ['v1']],
+      ['B', true, []],
+    ]);
+  });
+
+  it('lists a vote for a film already rated on its own', () => {
+    const todo = buildTodo({ ...base, toRate: [], voteLinks: [{ id: 'v1', act: 'B', screeningId: 'B', festivalYear: 2026 }] });
+    expect(todo).toHaveLength(1);
+    expect(todo[0]).toMatchObject({ rate: false, screening: { id: 'B' } });
+  });
+
+  it('merges titles of the same film', () => {
+    const hit = screening('IDFA Hit: Siege', '2026-11-13T10:30:00.000Z', [ME]);
+    const siege = screening('Siege', '2026-11-17T13:00:00.000Z', [ME]);
+    const keysByTitle = new Map([
+      ['IDFA Hit: Siege', 'film:1'],
+      ['Siege', 'film:1'],
+    ]);
+    const todo = buildTodo({
+      ...base,
+      screenings: [hit, siege],
+      keysByTitle,
+      toRate: [siege],
+      voteLinks: [{ id: 'v1', act: 'IDFA Hit: Siege', screeningId: 'IDFA Hit: Siege', festivalYear: 2026 }],
+    });
+    expect(todo).toHaveLength(1);
+    expect(todo[0].votes.map((v) => v.id)).toEqual(['v1']);
+  });
+
+  it("matches a link without a ticket to your showing of the same film under another title", () => {
+    const hit = screening('IDFA Hit: Siege', '2026-11-13T10:30:00.000Z', [FRIEND]);
+    const siege = screening('Siege', '2026-11-17T13:00:00.000Z', [ME]);
+    const keysByTitle = new Map([
+      ['IDFA Hit: Siege', 'film:1'],
+      ['Siege', 'film:1'],
+    ]);
+    const todo = buildTodo({
+      ...base,
+      screenings: [hit, siege],
+      keysByTitle,
+      toRate: [siege],
+      voteLinks: [{ id: 'spare', act: 'IDFA Hit: Siege', screeningId: null, festivalYear: 2026 }],
+    });
+    expect(todo).toHaveLength(1);
+    expect(todo[0]).toMatchObject({ rate: true, screening: { id: 'Siege' } });
+    expect(todo[0].votes.map((v) => v.id)).toEqual(['spare']);
+  });
+
+  it('prefers your showing of the same film over a newer one of another film with that title', () => {
+    const home = screening('Home', '2026-11-14T10:00:00.000Z', [ME]);
+    const other = screening('HOME', '2026-11-17T10:00:00.000Z', [ME]);
+    const keysByTitle = new Map([
+      ['Home', 'film:1'],
+      ['HOME', 'film:2'],
+    ]);
+    const todo = buildTodo({
+      ...base,
+      screenings: [home, other],
+      keysByTitle,
+      toRate: [],
+      voteLinks: [{ id: 'spare', act: 'Home', screeningId: null, festivalYear: 2026 }],
+    });
+    expect(todo.map((item) => item.screening?.id)).toEqual(['Home']);
+  });
+
+  it('keeps a link for one film apart from your showing of another film with the same title', () => {
+    const theirs = screening('Home', '2026-11-14T10:00:00.000Z', [FRIEND]);
+    const mine = screening('HOME', '2026-11-17T10:00:00.000Z', [ME]);
+    const keysByTitle = new Map([
+      ['Home', 'film:1'],
+      ['HOME', 'film:2'],
+    ]);
+    const todo = buildTodo({
+      ...base,
+      screenings: [theirs, mine],
+      keysByTitle,
+      toRate: [mine],
+      voteLinks: [{ id: 'spare', act: 'Home', screeningId: null, festivalYear: 2026 }],
+    });
+    expect(todo.map((item) => [item.title, item.rate, item.votes.length])).toEqual([
+      ['HOME', true, 0],
+      ['Home', false, 1],
+    ]);
+  });
+
+  it('gives a link without a ticket to your latest started showing with that title, else lists it last on its own', () => {
+    const todo = buildTodo({
+      ...base,
+      toRate: [],
+      voteLinks: [
+        { id: 'spare', act: 'a', screeningId: null, festivalYear: 2026 },
+        { id: 'lost', act: 'Elsewhere', screeningId: null, festivalYear: 2026 },
+      ],
+    });
+    expect(todo.map((item) => [item.screening?.id ?? null, item.title])).toEqual([
+      ['A', 'A'],
+      [null, 'Elsewhere'],
+    ]);
   });
 });
 

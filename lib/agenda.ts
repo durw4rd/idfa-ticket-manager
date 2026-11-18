@@ -3,7 +3,7 @@
 import type { AgendaScreening, CrewMember, FilmPlace, MapFilm, Rating, Screening, TicketAvailability } from './types';
 import { festivalDayKey, festivalDayStart, screeningEnd } from './dates';
 import { CREW_COLOR_COUNT, getDisplayName } from './display';
-import { titleFilmKey } from './films';
+import { comparableTitle, titleFilmKey } from './films';
 
 /** Strip a screening down to what the browser may see: no blob URLs, no QR hashes */
 export function toAgendaScreening(screening: Screening): AgendaScreening {
@@ -108,7 +108,7 @@ export function findClashes(screenings: AgendaScreening[]): Map<string, string[]
 }
 
 /**
- * Films you held a ticket for that have started, and that you haven't rated yet. Most recent
+ * Films you held a ticket for that have finished, and that you haven't rated yet. Most recent
  * first, one entry per film (ratings are per film and year, not per screening; `keysByTitle`
  * from filmKeysByTitle in lib/films.ts says which titles are the same film).
  */
@@ -124,7 +124,8 @@ export function screeningsToRate(
   const rated = new Set(myRatings.map((rating) => `${rating.festivalYear}|${rating.filmKey}`));
   const seen = new Set<string>();
   return screenings
-    .filter((screening) => new Date(screening.startsAt) <= now)
+    // Finished rather than started, so nobody is asked to rate a film that's still running
+    .filter((screening) => screeningEnd(new Date(screening.startsAt), screening.endsAt) <= now)
     .filter((screening) => screening.tickets.some((ticket) => ticket.holderEmail === me))
     .sort((a, b) => b.startsAt.localeCompare(a.startsAt))
     .filter((screening) => {
@@ -133,6 +134,82 @@ export function screeningsToRate(
       seen.add(key);
       return true;
     });
+}
+
+// A film known only by its title (no IDFA page yet), from a filmOf key ("<year>|title:…")
+const isTitleKey = (key: string) => key.split('|', 2)[1]?.startsWith('title:') ?? false;
+
+/** A voting link as the to-do list sees it: which screening its ticket is for, null when it has no ticket */
+export interface TodoVoteLink {
+  id: string;
+  act: string;
+  festivalYear: number;
+  screeningId: string | null;
+}
+
+/** One film on the Films page's to-do list: a rating still to give, votes still to cast, or both */
+export interface TodoItem<L extends TodoVoteLink = TodoVoteLink> {
+  key: string; // Festival year and film key
+  title: string;
+  screening: AgendaScreening | null; // The showing it's about; null for a voting link no showing of yours matches
+  rate: boolean;
+  votes: L[];
+}
+
+/**
+ * The to-do list: films to rate (from screeningsToRate) and unused Audience Award voting links,
+ * one entry per film so a film waiting for both shows once. A link on a ticket goes with that
+ * ticket's showing; a link without one with your most recent started showing of that film (by
+ * film key, else by title), or on its own when there's none. Most recent first, links without a showing last.
+ * Generic over the link so callers can carry the URL through without this module seeing it.
+ */
+export function buildTodo<L extends TodoVoteLink>(input: {
+  toRate: AgendaScreening[];
+  voteLinks: L[];
+  screenings: AgendaScreening[];
+  keysByTitle: Map<string, string>;
+  me: string;
+  now: Date;
+}): TodoItem<L>[] {
+  const { toRate, voteLinks, screenings, keysByTitle, me, now } = input;
+  const filmOf = (screening: { act: string; festivalYear: number }) =>
+    `${screening.festivalYear}|${keysByTitle.get(screening.act) ?? titleFilmKey(screening.act)}`;
+  const byId = new Map(screenings.map((screening) => [screening.id, screening]));
+  const mineStarted = screenings
+    .filter((screening) => new Date(screening.startsAt) <= now)
+    .filter((screening) => screening.tickets.some((ticket) => ticket.holderEmail === me))
+    .sort((a, b) => b.startsAt.localeCompare(a.startsAt));
+
+  const items = new Map<string, TodoItem<L>>();
+  for (const screening of toRate) {
+    items.set(filmOf(screening), { key: filmOf(screening), title: screening.act, screening, rate: true, votes: [] });
+  }
+  for (const link of voteLinks) {
+    const wanted = comparableTitle(link.act);
+    const film = filmOf(link);
+    const screening =
+      (link.screeningId ? byId.get(link.screeningId) : undefined) ??
+      // The same film first. Then a title match, but never between two different known films
+      // (both have an IDFA page), as two films can share a title.
+      mineStarted.find((candidate) => filmOf(candidate) === film) ??
+      mineStarted.find(
+        (candidate) =>
+          comparableTitle(candidate.act) === wanted && (isTitleKey(film) || isTitleKey(filmOf(candidate)))
+      ) ??
+      null;
+    // Without a showing, the link's own film key still merges it with anything else for that film
+    const key = screening ? filmOf(screening) : film;
+    const item = items.get(key);
+    if (item) {
+      item.votes.push(link);
+    } else {
+      items.set(key, { key, title: screening?.act ?? link.act, screening, rate: false, votes: [link] });
+    }
+  }
+  return Array.from(items.values()).sort((a, b) => {
+    if (!a.screening || !b.screening) return a.screening ? -1 : b.screening ? 1 : 0;
+    return b.screening.startsAt.localeCompare(a.screening.startsAt);
+  });
 }
 
 /** Look up a crew member by email; people who left the group still get a name and colour */

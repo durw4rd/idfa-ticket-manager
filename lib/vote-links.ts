@@ -4,7 +4,7 @@
 // ever sent to that one person's browser.
 
 import { randomBytes } from 'crypto';
-import { sql, withAdvisoryLock } from './db';
+import { screeningKey, sql, withAdvisoryLock } from './db';
 import { comparableTitle } from './films';
 import { normalizeEmail } from './groups';
 
@@ -117,6 +117,7 @@ export interface VoteLink {
   id: string;
   act: string;
   url: string;
+  votedAt: string | null; // When the holder opened it from the app or said they'd voted
 }
 
 /**
@@ -134,7 +135,7 @@ export async function getVoteLinksForScreening(
   const ticketIds = screening.tickets.map((ticket) => ticket.id);
   const [held, spare] = await Promise.all([
     sql`
-      SELECT v.id, v.act, v.url
+      SELECT v.id, v.act, v.url, v.voted_at as "votedAt"
       FROM vote_links v
       JOIN tickets t ON t.id = v.ticket_id
       WHERE v.ticket_id = ANY(${ticketIds as any}::uuid[])
@@ -151,10 +152,75 @@ export async function getVoteLinksForScreening(
 /** The user's own voting links that aren't attached to a ticket */
 export async function getSpareVoteLinks(email: string, festivalYear: number): Promise<VoteLink[]> {
   const result = await sql`
-    SELECT id, act, url
+    SELECT id, act, url, voted_at as "votedAt"
     FROM vote_links
     WHERE owner_email = ${normalizeEmail(email)} AND festival_year = ${festivalYear} AND ticket_id IS NULL
     ORDER BY created_at ASC, id ASC
   `;
   return result.rows as VoteLink[];
+}
+
+/** An unused voting link for the to-do list, with the screening its ticket is for (null without one) */
+export interface PendingVoteLink extends VoteLink {
+  festivalYear: number;
+  screeningId: string | null;
+}
+
+/**
+ * The viewer's unused voting links for a festival year, visible as in getVoteLinksForScreening:
+ * links on tickets they hold (among tickets they can see), plus their own links no ticket took.
+ */
+export async function getPendingVoteLinks(
+  viewer: { email: string; visibleEmails: string[] },
+  festivalYear: number
+): Promise<PendingVoteLink[]> {
+  if (!isInboundConfigured()) {
+    return [];
+  }
+  const result = await sql`
+    SELECT v.id, v.act, v.url, v.voted_at as "votedAt", v.festival_year as "festivalYear",
+           t.act as "ticketAct", t.date, t.start
+    FROM vote_links v
+    LEFT JOIN tickets t ON t.id = v.ticket_id
+    WHERE v.festival_year = ${festivalYear} AND v.voted_at IS NULL
+      AND (
+        (t.holder_email = ${viewer.email} AND t.owner_email = ANY(${viewer.visibleEmails as any}::text[]))
+        OR (v.ticket_id IS NULL AND v.owner_email = ${viewer.email})
+      )
+    ORDER BY v.created_at ASC, v.id ASC
+  `;
+  return result.rows.map((row) => ({
+    id: row.id,
+    act: row.act,
+    url: row.url,
+    votedAt: row.votedAt,
+    festivalYear: row.festivalYear,
+    screeningId: row.ticketAct ? screeningKey(row.ticketAct, row.date, row.start) : null,
+  }));
+}
+
+/**
+ * Mark a voting link used (or not). Whoever is shown the link may: the current holder of the ticket
+ * it's on, when the ticket's owner is in their crew, or its owner when no ticket took it. Returns
+ * false when the link isn't theirs.
+ */
+export async function setVoteLinkVoted(
+  viewer: { email: string; visibleEmails: string[] },
+  id: string,
+  voted: boolean
+): Promise<boolean> {
+  const result = await sql`
+    UPDATE vote_links v
+    SET voted_at = ${voted ? new Date().toISOString() : null}
+    WHERE v.id = ${id}
+      AND (
+        (v.ticket_id IS NULL AND v.owner_email = ${viewer.email})
+        OR EXISTS (
+          SELECT 1 FROM tickets t
+          WHERE t.id = v.ticket_id AND t.holder_email = ${viewer.email}
+            AND t.owner_email = ANY(${viewer.visibleEmails as any}::text[])
+        )
+      )
+  `;
+  return (result.rowCount || 0) > 0;
 }

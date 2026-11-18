@@ -1,9 +1,11 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { CalendarDays, Star, Ticket } from 'lucide-react';
+import { TODO_CHANGED_EVENT } from '@/lib/todo-events';
 
 // One tab per job: see the agenda (list, timeline or map), get to a ticket, rate what you saw
 const NAV_ITEMS = [
@@ -16,6 +18,7 @@ const NAV_ITEMS = [
 export default function AppNav() {
   const pathname = usePathname();
   const { status } = useSession();
+  const todoCount = useTodoCount(status === 'authenticated', pathname);
 
   if (status !== 'authenticated') {
     return null;
@@ -28,21 +31,35 @@ export default function AppNav() {
       <div className="mx-auto grid h-tabbar max-w-xl grid-cols-3">
         {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
           const active = isActive(href);
+          // Films holds the to-do list: films waiting for your rating or Audience Award vote
+          const count = href === '/films' ? todoCount : 0;
           return (
             <Link
               key={href}
               href={href}
               aria-current={active ? 'page' : undefined}
+              aria-label={count > 0 ? `${label}, ${count} to do` : undefined}
               className={`flex flex-col items-center justify-center gap-0.5 text-xs font-semibold transition-colors ${
                 active ? 'text-ink' : 'text-ink-3 hover:text-ink-2'
               }`}
             >
               <span
-                className={`flex h-7 w-12 items-center justify-center rounded-full transition-colors ${
+                className={`relative flex h-7 w-12 items-center justify-center rounded-full transition-colors ${
                   active ? 'bg-spark text-[#111]' : ''
                 }`}
               >
                 <Icon className="h-5 w-5" strokeWidth={active ? 2.25 : 1.75} />
+                {count > 0 && (
+                  <span
+                    aria-hidden
+                    // On the active tab's yellow pill, ink keeps it readable
+                    className={`absolute -top-1 right-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none tabular-nums ring-2 ring-paper ${
+                      active ? 'bg-ink text-paper' : 'bg-spark text-[#111]'
+                    }`}
+                  >
+                    {count > 9 ? '9+' : count}
+                  </span>
+                )}
               </span>
               {label}
             </Link>
@@ -51,4 +68,45 @@ export default function AppNav() {
       </div>
     </nav>
   );
+}
+
+/**
+ * How many films are on the Films page's to-do list. Asked again on every page change, when the
+ * app comes back to the foreground, and after a rating or vote is saved. A failed request shows
+ * no count: it's a nudge, never worth an error.
+ */
+function useTodoCount(signedIn: boolean, pathname: string): number {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    if (!signedIn) return;
+    let cancelled = false;
+    // Requests can finish out of order: only the latest one may set the count
+    let latest = 0;
+    const load = () => {
+      const request = ++latest;
+      const current = () => !cancelled && request === latest;
+      fetch('/api/todo', { cache: 'no-store' })
+        .then((response) => (response.ok ? response.json() : null))
+        .then((data) => {
+          if (current()) setCount(typeof data?.count === 'number' ? data.count : 0);
+        })
+        .catch(() => {
+          if (current()) setCount(0);
+        });
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') load();
+    };
+    load();
+    window.addEventListener(TODO_CHANGED_EVENT, load);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(TODO_CHANGED_EVENT, load);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [signedIn, pathname]);
+
+  return signedIn ? count : 0;
 }
