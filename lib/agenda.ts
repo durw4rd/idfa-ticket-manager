@@ -186,7 +186,9 @@ export function buildTodo<L extends TodoVoteLink>(input: {
     const film = filmOf(link);
     const screening =
       (link.screeningId ? byId.get(link.screeningId) : undefined) ??
-      mineStarted.find((candidate) => filmOf(candidate) === film || comparableTitle(candidate.act) === wanted) ??
+      // The same film first; a title match only when none is, as two films can share a title
+      mineStarted.find((candidate) => filmOf(candidate) === film) ??
+      mineStarted.find((candidate) => comparableTitle(candidate.act) === wanted) ??
       null;
     // Without a showing, the link's own film key still merges it with anything else for that film
     const key = screening ? filmOf(screening) : film;

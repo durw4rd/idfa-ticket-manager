@@ -27,21 +27,25 @@ export default function VoteButtons({ links }: { links: Link[] }) {
   const markVoted = async (ids: string[], fromLink: boolean) => {
     setError(null);
     setVoted((current) => new Set([...Array.from(current), ...ids]));
-    try {
-      await Promise.all(
-        ids.map(async (id) =>
-          // keepalive: the tap also opens IDFA in a new tab, which mustn't cancel this
-          readApiResponse(await fetch(`/api/vote-links/${id}/voted`, { method: 'POST', keepalive: true }), 'Could not save your vote')
-        )
-      );
+    // Each link on its own: with several, some saves can work while others fail
+    const results = await Promise.allSettled(
+      ids.map(async (id) =>
+        // keepalive: the tap also opens IDFA in a new tab, which mustn't cancel this
+        readApiResponse(await fetch(`/api/vote-links/${id}/voted`, { method: 'POST', keepalive: true }), 'Could not save your vote')
+      )
+    );
+    const failed = ids.filter((_, index) => results[index].status === 'rejected');
+    if (failed.length < ids.length) {
       router.refresh();
       notifyTodoChanged();
-    } catch (err) {
+    }
+    if (failed.length > 0) {
       // Back to "Vote", so another tap can try again. The link opened either way, so only
       // "Already voted" needs to say it didn't stick.
-      setVoted((current) => new Set(Array.from(current).filter((id) => !ids.includes(id))));
+      setVoted((current) => new Set(Array.from(current).filter((id) => !failed.includes(id))));
       if (!fromLink) {
-        setError(err instanceof Error ? err.message : 'Could not save your vote');
+        const reason = results.find((result) => result.status === 'rejected') as PromiseRejectedResult;
+        setError(reason.reason instanceof Error ? reason.reason.message : 'Could not save your vote');
       }
     }
   };
