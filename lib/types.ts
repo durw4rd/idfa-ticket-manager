@@ -70,6 +70,38 @@ export interface Rating {
   updatedAt: Date;
 }
 
+/** Where a film mainly takes place: one per film and festival year (film_places, migration 009) */
+export interface FilmPlace {
+  placeName: string | null; // Town, village or region; null means the country as a whole
+  country: string | null; // ISO 3166-1 alpha-2; null when source is 'none'
+  lat: number | null;
+  lon: number | null;
+  source: 'ai' | 'manual' | 'none'; // 'none': looked, the film has no single real-world place
+}
+
+/** A film as the agenda's map view gets it (toMapFilms in lib/agenda.ts): plain JSON */
+export interface MapFilm {
+  key: string; // The film (see lib/films.ts); every title it was shown under is merged
+  title: string; // The title of its first showing
+  href: string; // The first showing's detail page
+  startsAt: string; // The first showing, ISO timestamp
+  location: string; // The first showing's venue
+  place: { name: string | null; country: string; lat: number; lon: number } | null; // null: not placed (yet)
+  noPlace: boolean; // Looked up: the film has no single real-world place
+  holders: string[]; // Everyone holding a ticket for any showing, in ticket order
+  isMine: boolean; // The viewer holds a ticket
+}
+
+/**
+ * The year's film places as the agenda page sends them to the browser (from getFilmPlacesForYear
+ * in lib/db.ts): plain entries, since Maps don't serialise. AgendaView turns them into MapFilms for
+ * the screenings the person filter leaves.
+ */
+export interface MapPlaceData {
+  keysByTitle: Array<[string, string]>;
+  places: Array<[string, Pick<FilmPlace, 'placeName' | 'country' | 'lat' | 'lon' | 'source'>]>;
+}
+
 export interface Group {
   id: string;
   name: string;

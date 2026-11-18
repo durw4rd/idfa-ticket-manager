@@ -96,7 +96,7 @@ const NAMED_ENTITIES: Record<string, string> = {
 const MAX_OVERVIEW_LENGTH = 500;
 
 /** The site's intros carry a little HTML (<em>, &ldquo;); React would show it literally */
-function toPlainText(html: string): string | null {
+function toPlainText(html: string, maxLength = MAX_OVERVIEW_LENGTH): string | null {
   const text = html
     // Block boundaries become spaces so paragraphs don't run together; inline tags like <em> just go
     .replace(/<br\s*\/?>|<\/?(p|div|li|ul|ol|h[1-6]|blockquote)\b[^>]*>/gi, ' ')
@@ -109,10 +109,10 @@ function toPlainText(html: string): string | null {
   if (!text) {
     return null;
   }
-  if (text.length <= MAX_OVERVIEW_LENGTH) {
+  if (text.length <= maxLength) {
     return text;
   }
-  const cut = text.slice(0, MAX_OVERVIEW_LENGTH);
+  const cut = text.slice(0, maxLength);
   return `${cut.slice(0, cut.lastIndexOf(' ')).replace(/[\s,.;:–—-]+$/, '')}…`;
 }
 
@@ -136,6 +136,96 @@ const cachedShows = unstable_cache(
   // Short enough that a screening selling out shows up the same afternoon
   { revalidate: 10 * 60 }
 );
+
+// What the festival says about a film, for working out where it takes place (lib/find-film-place.ts).
+// The description is the long write-up, which usually names the place in its first lines.
+const FILM_FACTS_QUERY = `query ($id: ID!) {
+  film(id: $id) {
+    fullPreferredTitle logline intro { translation } description { translation }
+    spokenLanguages { translation } countriesOfProduction { translation }
+  }
+}`;
+
+const COMPOSITION_FACTS_QUERY = `query ($query: String, $limit: Int!) {
+  searchGlobal(query: $query, limit: $limit, offset: 0, filters: { pageTypes: [FILM] }) {
+    hits { ... on Composition { id fullTitle intro { translation } description { translation } } }
+  }
+}`;
+
+// Enough for the place to be named; the model needn't read the whole review
+const MAX_FACTS_TEXT_LENGTH = 2000;
+
+export interface FilmFacts {
+  title: string | null; // As the festival writes it
+  text: string; // Intro, logline and description, as plain text
+  languages: string[];
+  productionCountries: string[];
+}
+
+/**
+ * What the festival's page says about a film or shorts program, or null when there's no page or
+ * it says nothing. Throws when IDFA can't be reached, so the caller can try again later.
+ */
+export async function getFilmFacts(festivalLink: string | null, title: string): Promise<FilmFacts | null> {
+  const page = festivalLink ? parseFestivalLink(festivalLink) : null;
+  if (!page) {
+    return null;
+  }
+  type Translated = { translation?: string | null } | null | undefined;
+  type Names = Array<{ translation?: string | null }> | null | undefined;
+  let found:
+    | { title?: string | null; logline?: string | null; intro?: Translated; description?: Translated; languages?: Names; countries?: Names }
+    | undefined;
+
+  if (page.kind === 'film') {
+    const data = await queryIdfa<{
+      film: {
+        fullPreferredTitle?: string | null;
+        logline?: string | null;
+        intro?: Translated;
+        description?: Translated;
+        spokenLanguages?: Names;
+        countriesOfProduction?: Names;
+      } | null;
+    }>('institute', FILM_FACTS_QUERY, { id: page.id });
+    const film = data.film;
+    found = film
+      ? {
+          title: film.fullPreferredTitle,
+          logline: film.logline,
+          intro: film.intro,
+          description: film.description,
+          languages: film.spokenLanguages,
+          countries: film.countriesOfProduction,
+        }
+      : undefined;
+  } else {
+    const data = await queryIdfa<{
+      searchGlobal: { hits: Array<{ id?: string; fullTitle?: string | null; intro?: Translated; description?: Translated }> };
+    }>('global', COMPOSITION_FACTS_QUERY, { query: title, limit: 8 });
+    const program = data.searchGlobal.hits.find((hit) => hit.id?.toLowerCase() === page.id);
+    found = program ? { title: program.fullTitle, intro: program.intro, description: program.description } : undefined;
+  }
+  if (!found) {
+    return null;
+  }
+
+  // Each part on its own, then joined: the intro and logline often repeat each other
+  const parts = [found.intro?.translation, found.logline, found.description?.translation]
+    .map((part) => (part ? toPlainText(part, MAX_FACTS_TEXT_LENGTH) : null))
+    .filter((part): part is string => !!part);
+  const unique = parts.filter((part, index) => parts.findIndex((other) => other.includes(part.slice(0, 80))) === index);
+  const text = toPlainText(unique.join(' '), MAX_FACTS_TEXT_LENGTH) ?? '';
+  const names = (list: Names) =>
+    (list ?? []).map((item) => item.translation?.trim()).filter((name): name is string => !!name);
+  const facts = {
+    title: found.title?.trim() || null,
+    text,
+    languages: names(found.languages),
+    productionCountries: names(found.countries),
+  };
+  return facts.text || facts.languages.length || facts.productionCountries.length ? facts : null;
+}
 
 /** The short synopsis from the film's IDFA page, or null when there's no page or IDFA can't be reached */
 export async function getFilmOverview(festivalLink: string | null, title: string): Promise<string | null> {

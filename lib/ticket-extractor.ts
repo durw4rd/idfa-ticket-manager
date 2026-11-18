@@ -77,9 +77,18 @@ function parseExtractedTicket(content: unknown): ExtractedTicketData {
   return extractedData;
 }
 
+/** Thrown when the ticket-extraction AI config is disabled in LaunchDarkly: tickets aren't read at all */
+export class TicketReadingDisabledError extends Error {
+  constructor() {
+    super('Reading tickets is switched off at the moment. Try again later.');
+    this.name = 'TicketReadingDisabledError';
+  }
+}
+
 /**
- * Extract with the model and prompt served by LaunchDarkly AgentControl, or undefined when
- * LaunchDarkly can't serve the config (the caller then uses the fallback below).
+ * Extract with the model and prompt served by the LaunchDarkly AI config, or undefined when
+ * LaunchDarkly can't serve the config (the caller then uses the fallback below). Throws
+ * TicketReadingDisabledError when the config is disabled.
  */
 async function extractWithAgentControl(base64Image: string, context: LDContext): Promise<unknown> {
   const { mediaType, data } = splitDataUrl(base64Image);
@@ -93,6 +102,9 @@ async function extractWithAgentControl(base64Image: string, context: LDContext):
     input: 'Extract the ticket information from this ticket page.',
     history,
   });
+  if (served?.disabled) {
+    throw new TicketReadingDisabledError();
+  }
   return served?.response;
 }
 

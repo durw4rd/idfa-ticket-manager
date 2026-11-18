@@ -1,6 +1,6 @@
 // Agenda logic shared by server pages and client components. Pure functions, no database access.
 
-import type { AgendaScreening, CrewMember, Rating, Screening, TicketAvailability } from './types';
+import type { AgendaScreening, CrewMember, FilmPlace, MapFilm, Rating, Screening, TicketAvailability } from './types';
 import { festivalDayKey, festivalDayStart, screeningEnd } from './dates';
 import { CREW_COLOR_COUNT, getDisplayName } from './display';
 import { titleFilmKey } from './films';
@@ -163,4 +163,44 @@ export function parseScreeningKey(key: string): { act: string; date: string; sta
 
 export function screeningHref(screening: Pick<AgendaScreening, 'id'>): string {
   return `/screenings/${encodeURIComponent(screening.id)}`;
+}
+
+/**
+ * The year's films for the agenda's map view, one per film however many titles and showings it had (in order
+ * of first showing), with the stored place of each. `keysByTitle` and `places` come from
+ * getFilmPlacesForYear in lib/db.ts.
+ */
+export function toMapFilms(
+  screenings: AgendaScreening[],
+  keysByTitle: Map<string, string>,
+  places: Map<string, Pick<FilmPlace, 'placeName' | 'country' | 'lat' | 'lon' | 'source'>>,
+  me: string
+): MapFilm[] {
+  const films = new Map<string, MapFilm>();
+  const sorted = [...screenings].sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+  for (const screening of sorted) {
+    const key = keysByTitle.get(screening.act) ?? titleFilmKey(screening.act);
+    let film = films.get(key);
+    if (!film) {
+      const stored = places.get(key);
+      const placed = stored && stored.source !== 'none' && stored.country && stored.lat != null && stored.lon != null;
+      film = {
+        key,
+        title: screening.act,
+        href: screeningHref(screening),
+        startsAt: screening.startsAt,
+        location: screening.location,
+        place: placed ? { name: stored.placeName, country: stored.country!, lat: stored.lat!, lon: stored.lon! } : null,
+        noPlace: stored?.source === 'none',
+        holders: [],
+        isMine: false,
+      };
+      films.set(key, film);
+    }
+    for (const holder of holdersOf(screening)) {
+      if (!film.holders.includes(holder)) film.holders.push(holder);
+    }
+    film.isMine ||= film.holders.includes(me);
+  }
+  return Array.from(films.values());
 }

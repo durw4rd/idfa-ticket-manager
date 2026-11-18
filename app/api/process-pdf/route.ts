@@ -12,6 +12,7 @@ import { deleteTicketFiles, isOwnTicketPdfUrl, uploadTicketFile } from '@/lib/st
 import { getFestivalYear, parseTicketDateTime } from '@/lib/dates';
 import { validateTicketFields } from '@/lib/ticket-fields';
 import { getShowDetails } from '@/lib/idfa';
+import { ensureFilmPlace } from '@/lib/find-film-place';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -182,6 +183,15 @@ export async function POST(request: NextRequest) {
         });
 
         successful++;
+
+        // Where the film takes place, for the map: after the response, so the upload doesn't wait
+        // on the model. Nothing happens if the crew's tickets already have this film placed.
+        if (ticket.festivalLink) {
+          after(async () => {
+            await ensureFilmPlace(viewer, ticket.act, ticket.festivalYear, context);
+            await flushLdEvents();
+          });
+        }
       } catch (error) {
         console.error(`Error processing page ${i + 1}:`, error);
         results.push({

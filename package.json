@@ -10,8 +10,10 @@
     "optimize-backgrounds": "node scripts/optimize-backgrounds.js",
     "generate-favicons": "node scripts/generate-favicons.js",
     "backfill-festival-links": "tsx --env-file-if-exists=.env.local scripts/backfill-festival-links.ts",
+    "backfill-film-places": "tsx --env-file-if-exists=.env.local scripts/backfill-film-places.ts",
     "backfill-qr-hashes": "node scripts/backfill-qr-hashes.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "generate-world-map": "tsx scripts/generate-world-map.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.103.0",

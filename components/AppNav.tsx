@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { CalendarDays, Star, Ticket } from 'lucide-react';
 
-// One tab per job: see the agenda, get to a ticket, rate what you saw
+// One tab per job: see the agenda (list, timeline or map), get to a ticket, rate what you saw
 const NAV_ITEMS = [
   { href: '/screenings', label: 'Agenda', icon: CalendarDays },
   { href: '/tickets', label: 'Tickets', icon: Ticket },

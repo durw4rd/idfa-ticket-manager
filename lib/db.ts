@@ -1,5 +1,5 @@
 import { sql as vercelSql, db } from '@vercel/postgres';
-import { Ticket, Screening, Rating } from './types';
+import { Ticket, Screening, Rating, FilmPlace } from './types';
 import { getFestivalYear, parseTicketDateTime } from './dates';
 import { parseScreeningKey, screeningKey } from './agenda';
 import { filmKeysByTitle, latestRatingPerFilm, ratingFilmKey, titleFilmKey } from './films';
@@ -370,6 +370,19 @@ function toRating(row: Record<string, any>): Rating {
   };
 }
 
+/** Every title the crew has a ticket for in a festival year, once per festival link it has */
+async function getFilmTitles(
+  visibleEmails: string[],
+  year: number
+): Promise<Array<{ act: string; festivalLink: string | null }>> {
+  const result = await sql`
+    SELECT DISTINCT act, festival_link AS "festivalLink"
+    FROM tickets
+    WHERE festival_year = ${year} AND owner_email = ANY(${visibleEmails as any}::text[])
+  `;
+  return result.rows as Array<{ act: string; festivalLink: string | null }>;
+}
+
 /**
  * Film key for every title the crew has a ticket for or rated in a festival year (see
  * filmKeysByTitle), and the crew's ratings with their filmKey moved to the film's current key,
@@ -379,12 +392,8 @@ async function getRatingsAndFilmKeys(
   visibleEmails: string[],
   year: number
 ): Promise<{ keysByTitle: Map<string, string>; ratings: Rating[] }> {
-  const [tickets, stored] = await Promise.all([
-    sql`
-      SELECT DISTINCT act, festival_link AS "festivalLink"
-      FROM tickets
-      WHERE festival_year = ${year} AND owner_email = ANY(${visibleEmails as any}::text[])
-    `,
+  const [titles, stored] = await Promise.all([
+    getFilmTitles(visibleEmails, year),
     sql`
       SELECT * FROM ratings
       WHERE festival_year = ${year} AND user_email = ANY(${visibleEmails as any}::text[])
@@ -392,7 +401,7 @@ async function getRatingsAndFilmKeys(
     `,
   ]);
   const raw = stored.rows.map(toRating);
-  const keysByTitle = filmKeysByTitle(tickets.rows as Array<{ act: string; festivalLink: string | null }>, raw);
+  const keysByTitle = filmKeysByTitle(titles, raw);
   const ratings = latestRatingPerFilm(raw.map((rating) => ({ ...rating, filmKey: ratingFilmKey(rating, keysByTitle) })));
   return { keysByTitle, ratings };
 }
@@ -470,4 +479,119 @@ export async function deleteRating(visibleEmails: string[], userEmail: string, a
       await query`DELETE FROM ratings WHERE user_email = ${userEmail} AND id = ANY(${ids as any}::uuid[])`;
     }
   });
+}
+
+// Film places: where each film mainly takes place, for the agenda's map view (see lib/find-film-place.ts).
+// Keyed like ratings by film and festival year. This is public programme information rather than
+// anyone's data, so, like updateScreeningShowDetails, writes aren't limited to the caller's own
+// rows: anyone whose crew has a ticket for the film may set it, and reads only cover films the
+// viewer's crew has tickets for.
+
+function toFilmPlace(row: Record<string, any>): FilmPlace {
+  return {
+    placeName: row.place_name,
+    country: row.country,
+    lat: row.lat,
+    lon: row.lon,
+    source: row.source,
+  };
+}
+
+export interface FilmPlaces {
+  /** Every title the crew has a ticket for this year, with its festival link when one is known */
+  titles: Array<{ act: string; festivalLink: string | null }>;
+  /** Which film each title is (see filmKeysByTitle) */
+  keysByTitle: Map<string, string>;
+  /** Stored places by film key */
+  places: Map<string, FilmPlace>;
+  /** Films whose lookup failed recently (see recordFilmPlaceAttempt) */
+  recentlyAttempted: Set<string>;
+}
+
+// How long a failed lookup waits before the next try
+const ATTEMPT_RETRY_HOURS = 6;
+
+/**
+ * The places of the films the crew has tickets for in a festival year. A place set while a title
+ * had no IDFA page yet is stored under its title key; it still counts once the title is linked,
+ * unless the film's own key has one.
+ */
+export async function getFilmPlacesForYear(visibleEmails: string[], year: number): Promise<FilmPlaces> {
+  const titles = await getFilmTitles(visibleEmails, year);
+  const keysByTitle = filmKeysByTitle(titles);
+  const keys = Array.from(new Set([...keysByTitle.values(), ...titles.map(({ act }) => titleFilmKey(act))]));
+  if (keys.length === 0) {
+    return { titles, keysByTitle, places: new Map(), recentlyAttempted: new Set() };
+  }
+
+  const [stored, attempts] = await Promise.all([
+    sql`
+      SELECT film_key, place_name, country, lat, lon, source
+      FROM film_places
+      WHERE festival_year = ${year} AND film_key = ANY(${keys as any}::text[])
+    `,
+    sql`
+      SELECT film_key FROM film_place_attempts
+      WHERE festival_year = ${year} AND film_key = ANY(${keys as any}::text[])
+        AND attempted_at > NOW() - make_interval(hours => ${ATTEMPT_RETRY_HOURS})
+    `,
+  ]);
+  const byKey = new Map(stored.rows.map((row) => [row.film_key as string, toFilmPlace(row)]));
+  const places = new Map<string, FilmPlace>();
+  for (const { act } of titles) {
+    const key = keysByTitle.get(act) ?? titleFilmKey(act);
+    const place = byKey.get(key) ?? byKey.get(titleFilmKey(act));
+    if (place && !places.has(key)) places.set(key, place);
+  }
+  return {
+    titles,
+    keysByTitle,
+    places,
+    recentlyAttempted: new Set(attempts.rows.map((row) => row.film_key as string)),
+  };
+}
+
+/** The place of the film `act` belongs to, or null when none is stored */
+export async function getFilmPlace(visibleEmails: string[], act: string, year: number): Promise<FilmPlace | null> {
+  const { keysByTitle, places } = await getFilmPlacesForYear(visibleEmails, year);
+  return places.get(keysByTitle.get(act) ?? titleFilmKey(act)) ?? null;
+}
+
+/**
+ * Store where the film `act` belongs to takes place. Returns false when nobody in the crew has a
+ * ticket with that title this year. A manual place is never replaced by the AI's: only another
+ * manual one overwrites it.
+ */
+export async function saveFilmPlace(
+  visibleEmails: string[],
+  act: string,
+  year: number,
+  place: Omit<FilmPlace, 'source'> | null,
+  source: FilmPlace['source']
+): Promise<boolean> {
+  const titles = await getFilmTitles(visibleEmails, year);
+  if (!titles.some((title) => title.act === act)) {
+    return false;
+  }
+  const key = filmKeysByTitle(titles).get(act) ?? titleFilmKey(act);
+  const value = source === 'none' || !place ? { placeName: null, country: null, lat: null, lon: null } : place;
+  await sql`
+    INSERT INTO film_places (film_key, festival_year, place_name, country, lat, lon, source)
+    VALUES (${key}, ${year}, ${value.placeName}, ${value.country}, ${value.lat}, ${value.lon}, ${source})
+    ON CONFLICT (film_key, festival_year) DO UPDATE
+      SET place_name = EXCLUDED.place_name, country = EXCLUDED.country, lat = EXCLUDED.lat,
+          lon = EXCLUDED.lon, source = EXCLUDED.source, updated_at = NOW()
+      WHERE film_places.source <> 'manual' OR EXCLUDED.source = 'manual'
+  `;
+  await sql`DELETE FROM film_place_attempts WHERE film_key = ${key} AND festival_year = ${year}`;
+  return true;
+}
+
+/** Note that looking up a film's place failed, so it isn't retried for a while */
+export async function recordFilmPlaceAttempt(filmKey: string, year: number): Promise<void> {
+  await sql`
+    INSERT INTO film_place_attempts (film_key, festival_year, attempted_at)
+    VALUES (${filmKey}, ${year}, NOW())
+    ON CONFLICT (film_key, festival_year) DO UPDATE SET attempted_at = NOW()
+  `;
 }

@@ -2,12 +2,13 @@ import Image from 'next/image';
 import { redirect } from 'next/navigation';
 import { after } from 'next/server';
 import { ExternalLink, Navigation, Vote } from 'lucide-react';
-import { getScreening, getRatingsForFilm } from '@/lib/db';
+import { getScreening, getRatingsForFilm, getFilmPlace } from '@/lib/db';
 import { getCrew } from '@/lib/groups';
 import { getViewer } from '@/lib/auth-helpers';
 import { formatDate, formatTime, formatTimeRange, getNow } from '@/lib/dates';
 import { holdersOf, makeCrewLookup, toAgendaScreening } from '@/lib/agenda';
 import { getVenueBackground } from '@/lib/venue-backgrounds';
+import { countryName } from '@/lib/countries';
 import { getFestivalLinkForScreening } from '@/lib/festival-links';
 import { getMapSearchUrl } from '@/lib/maps-utils';
 import { getAvailabilityForScreenings, getFilmOverview, getShowDetails, IDFA_AVAILABILITY_FLAG_KEY, refreshShowDetails } from '@/lib/idfa';
@@ -23,6 +24,7 @@ import RatingInput from '@/components/RatingInput';
 import CrewRatings from '@/components/CrewRatings';
 import AvailabilityMark from '@/components/AvailabilityMark';
 import QaMark from '@/components/QaMark';
+import FilmPlaceEditor from '@/components/screening/FilmPlaceEditor';
 
 export const dynamic = 'force-dynamic';
 
@@ -83,7 +85,7 @@ export default async function ScreeningDetailPage({
   // the agenda. Coming straight here (Fix details opens the corrected screening), read them from
   // the IDFA site now, and store them once the page is sent.
   const missingShowDetails = screening.endsAt == null || screening.hasQa == null;
-  const [{ festivalLink, overview, liveDetails }, availability, ratings, voteLinks] = await Promise.all([
+  const [{ festivalLink, overview, liveDetails }, availability, ratings, voteLinks, place] = await Promise.all([
     getFestivalLinkForScreening(screening).then(async (link) => {
       const lookUpDetails = async () =>
         (await evaluateBooleanFlag(IDFA_AVAILABILITY_FLAG_KEY, userContext(viewer.email), true)).value
@@ -102,6 +104,12 @@ export default async function ScreeningDetailPage({
     getRatingsForFilm(viewer.visibleEmails, screening.act, screening.festivalYear),
     // Audience Award links for the tickets the viewer holds; only this viewer's page gets them
     getVoteLinksForScreening(viewer, screening),
+    // Where the film is set, for the map; shared by every title and showing of the film. Never
+    // worth failing this page over (it's opened at the door), e.g. before migration 009 has run
+    getFilmPlace(viewer.visibleEmails, screening.act, screening.festivalYear).catch((placeError) => {
+      console.warn(`Could not load where "${screening.act}" is set:`, placeError);
+      return null;
+    }),
   ]);
   const endsAt = screening.endsAt ?? liveDetails?.endsAt ?? null;
   const hasQa = (screening.hasQa ?? liveDetails?.hasQa) === true;
@@ -146,6 +154,16 @@ export default async function ScreeningDetailPage({
             {screening.location}
             {hasQa && <QaMark />}
           </p>
+          <FilmPlaceEditor
+            act={screening.act}
+            festivalYear={screening.festivalYear}
+            place={
+              place?.country && place.source !== 'none'
+                ? { name: place.placeName, country: place.country, countryName: countryName(place.country) }
+                : null
+            }
+            noPlace={place?.source === 'none'}
+          />
           <div className="mt-3 flex items-center gap-2 text-sm text-ink-2">
             <AvatarStack members={holders} />
             <span className="min-w-0">{holders.map((member) => (member.isMe ? 'You' : member.name)).join(' & ')}</span>

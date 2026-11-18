@@ -40,7 +40,7 @@ async function backfillFestivalLinks() {
   for (const { act, festival_year: festivalYear, owner_email: ownerEmail } of films.rows) {
     console.log(`Processing: "${act}" (IDFA ${festivalYear})...`);
 
-    // The AI lookup is evaluated for a ticket owner, so the festival-link-ai kill switch applies
+    // The AI lookup is evaluated for a ticket owner, so the festival-link-finder AI config's targeting applies
     console.log('  → Searching the IDFA site...');
     let festivalLink = await findFestivalLink(act, festivalYear, userContext(ownerEmail));
 
