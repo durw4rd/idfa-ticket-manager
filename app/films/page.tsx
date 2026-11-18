@@ -5,12 +5,14 @@ import { getFestivalYears, getRatingsForYear, getScreeningsForYear } from '@/lib
 import { getCrew } from '@/lib/groups';
 import { getViewer } from '@/lib/auth-helpers';
 import { formatDate, getCurrentFestivalYear, getNow } from '@/lib/dates';
-import { makeCrewLookup, screeningHref, screeningsToRate, toAgendaScreening } from '@/lib/agenda';
+import { makeCrewLookup, screeningHref, toAgendaScreening } from '@/lib/agenda';
 import { titleFilmKey } from '@/lib/films';
+import { getPendingVoteLinksOrNone, todoFrom } from '@/lib/reminders';
 import type { AgendaScreening, Rating } from '@/lib/types';
 import PageHeader from '@/components/PageHeader';
 import YearSwitcher from '@/components/agenda/YearSwitcher';
 import RatingInput from '@/components/RatingInput';
+import VoteButtons from '@/components/VoteButtons';
 import { Avatar } from '@/components/ui/Avatar';
 import { Disclosure } from '@/components/ui/Disclosure';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -41,11 +43,12 @@ export default async function FilmsPage({ searchParams }: { searchParams: Promis
   }
   const now = getNow();
 
-  const [screenings, { keysByTitle, ratings }, crew, festivalYears] = await Promise.all([
+  const [screenings, { keysByTitle, ratings }, crew, festivalYears, voteLinks] = await Promise.all([
     getScreeningsForYear(viewer.visibleEmails, year),
     getRatingsForYear(viewer.visibleEmails, year),
     getCrew(viewer),
     getFestivalYears(viewer.visibleEmails),
+    getPendingVoteLinksOrNone(viewer, year),
   ]);
   // Only years someone in the crew has tickets for, plus this one
   if (year !== currentYear && !festivalYears.includes(year)) {
@@ -59,7 +62,8 @@ export default async function FilmsPage({ searchParams }: { searchParams: Promis
   // so the ratings' keys and the screenings' keys agree
   const filmOf = (screening: AgendaScreening) => keysByTitle.get(screening.act) ?? titleFilmKey(screening.act);
   const myRatings = ratings.filter((rating) => rating.userEmail === viewer.email);
-  const toRate = screeningsToRate(agenda, myRatings, keysByTitle, viewer.email, now);
+  // Films waiting for your rating or your Audience Award vote, one card each
+  const todo = todoFrom({ viewer, agenda, ratings, keysByTitle, voteLinks, now });
 
   // Each film's first screening, which its entry links to; the shortest title names it, as the
   // longer ones add a series or a talk ("IDFA Hit: …", "… + Talk")
@@ -112,30 +116,45 @@ export default async function FilmsPage({ searchParams }: { searchParams: Promis
         </dl>
       )}
 
-      {toRate.length > 0 && (
-        <section aria-labelledby="to-rate" className="mb-10">
-          <h2 id="to-rate" className="label mb-3 flex items-center gap-2">
+      {todo.length > 0 && (
+        <section aria-labelledby="to-do" className="mb-10">
+          <h2 id="to-do" className="label mb-3 flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-spark" aria-hidden />
-            To rate · {toRate.length}
+            To do · {todo.length}
           </h2>
           <ul className="space-y-3">
-            {toRate.map((screening) => (
-              <li key={screening.id} className="rounded border border-line bg-surface p-4">
-                <Link href={screeningHref(screening)} className="block">
-                  <p className="font-display text-lg leading-tight">{screening.act}</p>
-                  <p className="mt-0.5 text-sm text-ink-3">
-                    Seen {formatDate(new Date(screening.startsAt))} · {screening.location}
-                  </p>
-                </Link>
-                <div className="mt-3">
-                  <RatingInput
-                    act={screening.act}
-                    festivalYear={screening.festivalYear}
-                    initialRating={null}
-                    initialComment={null}
-                    compact
-                  />
-                </div>
+            {todo.map((item) => (
+              <li key={item.key} className="rounded border border-line bg-surface p-4">
+                {item.screening ? (
+                  <Link href={screeningHref(item.screening)} className="block">
+                    <p className="font-display text-lg leading-tight">{item.title}</p>
+                    <p className="mt-0.5 text-sm text-ink-3">
+                      Seen {formatDate(new Date(item.screening.startsAt))} · {item.screening.location}
+                    </p>
+                  </Link>
+                ) : (
+                  <p className="font-display text-lg leading-tight">{item.title}</p>
+                )}
+                {item.votes.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-sm text-ink-2">Vote for the Audience Award</p>
+                    {/* Wraps rather than scrolls, keeping each small button's touch area clear */}
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <VoteButtons links={item.votes} />
+                    </div>
+                  </div>
+                )}
+                {item.rate && item.screening && (
+                  <div className="mt-3">
+                    <RatingInput
+                      act={item.screening.act}
+                      festivalYear={item.screening.festivalYear}
+                      initialRating={null}
+                      initialComment={null}
+                      compact
+                    />
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -199,7 +218,7 @@ export default async function FilmsPage({ searchParams }: { searchParams: Promis
           </ol>
         </section>
       ) : (
-        toRate.length === 0 && (
+        todo.length === 0 && (
           <EmptyState icon={<Star className="h-10 w-10" strokeWidth={1.5} />} title="Nothing rated yet">
             After each screening, the film shows up here so you can score it and leave a line for the crew.
           </EmptyState>

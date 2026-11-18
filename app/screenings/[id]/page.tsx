@@ -1,7 +1,7 @@
 import Image from 'next/image';
 import { redirect } from 'next/navigation';
 import { after } from 'next/server';
-import { ExternalLink, Navigation, Vote } from 'lucide-react';
+import { ExternalLink, Navigation } from 'lucide-react';
 import { getScreening, getRatingsForFilm, getFilmPlace } from '@/lib/db';
 import { getCrew } from '@/lib/groups';
 import { getViewer } from '@/lib/auth-helpers';
@@ -14,6 +14,7 @@ import { getMapSearchUrl } from '@/lib/maps-utils';
 import { getAvailabilityForScreenings, getFilmOverview, getShowDetails, IDFA_AVAILABILITY_FLAG_KEY, refreshShowDetails } from '@/lib/idfa';
 import { evaluateBooleanFlag, userContext } from '@/lib/launchdarkly';
 import { getVoteLinksForScreening } from '@/lib/vote-links';
+import VoteButtons from '@/components/VoteButtons';
 import PageHeader, { BackLink } from '@/components/PageHeader';
 import { AvatarStack } from '@/components/ui/Avatar';
 import { ButtonLink } from '@/components/ui/Button';
@@ -190,11 +191,7 @@ export default async function ScreeningDetailPage({
           {/* Wraps rather than scrolls: nothing is cut off, and the 8px gap leaves each small button's
               44px touch area clear of the next row's */}
           <div className="mt-5 flex flex-wrap gap-2">
-            {voteLinks.map((link, index) => (
-              <ButtonLink key={link.id} href={link.url} external size="sm" icon={<Vote className="h-4 w-4" />}>
-                {voteLinks.length > 1 ? `Vote ${index + 1}` : 'Vote'}
-              </ButtonLink>
-            ))}
+            {voteLinks.length > 0 && <VoteButtons links={voteLinks} />}
             <ButtonLink
               href={getMapSearchUrl(screening.location)}
               external

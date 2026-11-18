@@ -7,6 +7,7 @@ import type { CrewMember } from '@/lib/types';
 import { Button } from '@/components/ui/Button';
 import { handleRadioKeys } from '@/lib/radio-keys';
 import { readApiResponse } from '@/lib/api-client';
+import { notifyTodoChanged } from '@/lib/todo-events';
 import { Notice } from '@/components/ui/Field';
 import { AutoTextarea } from '@/components/ui/AutoTextarea';
 import { RatingRow } from '@/components/CrewRatings';
@@ -97,6 +98,7 @@ export default function RatingInput({
       moveFocus.current = !!me || method === 'DELETE';
       setEditing(false);
       router.refresh();
+      notifyTodoChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save your rating');
     } finally {

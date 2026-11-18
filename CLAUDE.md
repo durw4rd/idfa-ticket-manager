@@ -16,7 +16,7 @@ Unit tests cover the pure logic in `lib/` (`lib/*.test.ts`, Vitest); add one whe
 
 ## Rules that matter
 
-- **Visibility.** Every DB read takes `visibleEmails` (from `getViewer()`/`requireAuth()` in `lib/auth-helpers.ts`) and filters on it. Every update or delete filters on the caller's own `owner_email`. The exceptions are `updateTicketHolder` (the owner *or* the current holder may hand a ticket to someone in their `visibleEmails`) and the public programme data shared per showing or film: `updateScreeningShowDetails` and `saveFilmPlace` write for anyone whose crew has a ticket for it. New queries must follow this; it is the app's only access control between users.
+- **Visibility.** Every DB read takes `visibleEmails` (from `getViewer()`/`requireAuth()` in `lib/auth-helpers.ts`) and filters on it. Every update or delete filters on the caller's own `owner_email`. The exceptions are `updateTicketHolder` (the owner *or* the current holder may hand a ticket to someone in their `visibleEmails`), `setVoteLinkVoted` (whoever is shown the link: its ticket's current holder, or its owner when it has no ticket) and the public programme data shared per showing or film: `updateScreeningShowDetails` and `saveFilmPlace` write for anyone whose crew has a ticket for it. New queries must follow this; it is the app's only access control between users.
 - **Auth in routes.** Route handlers start with `const { viewer, error } = await requireAuth(); if (error) return error;` and set `export const runtime = 'nodejs'` and `export const dynamic = 'force-dynamic'`. The exceptions are the Postmark webhook `app/api/inbound/email`, which checks `INBOUND_WEBHOOK_SECRET` and takes the user from the address token, and `app/api/access-ended`, which signs out a user whose access has ended (requireAuth would just answer 401).
 - **Never expose Blob URLs.** `qrCodeUrl`/`pdfUrl` stay server-side; the browser gets `/api/tickets/[id]/qr`. Client components get screenings through `toAgendaScreening` in `lib/agenda.ts`, which strips them. Keep emails out of URLs too (the poster route takes a crew index).
 - **Vote links are credentials.** A voting URL goes only to the holder of its ticket (`getVoteLinksForScreening`), is never logged, and is never sent to a model.
@@ -27,6 +27,16 @@ Unit tests cover the pure logic in `lib/` (`lib/*.test.ts`, Vitest); add one whe
 - **Concurrency.** Group membership changes go through `withGroupLock`; ticket inserts go through `createTicketUnlessDuplicate`; both use `withAdvisoryLock` in `lib/db.ts` (multi-statement writes use `withTransaction`). Don't bypass them.
 - **Schema changes** are new hand-run SQL files in `migrations/`; there is no migration runner. Update `lib/types.ts` together with the row mapper (`toTicket` in `lib/db.ts` for tickets; other queries alias their columns).
 - **`pdfjs-dist` worker.** `public/pdf.worker.min.mjs` must match the installed `pdfjs-dist` version. Copy it from `node_modules/pdfjs-dist/build/` whenever that package changes.
+
+## Shipping
+
+When asked to ship (or "open a PR"), without further instructions:
+
+1. Branch off `main` (`feat/…`, `fix/…`), commit, push, and open a PR with `gh pr create`. The body says what changed and why, plus any migration to run.
+2. Additive, low-risk migrations (new tables, columns, indexes) are run on the database right away: there is only one. Ask before anything that drops data or rewrites rows.
+3. Ask Copilot for a review: `gh api repos/{owner}/{repo}/pulls/<n>/requested_reviewers -X POST -f 'reviewers[]=copilot-pull-request-reviewer[bot]'`. Wait for it (poll the PR's reviews every minute or two; it takes a few minutes).
+4. Address every finding: fix it, or reply on the thread with why not. Then run typecheck, lint, tests and build, push, resolve the threads, and request a new review.
+5. Repeat for up to 6 rounds. Merge (`gh pr merge --merge --delete-branch`) once a round brings no new findings that need changes and CI is green. If round 6 still has open findings, stop and report them instead of merging.
 
 ## Style
 
