@@ -20,9 +20,12 @@ interface Link {
  */
 export default function VoteButtons({ links }: { links: Link[] }) {
   const router = useRouter();
-  const [voted, setVoted] = useState(() => new Set(links.filter((link) => link.votedAt).map((link) => link.id)));
+  // Links marked here and not yet confirmed by a refresh. The server's votedAt counts too, so a
+  // vote saved elsewhere (another tab, the Crew page) shows once the props catch up.
+  const [voted, setVoted] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
-  const pending = links.filter((link) => !voted.has(link.id));
+  const isVoted = (link: Link) => !!link.votedAt || voted.has(link.id);
+  const pending = links.filter((link) => !isVoted(link));
 
   const markVoted = async (ids: string[], fromLink: boolean) => {
     setError(null);
@@ -53,7 +56,7 @@ export default function VoteButtons({ links }: { links: Link[] }) {
   return (
     <>
       {links.map((link, index) => {
-        const done = voted.has(link.id);
+        const done = isVoted(link);
         const number = links.length > 1 ? ` ${index + 1}` : '';
         return (
           <ButtonLink
