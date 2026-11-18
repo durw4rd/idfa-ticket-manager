@@ -136,6 +136,9 @@ export function screeningsToRate(
     });
 }
 
+// A film known only by its title (no IDFA page yet), from a filmOf key ("<year>|title:…")
+const isTitleKey = (key: string) => key.split('|', 2)[1]?.startsWith('title:') ?? false;
+
 /** A voting link as the to-do list sees it: which screening its ticket is for, null when it has no ticket */
 export interface TodoVoteLink {
   id: string;
@@ -186,9 +189,13 @@ export function buildTodo<L extends TodoVoteLink>(input: {
     const film = filmOf(link);
     const screening =
       (link.screeningId ? byId.get(link.screeningId) : undefined) ??
-      // The same film first; a title match only when none is, as two films can share a title
+      // The same film first. Then a title match, but never between two different known films
+      // (both have an IDFA page), as two films can share a title.
       mineStarted.find((candidate) => filmOf(candidate) === film) ??
-      mineStarted.find((candidate) => comparableTitle(candidate.act) === wanted) ??
+      mineStarted.find(
+        (candidate) =>
+          comparableTitle(candidate.act) === wanted && (isTitleKey(film) || isTitleKey(filmOf(candidate)))
+      ) ??
       null;
     // Without a showing, the link's own film key still merges it with anything else for that film
     const key = screening ? filmOf(screening) : film;

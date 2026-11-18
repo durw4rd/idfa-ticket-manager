@@ -174,6 +174,26 @@ describe('buildTodo', () => {
     expect(todo.map((item) => item.screening?.id)).toEqual(['Home']);
   });
 
+  it('keeps a link for one film apart from your showing of another film with the same title', () => {
+    const theirs = screening('Home', '2026-11-14T10:00:00.000Z', [FRIEND]);
+    const mine = screening('HOME', '2026-11-17T10:00:00.000Z', [ME]);
+    const keysByTitle = new Map([
+      ['Home', 'film:1'],
+      ['HOME', 'film:2'],
+    ]);
+    const todo = buildTodo({
+      ...base,
+      screenings: [theirs, mine],
+      keysByTitle,
+      toRate: [mine],
+      voteLinks: [{ id: 'spare', act: 'Home', screeningId: null, festivalYear: 2026 }],
+    });
+    expect(todo.map((item) => [item.title, item.rate, item.votes.length])).toEqual([
+      ['HOME', true, 0],
+      ['Home', false, 1],
+    ]);
+  });
+
   it('gives a link without a ticket to your latest started showing with that title, else lists it last on its own', () => {
     const todo = buildTodo({
       ...base,
