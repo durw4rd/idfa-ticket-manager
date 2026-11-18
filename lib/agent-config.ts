@@ -1,6 +1,7 @@
-// Calling a LaunchDarkly AgentControl config, shared by the ticket extractor, the festival link
-// finder and the voting-email reader. Each of those keeps its own prompt constant and hardcoded
-// OpenAI fallback: LaunchDarkly is optional at runtime, so when this returns null they call OpenAI.
+// Calling a LaunchDarkly AI config, shared by every AI feature (ticket extraction, festival link,
+// film place, voting email). The config is the source of each feature's prompt, model and
+// parameters, and its off switch. Each feature keeps its prompt constant and a hardcoded OpenAI
+// fallback only for when LaunchDarkly can't be reached (this returns null).
 
 import { config, type LDContext, type Message } from '@launchdarkly/ai-server';
 import { createOpenAIMessagesHandler } from '@launchdarkly/ai-openai-messages';
@@ -18,23 +19,71 @@ function getHandlers() {
 }
 
 /**
- * The response from the model and prompt served by the AgentControl config `key` (the variation
- * picks the provider), or null when LaunchDarkly isn't configured or the call fails, in which case
- * the caller uses its fallback. A response the caller can't use is the caller's to judge.
+ * What calling an AI config gave: the model's response, or `disabled` when LaunchDarkly
+ * deliberately serves the config's disabled variation (targeting off, or a rule serving it). The
+ * config is the feature's off switch: on `disabled` the caller makes no AI call at all, fallback
+ * included.
+ */
+export type AgentConfigResult = { disabled: false; response: unknown } | { disabled: true };
+
+// What config().invoke() evaluates with when LaunchDarkly has no value: an AI config that is off
+const DISABLED_DEFAULT = { enabled: false };
+
+/**
+ * Call the AI config `key` with the model and prompt it serves (the variation picks the provider).
+ * Returns `{ disabled: true }` when the config is deliberately disabled, and null when LaunchDarkly
+ * can't answer (no SDK key, not initialised, config not found, evaluation or network error, or the
+ * provider call failing), in which case the caller uses its OpenAI fallback. A response the caller
+ * can't use is the caller's to judge.
+ *
+ * invoke() throws "Variation … is not enabled" both for a disabled config and an unknown one, so
+ * the evaluation reason tells them apart first: kind ERROR (FLAG_NOT_FOUND, CLIENT_NOT_READY, …) is
+ * unavailable; a served value whose _ldMeta.enabled is false is disabled.
  */
 export async function invokeAgentConfig(
   key: string,
   context: LDContext,
   { input, variables = {}, history }: { input?: string; variables?: Record<string, unknown>; history?: Message[] } = {}
-): Promise<{ response: unknown } | null> {
-  if (!(await getLdClient())) {
+): Promise<AgentConfigResult | null> {
+  const client = await getLdClient();
+  if (!client) {
     return null;
   }
+
+  const state = await configState(client, key, context);
+  if (state !== 'enabled') {
+    return state === 'disabled' ? { disabled: true } : null;
+  }
+
   try {
     const result = await config({ key, handler: getHandlers() }).invoke(input, context, variables, history);
-    return { response: result.response };
+    return { disabled: false, response: result.response };
   } catch (error) {
+    // Switched off between the check above and invoke()'s own evaluation: still off, no fallback
+    if ((await configState(client, key, context)) === 'disabled') {
+      return { disabled: true };
+    }
     console.warn(`AgentControl config "${key}" unavailable, using fallback model:`, error);
     return null;
+  }
+}
+
+/** Whether LaunchDarkly serves the config enabled, deliberately disabled, or can't say */
+async function configState(
+  client: NonNullable<Awaited<ReturnType<typeof getLdClient>>>,
+  key: string,
+  context: LDContext
+): Promise<'enabled' | 'disabled' | 'unavailable'> {
+  try {
+    const detail = await client.variationDetail(key, context, DISABLED_DEFAULT);
+    if (detail.reason.kind === 'ERROR') {
+      console.warn(`AgentControl config "${key}" unavailable (${detail.reason.errorKind ?? 'error'}), using fallback model`);
+      return 'unavailable';
+    }
+    const value = detail.value as { _ldMeta?: { enabled?: unknown } } | null;
+    return value?._ldMeta?.enabled === true ? 'enabled' : 'disabled';
+  } catch (error) {
+    console.warn(`AgentControl config "${key}" unavailable, using fallback model:`, error);
+    return 'unavailable';
   }
 }

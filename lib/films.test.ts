@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filmKey, filmKeysByTitle, latestRatingPerFilm, ratingFilmKey } from './films';
+import { filmKey, filmKeysByTitle, latestRatingPerFilm, pickStoredPlace, ratingFilmKey } from './films';
 
 const SIEGE = 'https://festival.idfa.nl/en/film/E64A0B19-15c4-4b15-9cf7-5c00eb61acd2/the-siege-of-paradise/';
 const SIEGE_KEY = 'film:e64a0b19-15c4-4b15-9cf7-5c00eb61acd2';
@@ -101,5 +101,28 @@ describe('latestRatingPerFilm', () => {
       rating('other', 'me', 'film:2', '2026-11-01T12:00:00Z'),
     ]);
     expect(kept.map((r) => r.id)).toEqual(['new', 'friend', 'other']);
+  });
+});
+
+describe('pickStoredPlace', () => {
+  const at = (day: number) => new Date(Date.UTC(2026, 10, day));
+  const ai = { source: 'ai', updatedAt: at(10), id: 'film-ai' };
+  const filmManual = { source: 'manual', updatedAt: at(12), id: 'film-manual' };
+  const titleManual = { source: 'manual', updatedAt: at(11), id: 'title-manual' };
+
+  it("lets a person's correction under the title beat the AI's place under the film", () => {
+    expect(pickStoredPlace(ai, titleManual)?.id).toBe('title-manual');
+  });
+
+  it('keeps the newer of two corrections, and the film key otherwise', () => {
+    expect(pickStoredPlace(filmManual, titleManual)?.id).toBe('film-manual');
+    expect(pickStoredPlace({ ...filmManual, updatedAt: at(9) }, titleManual)?.id).toBe('title-manual');
+    expect(pickStoredPlace(ai, { ...ai, id: 'title-ai' })?.id).toBe('film-ai');
+  });
+
+  it('uses whichever exists', () => {
+    expect(pickStoredPlace(undefined, titleManual)?.id).toBe('title-manual');
+    expect(pickStoredPlace(ai, undefined)?.id).toBe('film-ai');
+    expect(pickStoredPlace(undefined, undefined)).toBeUndefined();
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgendaScreening } from './types';
-import { filterByPerson, findClashes, groupByDay, isTogether, makeCrewLookup, screeningsToRate } from './agenda';
+import { filterByPerson, findClashes, groupByDay, isTogether, makeCrewLookup, screeningsToRate, toMapFilms } from './agenda';
 
 const ME = 'me@example.com';
 const FRIEND = 'friend@example.com';
@@ -120,5 +120,64 @@ describe('makeCrewLookup', () => {
   it('still names people who have left the crew', () => {
     const lookup = makeCrewLookup([]);
     expect(lookup('sam.devries@example.com').name).toBe('Sam');
+  });
+});
+
+describe('toMapFilms', () => {
+  const SIEGE_KEY = 'film:e64a0b19-15c4-4b15-9cf7-5c00eb61acd2';
+  const keysByTitle = new Map([
+    ['IDFA Hit: The Siege of Paradise', SIEGE_KEY],
+    ['The Siege of Paradise', SIEGE_KEY],
+  ]);
+  const places = new Map([
+    [SIEGE_KEY, { placeName: 'Gaza', country: 'PS', lat: 31.5, lon: 34.47, source: 'ai' as const }],
+    ['title:shorts', { placeName: null, country: null, lat: null, lon: null, source: 'none' as const }],
+    ['title:set by hand', { placeName: null, country: null, lat: null, lon: null, source: 'manual' as const }],
+  ]);
+
+  it('merges every title and showing of a film, holders from all of them, first showing first', () => {
+    const films = toMapFilms(
+      [
+        screening('The Siege of Paradise', '2026-11-20T19:00:00.000Z', [FRIEND]),
+        screening('IDFA Hit: The Siege of Paradise', '2026-11-18T19:00:00.000Z', [ME]),
+      ],
+      keysByTitle,
+      places,
+      ME
+    );
+    expect(films).toHaveLength(1);
+    expect(films[0]).toMatchObject({
+      key: SIEGE_KEY,
+      title: 'IDFA Hit: The Siege of Paradise',
+      href: `/screenings/${encodeURIComponent('IDFA Hit: The Siege of Paradise')}`,
+      place: { name: 'Gaza', country: 'PS', lat: 31.5, lon: 34.47 },
+      noPlace: false,
+      holders: [ME, FRIEND],
+      isMine: true,
+    });
+  });
+
+  it("tells a film looked up with no place from one not placed yet, and marks films you aren't seeing", () => {
+    const films = toMapFilms(
+      [
+        screening('Shorts', '2026-11-18T10:00:00.000Z', [FRIEND]),
+        screening('Unplaced', '2026-11-19T10:00:00.000Z', [FRIEND]),
+        screening('Set by hand', '2026-11-20T10:00:00.000Z', [FRIEND]),
+      ],
+      keysByTitle,
+      places,
+      ME
+    );
+    expect(films.map((f) => [f.title, f.place, f.noPlace, f.isMine])).toEqual([
+      ['Shorts', null, true, false],
+      ['Unplaced', null, false, false],
+      ['Set by hand', null, true, false],
+    ]);
+  });
+
+  it('sends the browser nothing but the film, its place and who holds tickets', () => {
+    const [film] = toMapFilms([screening('The Siege of Paradise', '2026-11-20T19:00:00.000Z', [ME])], keysByTitle, places, ME);
+    expect(Object.keys(film).sort()).toEqual(['holders', 'href', 'isMine', 'key', 'location', 'noPlace', 'place', 'startsAt', 'title']);
+    expect(JSON.stringify(film)).not.toMatch(/blob|ownerEmail|qr/i);
   });
 });

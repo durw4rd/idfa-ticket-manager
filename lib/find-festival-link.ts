@@ -1,6 +1,5 @@
 import OpenAI from 'openai';
 import type { LDContext } from '@launchdarkly/ai-server';
-import { evaluateBooleanFlag } from './launchdarkly';
 import { invokeAgentConfig } from './agent-config';
 import { queryIdfa } from './idfa';
 import { comparableTitle, UUID_PATTERN } from './films';
@@ -10,8 +9,6 @@ export { comparableTitle } from './films';
 // AgentControl config with the prompt that picks a film's IDFA page from site search results.
 // Its messages use the {{movieTitle}}, {{festivalYear}} and {{candidates}} variables.
 export const FESTIVAL_LINK_CONFIG_KEY = 'festival-link-finder';
-// Kill switch for the model pick (exact title matches don't need it)
-export const FESTIVAL_LINK_FLAG_KEY = 'festival-link-ai';
 
 
 // Used as the LaunchDarkly config's user message, and by the fallback below
@@ -240,12 +237,6 @@ export async function findFestivalLink(
       }
     }
 
-    // The kill switch covers the model pick only; exact title matches above don't use it
-    const enabled = await evaluateBooleanFlag(FESTIVAL_LINK_FLAG_KEY, context, true);
-    if (!enabled.value) {
-      return null;
-    }
-
     const candidateList = formatCandidates(candidates);
 
     let content: string | undefined;
@@ -253,6 +244,10 @@ export async function findFestivalLink(
     const served = await invokeAgentConfig(FESTIVAL_LINK_CONFIG_KEY, context, {
       variables: { movieTitle, festivalYear, candidates: candidateList },
     });
+    // A disabled config switches off the model pick (exact title matches above don't use it)
+    if (served?.disabled) {
+      return null;
+    }
     if (served) {
       content = String(served.response ?? '');
       // A variation still on the old prompt answers with a URL; treat any answer that is

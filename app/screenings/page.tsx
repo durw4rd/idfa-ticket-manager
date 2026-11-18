@@ -1,6 +1,9 @@
 import { redirect } from 'next/navigation';
 import { after } from 'next/server';
-import { getFestivalYears, getScreeningsForYear } from '@/lib/db';
+import { getFestivalYears, getFilmPlacesForYear, getScreeningsForYear, type FilmPlaces } from '@/lib/db';
+import { fillMissingFilmPlaces } from '@/lib/find-film-place';
+import { titleFilmKey } from '@/lib/films';
+import type { MapPlaceData } from '@/lib/types';
 import { getCrew } from '@/lib/groups';
 import { getViewer } from '@/lib/auth-helpers';
 import { getCurrentFestivalYear, getNow } from '@/lib/dates';
@@ -29,10 +32,15 @@ export default async function ScreeningsPage({
     redirect('/screenings');
   }
 
-  const [screenings, festivalYears, crew] = await Promise.all([
+  const [screenings, festivalYears, crew, filmPlaces] = await Promise.all([
     getScreeningsForYear(viewer.visibleEmails, year),
     getFestivalYears(viewer.visibleEmails),
     getCrew(viewer),
+    // For the map view. Never worth failing the agenda over: without it the map just has no pins
+    getFilmPlacesForYear(viewer.visibleEmails, year).catch((error) => {
+      console.warn('Could not load film places:', error);
+      return null;
+    }),
   ]);
   // Only years someone in the crew has tickets for, plus this one: ?year=1900 isn't a festival
   if (year !== currentYear && !festivalYears.includes(year)) {
@@ -44,6 +52,14 @@ export default async function ScreeningsPage({
   // End times and Q&A are stored on the tickets; catch up with the IDFA site once the page is sent
   after(() => refreshShowDetails(viewer.visibleEmails, screenings, now, userContext(viewer.email)));
   const years = Array.from(new Set([currentYear, ...festivalYears])).sort((a, b) => b - a);
+  // Films with an IDFA page but no place yet are placed after the page is sent, a few per visit
+  if (filmPlaces && hasUnplacedFilms(filmPlaces)) {
+    after(() => fillMissingFilmPlaces(viewer, year, userContext(viewer.email)));
+  }
+  const placeData: MapPlaceData = {
+    keysByTitle: filmPlaces ? Array.from(filmPlaces.keysByTitle) : [],
+    places: filmPlaces ? Array.from(filmPlaces.places) : [],
+  };
 
   return (
     <AgendaView
@@ -52,7 +68,16 @@ export default async function ScreeningsPage({
       year={year}
       years={years}
       now={now.toISOString()}
+      placeData={placeData}
       actions={screenings.length > 0 ? <SharePosterButton key="share" year={year} crew={crew} /> : undefined}
     />
   );
+}
+
+/** Any film with an IDFA page, no place yet, and no failed lookup in the last few hours */
+function hasUnplacedFilms({ titles, keysByTitle, places, recentlyAttempted }: FilmPlaces): boolean {
+  return titles.some(({ act, festivalLink }) => {
+    const key = keysByTitle.get(act) ?? titleFilmKey(act);
+    return !!festivalLink && !places.has(key) && !recentlyAttempted.has(key);
+  });
 }

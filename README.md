@@ -59,14 +59,12 @@ The app expects these in its LaunchDarkly project. Each has a code fallback, so 
 | Key | Type | Purpose |
 |---|---|---|
 | `app-access` | Boolean flag | Who may sign in (context kind `user`, key = email) |
-| `ticket-extraction` | AgentControl config (completion) | Model and prompt for reading tickets. Prompt: `TICKET_EXTRACTION_PROMPT` in `lib/ticket-extractor.ts` |
-| `festival-link-finder` | AgentControl config (completion) | Model and prompt that picks a film's IDFA page from IDFA site search results. Prompt: `FESTIVAL_LINK_PROMPT` in `lib/find-festival-link.ts`, with variables `{{movieTitle}}`, `{{festivalYear}}`, `{{candidates}}` |
-| `festival-link-ai` | Boolean flag | Kill switch for the festival-link lookup |
+| `ticket-extraction` | AI config (completion) | Model and prompt for reading tickets. Prompt: `TICKET_EXTRACTION_PROMPT` in `lib/ticket-extractor.ts`; Output format: `TICKET_EXTRACTION_SCHEMA`. Disabled: uploads fail with "Reading tickets is switched off" |
+| `festival-link-finder` | AI config (completion) | Model and prompt that picks a film's IDFA page from IDFA site search results. Prompt: `FESTIVAL_LINK_PROMPT` in `lib/find-festival-link.ts`, with variables `{{movieTitle}}`, `{{festivalYear}}`, `{{candidates}}`. Disabled: only exact title matches get a link |
 | `idfa-availability` | Boolean flag | Kill switch for the routine calls to the IDFA site: availability marks and the end time / Q&A refresh |
 | `ticket-extraction-corrected` | Numeric metric | `1` when a user corrected the AI's extraction on the review screen, `0` otherwise |
-
-| `vote-link-extraction` | AgentControl config (completion) | Model and prompt that reads a voting email the code couldn't parse. Prompt: `VOTE_LINK_PROMPT` in `lib/vote-link-extractor.ts`, with variables `{{subject}}`, `{{body}}`, `{{links}}`; structured output: `VOTE_LINK_SCHEMA` |
-| `vote-link-ai` | Boolean flag | Kill switch for that model fallback (emails in IDFA's usual template never reach it) |
+| `vote-link-extraction` | AI config (completion) | Model and prompt that reads a voting email the code couldn't parse. Prompt: `VOTE_LINK_PROMPT` in `lib/vote-link-extractor.ts`, with variables `{{subject}}`, `{{body}}`, `{{links}}`; Output format: `VOTE_LINK_SCHEMA`. Disabled: only emails in IDFA's usual template are read |
+| `film-place-finder` | AI config (completion) | Model and prompt that names where a film takes place, for the map. Prompt: `FILM_PLACE_PROMPT` in `lib/film-place.ts`, with variables `{{title}}`, `{{facts}}`; Output format: `FILM_PLACE_SCHEMA`. Disabled: no new places are looked up |
 
 ### Voting links by email (optional)
 

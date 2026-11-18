@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from 'next/server';
 import { requireAuth } from '@/lib/auth-helpers';
 import { deleteTicket, getTicketsForYear, updateTicketDetails, updateTicketFestivalLink } from '@/lib/db';
 import { findFestivalLink } from '@/lib/find-festival-link';
+import { ensureFilmPlace } from '@/lib/find-film-place';
 import { getFestivalLink } from '@/lib/festival-links';
 import { deleteTicketFiles } from '@/lib/storage';
 import { flushLdEvents, trackEvent, userContext } from '@/lib/launchdarkly';
@@ -81,12 +82,19 @@ export async function PATCH(
         ]);
         clearTimeout(timer);
 
+        // With the film's IDFA page known, look up where it takes place (for the map), unless the
+        // crew already has that film placed
+        const context = userContext(viewer.email);
         if (outcome.done) {
           if (outcome.link) ticket = { ...ticket, festivalLink: outcome.link };
-          after(flushLdEvents);
+          const found = outcome.link;
+          after(async () => {
+            if (found) await ensureFilmPlace(viewer, title, festivalYear, context);
+            await flushLdEvents();
+          });
         } else {
           after(async () => {
-            await save;
+            if (await save) await ensureFilmPlace(viewer, title, festivalYear, context);
             await flushLdEvents();
           });
         }

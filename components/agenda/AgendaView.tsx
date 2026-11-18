@@ -1,8 +1,9 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { CalendarDays, ChevronUp, GanttChart, List, Plus } from 'lucide-react';
-import type { AgendaScreening, CrewMember } from '@/lib/types';
+import dynamic from 'next/dynamic';
+import { CalendarDays, ChevronUp, GanttChart, Globe, List, Plus } from 'lucide-react';
+import type { AgendaScreening, CrewMember, MapPlaceData } from '@/lib/types';
 import { festivalDayKey } from '@/lib/dates';
 import {
   filterByPerson,
@@ -10,6 +11,7 @@ import {
   groupByDay,
   holdersOf,
   makeCrewLookup,
+  toMapFilms,
   type PersonFilter as Filter,
 } from '@/lib/agenda';
 import { usePersistentState } from '@/lib/use-persistent-state';
@@ -18,13 +20,20 @@ import PageHeader from '@/components/PageHeader';
 import { ButtonLink } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
+import { Skeleton } from '@/components/ui/Skeleton';
 import AgendaList, { type RowMarks } from './AgendaList';
 import DayTimeline from './DayTimeline';
 import PersonFilter from './PersonFilter';
 import UpNext from './UpNext';
 import YearSwitcher from './YearSwitcher';
 
-type View = 'list' | 'timeline';
+type View = 'list' | 'timeline' | 'map';
+
+// The map (outlines and all) loads only when someone opens that view
+const MapView = dynamic(() => import('@/components/map/MapView'), {
+  ssr: false,
+  loading: () => <Skeleton className="-mx-4 h-[60dvh] w-[calc(100%+2rem)] rounded-none sm:mx-0 sm:w-full sm:rounded" />,
+});
 
 export default function AgendaView({
   screenings,
@@ -32,6 +41,7 @@ export default function AgendaView({
   year,
   years,
   now: nowIso,
+  placeData,
   actions,
 }: {
   screenings: AgendaScreening[];
@@ -39,6 +49,7 @@ export default function AgendaView({
   year: number;
   years: number[];
   now: string; // From the server, so TEST_DATE applies here too
+  placeData: MapPlaceData; // Where the films are set, for the map view
   actions?: React.ReactNode;
 }) {
   const now = useNow(nowIso);
@@ -51,7 +62,7 @@ export default function AgendaView({
     (value) => value === 'all' || crew.some((member) => member.email === value),
   );
   const [view, setView] = usePersistentState<View>('agenda.view', 'list', (value) =>
-    ['list', 'timeline'].includes(value),
+    ['list', 'timeline', 'map'].includes(value),
   );
   const [showEarlier, setShowEarlier] = useState(false);
 
@@ -86,6 +97,11 @@ export default function AgendaView({
     return [...crew, ...extra];
   }, [who, screenings, crew, lookup]);
   const festivalDay = festivalDayLabel(screenings, todayKey);
+  // The map shows the films of the screenings the person filter leaves, at their stored places
+  const mapFilms = useMemo(
+    () => toMapFilms(visible, new Map(placeData.keysByTitle), new Map(placeData.places), me.email),
+    [visible, placeData, me.email],
+  );
 
   return (
     <>
@@ -128,7 +144,10 @@ export default function AgendaView({
         </>
       ) : (
         <>
-          {nextForFocus && <UpNext screening={nextForFocus} now={now} personEmail={focusEmail} lookup={lookup} />}
+          {/* The map is the whole view there; your films show in yellow on it instead */}
+          {nextForFocus && view !== 'map' && (
+            <UpNext screening={nextForFocus} now={now} personEmail={focusEmail} lookup={lookup} />
+          )}
 
           <div className="mb-3 space-y-3">
             {crew.length > 1 && (
@@ -143,6 +162,7 @@ export default function AgendaView({
                 options={[
                   { value: 'list', label: 'List', icon: <List className="h-4 w-4" /> },
                   { value: 'timeline', label: 'Timeline', icon: <GanttChart className="h-4 w-4" /> },
+                  { value: 'map', label: 'Map', icon: <Globe className="h-4 w-4" /> },
                 ]}
               />
             </div>
@@ -152,6 +172,8 @@ export default function AgendaView({
             <EmptyState title={`Nothing for ${lookup(who).name} in ${year}`}>
               Tickets show up here once they&apos;re handed to {lookup(who).name}.
             </EmptyState>
+          ) : view === 'map' ? (
+            <MapView films={mapFilms} crew={crew} />
           ) : view === 'timeline' ? (
             <DayTimeline days={days} people={people} marks={marks} />
           ) : (

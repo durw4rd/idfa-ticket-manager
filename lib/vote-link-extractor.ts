@@ -4,14 +4,11 @@
 
 import OpenAI from 'openai';
 import type { LDContext } from '@launchdarkly/ai-server';
-import { evaluateBooleanFlag } from './launchdarkly';
 import { invokeAgentConfig } from './agent-config';
 
 // AgentControl config that holds the model, parameters and prompt for reading a voting email the
 // code couldn't parse. Its messages use the {{subject}}, {{body}} and {{links}} variables.
 export const VOTE_LINK_CONFIG_KEY = 'vote-link-extraction';
-// Kill switch for the model fallback (emails in the known template don't need it)
-export const VOTE_LINK_FLAG_KEY = 'vote-link-ai';
 
 // Who sends the voting emails, and where their links may point: IDFA's own domain (the links are
 // Mailgun click-tracking URLs on email.mailgun.idfa.nl) or the voting platform itself
@@ -201,7 +198,7 @@ function parseModelAnswer(content: unknown, links: EmailLink[]): VoteEmail | 'no
 /**
  * The film and voting links in a forwarded IDFA voting email, or null when it isn't one. Emails
  * in the known template are read in code. Otherwise the model from the LaunchDarkly AgentControl
- * config (with a hardcoded OpenAI fallback) reads it, unless the kill switch is off.
+ * config (with a hardcoded OpenAI fallback) reads it, unless that config is disabled.
  *
  * Throws when no model could be reached, so the webhook can ask for the mail again later rather
  * than drop its links during a provider outage.
@@ -217,15 +214,14 @@ export async function extractVoteLinks(email: InboundEmail, context: LDContext):
     return known;
   }
 
-  const enabled = await evaluateBooleanFlag(VOTE_LINK_FLAG_KEY, context, true);
-  if (!enabled.value) {
-    return null;
-  }
-
   const variables = promptVariables(email, links, body);
   let answer: ReturnType<typeof parseModelAnswer> = null;
 
   const served = await invokeAgentConfig(VOTE_LINK_CONFIG_KEY, context, { variables });
+  // Switched off in LaunchDarkly: emails outside the known template aren't read by a model
+  if (served?.disabled) {
+    return null;
+  }
   if (served) {
     answer = parseModelAnswer(served.response, links);
     if (!answer) {
