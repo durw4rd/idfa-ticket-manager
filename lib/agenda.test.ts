@@ -106,7 +106,7 @@ describe('buildTodo', () => {
     const todo = buildTodo({
       ...base,
       toRate: [a, b],
-      voteLinks: [{ id: 'v1', act: 'A', screeningId: 'A' }],
+      voteLinks: [{ id: 'v1', act: 'A', screeningId: 'A', festivalYear: 2026 }],
     });
     expect(todo.map((item) => [item.title, item.rate, item.votes.map((v) => v.id)])).toEqual([
       ['A', true, ['v1']],
@@ -115,7 +115,7 @@ describe('buildTodo', () => {
   });
 
   it('lists a vote for a film already rated on its own', () => {
-    const todo = buildTodo({ ...base, toRate: [], voteLinks: [{ id: 'v1', act: 'B', screeningId: 'B' }] });
+    const todo = buildTodo({ ...base, toRate: [], voteLinks: [{ id: 'v1', act: 'B', screeningId: 'B', festivalYear: 2026 }] });
     expect(todo).toHaveLength(1);
     expect(todo[0]).toMatchObject({ rate: false, screening: { id: 'B' } });
   });
@@ -132,10 +132,29 @@ describe('buildTodo', () => {
       screenings: [hit, siege],
       keysByTitle,
       toRate: [siege],
-      voteLinks: [{ id: 'v1', act: 'IDFA Hit: Siege', screeningId: 'IDFA Hit: Siege' }],
+      voteLinks: [{ id: 'v1', act: 'IDFA Hit: Siege', screeningId: 'IDFA Hit: Siege', festivalYear: 2026 }],
     });
     expect(todo).toHaveLength(1);
     expect(todo[0].votes.map((v) => v.id)).toEqual(['v1']);
+  });
+
+  it("matches a link without a ticket to your showing of the same film under another title", () => {
+    const hit = screening('IDFA Hit: Siege', '2026-11-13T10:30:00.000Z', [FRIEND]);
+    const siege = screening('Siege', '2026-11-17T13:00:00.000Z', [ME]);
+    const keysByTitle = new Map([
+      ['IDFA Hit: Siege', 'film:1'],
+      ['Siege', 'film:1'],
+    ]);
+    const todo = buildTodo({
+      ...base,
+      screenings: [hit, siege],
+      keysByTitle,
+      toRate: [siege],
+      voteLinks: [{ id: 'spare', act: 'IDFA Hit: Siege', screeningId: null, festivalYear: 2026 }],
+    });
+    expect(todo).toHaveLength(1);
+    expect(todo[0]).toMatchObject({ rate: true, screening: { id: 'Siege' } });
+    expect(todo[0].votes.map((v) => v.id)).toEqual(['spare']);
   });
 
   it('gives a link without a ticket to your latest started showing with that title, else lists it last on its own', () => {
@@ -143,8 +162,8 @@ describe('buildTodo', () => {
       ...base,
       toRate: [],
       voteLinks: [
-        { id: 'spare', act: 'a', screeningId: null },
-        { id: 'lost', act: 'Elsewhere', screeningId: null },
+        { id: 'spare', act: 'a', screeningId: null, festivalYear: 2026 },
+        { id: 'lost', act: 'Elsewhere', screeningId: null, festivalYear: 2026 },
       ],
     });
     expect(todo.map((item) => [item.screening?.id ?? null, item.title])).toEqual([

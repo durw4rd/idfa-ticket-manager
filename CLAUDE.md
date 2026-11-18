@@ -34,7 +34,7 @@ When asked to ship (or "open a PR"), without further instructions:
 
 1. Branch off `main` (`feat/…`, `fix/…`), commit, push, and open a PR with `gh pr create`. The body says what changed and why, plus any migration to run.
 2. Additive, low-risk migrations (new tables, columns, indexes) are run on the database right away: there is only one. Ask before anything that drops data or rewrites rows.
-3. Ask Copilot for a review: `gh api repos/{owner}/{repo}/pulls/<n>/requested_reviewers -X POST -f 'reviewers[]=copilot-pull-request-reviewer[bot]'`. Wait for it (poll the PR's reviews every minute or two; it takes a few minutes).
+3. Ask Copilot for a review: `gh api repos/{owner}/{repo}/pulls/<n>/requested_reviewers -X POST -f 'reviewers[]=Copilot'`. The response lists no reviewers, but the PR timeline shows `review_requested Copilot`. Wait for the review: poll `pulls/<n>/reviews` in a background loop until a review from `copilot-pull-request-reviewer` arrives. It takes a few minutes.
 4. Address every finding: fix it, or reply on the thread with why not. Then run typecheck, lint, tests and build, push, resolve the threads, and request a new review.
 5. Repeat for up to 6 rounds. Merge (`gh pr merge --merge --delete-branch`) once a round brings no new findings that need changes and CI is green. If round 6 still has open findings, stop and report them instead of merging.
 

@@ -37,9 +37,10 @@ export default function VoteButtons({ links }: { links: Link[] }) {
       router.refresh();
       notifyTodoChanged();
     } catch (err) {
-      // Opening the link worked either way; only "Already voted" needs to say it didn't stick
+      // Back to "Vote", so another tap can try again. The link opened either way, so only
+      // "Already voted" needs to say it didn't stick.
+      setVoted((current) => new Set(Array.from(current).filter((id) => !ids.includes(id))));
       if (!fromLink) {
-        setVoted((current) => new Set(Array.from(current).filter((id) => !ids.includes(id))));
         setError(err instanceof Error ? err.message : 'Could not save your vote');
       }
     }

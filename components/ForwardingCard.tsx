@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, Copy, ExternalLink, Vote } from 'lucide-react';
+import { Check, Copy, ExternalLink } from 'lucide-react';
 import { Button, ButtonLink } from '@/components/ui/Button';
 import { Notice } from '@/components/ui/Field';
+import VoteButtons from '@/components/VoteButtons';
 
 /**
  * Your private address for forwarding IDFA's "Cast your vote" emails, how to set that up in
@@ -16,7 +17,7 @@ export default function ForwardingCard({
 }: {
   address: string;
   confirmUrl: string | null; // Gmail's "confirm forwarding" link, once its confirmation mail has arrived
-  spareLinks: { id: string; act: string; url: string }[];
+  spareLinks: { id: string; act: string; url: string; votedAt: string | null }[];
 }) {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -95,11 +96,10 @@ export default function ForwardingCard({
             <p className="mb-1.5 text-sm font-medium text-ink-2">Links without a ticket</p>
             <ul className="space-y-2">
               {spareLinks.map((link) => (
-                <li key={link.id} className="flex items-center gap-3">
+                <li key={link.id} className="flex flex-wrap items-center gap-x-3 gap-y-2">
                   <span className="min-w-0 flex-1 truncate font-display text-base">{link.act}</span>
-                  <ButtonLink href={link.url} external variant="secondary" size="sm" icon={<Vote className="h-4 w-4" />}>
-                    Vote
-                  </ButtonLink>
+                  {/* Opening it here counts as voting too, so it leaves the Films to-do list */}
+                  <VoteButtons links={[link]} />
                 </li>
               ))}
             </ul>

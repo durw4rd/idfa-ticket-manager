@@ -81,14 +81,18 @@ function useTodoCount(signedIn: boolean, pathname: string): number {
   useEffect(() => {
     if (!signedIn) return;
     let cancelled = false;
+    // Requests can finish out of order: only the latest one may set the count
+    let latest = 0;
     const load = () => {
+      const request = ++latest;
+      const current = () => !cancelled && request === latest;
       fetch('/api/todo', { cache: 'no-store' })
         .then((response) => (response.ok ? response.json() : null))
         .then((data) => {
-          if (!cancelled) setCount(typeof data?.count === 'number' ? data.count : 0);
+          if (current()) setCount(typeof data?.count === 'number' ? data.count : 0);
         })
         .catch(() => {
-          if (!cancelled) setCount(0);
+          if (current()) setCount(0);
         });
     };
     const onVisible = () => {

@@ -140,6 +140,7 @@ export function screeningsToRate(
 export interface TodoVoteLink {
   id: string;
   act: string;
+  festivalYear: number;
   screeningId: string | null;
 }
 
@@ -155,8 +156,8 @@ export interface TodoItem<L extends TodoVoteLink = TodoVoteLink> {
 /**
  * The to-do list: films to rate (from screeningsToRate) and unused Audience Award voting links,
  * one entry per film so a film waiting for both shows once. A link on a ticket goes with that
- * ticket's showing; a link without one with your most recent started showing of a film with that
- * title, or on its own when there's none. Most recent first, links without a showing last.
+ * ticket's showing; a link without one with your most recent started showing of that film (by
+ * film key, else by title), or on its own when there's none. Most recent first, links without a showing last.
  * Generic over the link so callers can carry the URL through without this module seeing it.
  */
 export function buildTodo<L extends TodoVoteLink>(input: {
@@ -182,11 +183,13 @@ export function buildTodo<L extends TodoVoteLink>(input: {
   }
   for (const link of voteLinks) {
     const wanted = comparableTitle(link.act);
+    const film = filmOf(link);
     const screening =
       (link.screeningId ? byId.get(link.screeningId) : undefined) ??
-      mineStarted.find((candidate) => comparableTitle(candidate.act) === wanted) ??
+      mineStarted.find((candidate) => filmOf(candidate) === film || comparableTitle(candidate.act) === wanted) ??
       null;
-    const key = screening ? filmOf(screening) : `link|${wanted}`;
+    // Without a showing, the link's own film key still merges it with anything else for that film
+    const key = screening ? filmOf(screening) : film;
     const item = items.get(key);
     if (item) {
       item.votes.push(link);

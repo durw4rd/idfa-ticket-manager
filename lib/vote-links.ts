@@ -162,6 +162,7 @@ export async function getSpareVoteLinks(email: string, festivalYear: number): Pr
 
 /** An unused voting link for the to-do list, with the screening its ticket is for (null without one) */
 export interface PendingVoteLink extends VoteLink {
+  festivalYear: number;
   screeningId: string | null;
 }
 
@@ -177,7 +178,8 @@ export async function getPendingVoteLinks(
     return [];
   }
   const result = await sql`
-    SELECT v.id, v.act, v.url, v.voted_at as "votedAt", t.act as "ticketAct", t.date, t.start
+    SELECT v.id, v.act, v.url, v.voted_at as "votedAt", v.festival_year as "festivalYear",
+           t.act as "ticketAct", t.date, t.start
     FROM vote_links v
     LEFT JOIN tickets t ON t.id = v.ticket_id
     WHERE v.festival_year = ${festivalYear} AND v.voted_at IS NULL
@@ -192,6 +194,7 @@ export async function getPendingVoteLinks(
     act: row.act,
     url: row.url,
     votedAt: row.votedAt,
+    festivalYear: row.festivalYear,
     screeningId: row.ticketAct ? screeningKey(row.ticketAct, row.date, row.start) : null,
   }));
 }
