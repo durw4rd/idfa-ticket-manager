@@ -518,8 +518,9 @@ const ATTEMPT_RETRY_HOURS = 6;
 /**
  * The places of the films the crew has tickets for in a festival year. A place saved while a title
  * had no IDFA page yet is stored under its title key; once the title is linked, it counts for the
- * film (a person's correction beating the AI's place, see pickStoredPlace) and is moved onto the
- * film's key, so the film's other titles show it too.
+ * film (a person's correction beating the AI's place, see pickStoredPlace) and is copied onto the
+ * film's key, so the film's other titles show it too. The title row stays: another crew may still
+ * have the title without its link.
  */
 export async function getFilmPlacesForYear(visibleEmails: string[], year: number): Promise<FilmPlaces> {
   const titles = await getFilmTitles(visibleEmails, year);
@@ -547,7 +548,11 @@ export async function getFilmPlacesForYear(visibleEmails: string[], year: number
   for (const { act } of titles) {
     const key = keysByTitle.get(act) ?? titleFilmKey(act);
     const titleKey = titleFilmKey(act);
-    if (key !== titleKey && byKey.has(titleKey)) toPromote.push({ titleKey, filmKey: key });
+    // Copied only while the title's row should win, so this isn't repeated on every load
+    const titleRow = byKey.get(titleKey);
+    if (key !== titleKey && titleRow && pickStoredPlace(byKey.get(key), titleRow) === titleRow) {
+      toPromote.push({ titleKey, filmKey: key });
+    }
     // Several titles can be one film: each one's title-key place is weighed against what the film has so far
     const place = pickStoredPlace((places.get(key) as StoredPlace | undefined) ?? byKey.get(key), byKey.get(titleKey));
     if (place) places.set(key, place);
@@ -564,9 +569,10 @@ export async function getFilmPlacesForYear(visibleEmails: string[], year: number
 }
 
 /**
- * Move places saved under a title key onto the film key the title now belongs to, keeping a
- * person's correction over the AI's place (and the newer of two corrections). Best effort: the
- * reads above already show the right place, and the next load tries again.
+ * Copy places saved under a title key onto the film key the title now belongs to, keeping a
+ * person's correction over the AI's place (and the newer of two corrections). One statement per
+ * title, and nothing is deleted, so a correction saved meanwhile is never lost: it's copied on the
+ * next load. Best effort: the reads above already show the right place.
  */
 async function promoteTitlePlaces(moves: Array<{ titleKey: string; filmKey: string }>, year: number): Promise<void> {
   try {
@@ -582,7 +588,6 @@ async function promoteTitlePlaces(moves: Array<{ titleKey: string; filmKey: stri
             WHERE EXCLUDED.source = 'manual'
               AND (film_places.source <> 'manual' OR EXCLUDED.updated_at > film_places.updated_at)
         `;
-        await query`DELETE FROM film_places WHERE film_key = ${titleKey} AND festival_year = ${year}`;
       }
     });
   } catch (error) {
@@ -624,10 +629,15 @@ export async function saveFilmPlace(
             lon = EXCLUDED.lon, source = EXCLUDED.source, updated_at = NOW()
         WHERE film_places.source <> 'manual' OR EXCLUDED.source = 'manual'
     `;
-    // A correction made under the title before its page was known is replaced by a manual save
-    // for the film; an AI result leaves it to win (see pickStoredPlace)
+    // A correction made under the title before its page was known gets the same value, so crews
+    // that have the title without its link see this one too (an AI result leaves it be)
     if (source === 'manual' && key !== titleFilmKey(act)) {
-      await query`DELETE FROM film_places WHERE film_key = ${titleFilmKey(act)} AND festival_year = ${year}`;
+      await query`
+        UPDATE film_places
+        SET place_name = ${value.placeName}, country = ${value.country}, lat = ${value.lat}, lon = ${value.lon},
+            source = 'manual', updated_at = NOW()
+        WHERE film_key = ${titleFilmKey(act)} AND festival_year = ${year}
+      `;
     }
     await query`DELETE FROM film_place_attempts WHERE film_key = ${key} AND festival_year = ${year}`;
   });

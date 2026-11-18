@@ -50,28 +50,40 @@ export async function invokeAgentConfig(
     return null;
   }
 
-  let enabled: boolean;
-  try {
-    const detail = await client.variationDetail(key, context, DISABLED_DEFAULT);
-    if (detail.reason.kind === 'ERROR') {
-      console.warn(`AgentControl config "${key}" unavailable (${detail.reason.errorKind ?? 'error'}), using fallback model`);
-      return null;
-    }
-    const value = detail.value as { _ldMeta?: { enabled?: unknown } } | null;
-    enabled = value?._ldMeta?.enabled === true;
-  } catch (error) {
-    console.warn(`AgentControl config "${key}" unavailable, using fallback model:`, error);
-    return null;
-  }
-  if (!enabled) {
-    return { disabled: true };
+  const state = await configState(client, key, context);
+  if (state !== 'enabled') {
+    return state === 'disabled' ? { disabled: true } : null;
   }
 
   try {
     const result = await config({ key, handler: getHandlers() }).invoke(input, context, variables, history);
     return { disabled: false, response: result.response };
   } catch (error) {
+    // Switched off between the check above and invoke()'s own evaluation: still off, no fallback
+    if ((await configState(client, key, context)) === 'disabled') {
+      return { disabled: true };
+    }
     console.warn(`AgentControl config "${key}" unavailable, using fallback model:`, error);
     return null;
+  }
+}
+
+/** Whether LaunchDarkly serves the config enabled, deliberately disabled, or can't say */
+async function configState(
+  client: NonNullable<Awaited<ReturnType<typeof getLdClient>>>,
+  key: string,
+  context: LDContext
+): Promise<'enabled' | 'disabled' | 'unavailable'> {
+  try {
+    const detail = await client.variationDetail(key, context, DISABLED_DEFAULT);
+    if (detail.reason.kind === 'ERROR') {
+      console.warn(`AgentControl config "${key}" unavailable (${detail.reason.errorKind ?? 'error'}), using fallback model`);
+      return 'unavailable';
+    }
+    const value = detail.value as { _ldMeta?: { enabled?: unknown } } | null;
+    return value?._ldMeta?.enabled === true ? 'enabled' : 'disabled';
+  } catch (error) {
+    console.warn(`AgentControl config "${key}" unavailable, using fallback model:`, error);
+    return 'unavailable';
   }
 }

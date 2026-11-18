@@ -68,6 +68,12 @@ describe('invokeAgentConfig', () => {
     expect(ldClient.variationDetail).not.toHaveBeenCalled();
   });
 
+  it('reports disabled when the config is switched off between the check and the call', async () => {
+    ldClient.variationDetail.mockResolvedValueOnce(served(true)).mockResolvedValueOnce(served(false, 'OFF'));
+    invoke.mockRejectedValue(new Error('Variation vote-link-extraction is not enabled'));
+    expect(await invokeAgentConfig('vote-link-extraction', CONTEXT)).toEqual({ disabled: true });
+  });
+
   it('returns null when the served model call itself fails', async () => {
     ldClient.variationDetail.mockResolvedValue(served(true));
     invoke.mockRejectedValue(new Error('provider outage'));
