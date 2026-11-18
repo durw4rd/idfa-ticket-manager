@@ -523,8 +523,7 @@ const ATTEMPT_RETRY_HOURS = 6;
  * have the title without its link.
  */
 export async function getFilmPlacesForYear(visibleEmails: string[], year: number): Promise<FilmPlaces> {
-  const titles = await getFilmTitles(visibleEmails, year);
-  const keysByTitle = filmKeysByTitle(titles);
+  const { titles, keysByTitle } = await getPlaceFilmKeys(visibleEmails, year);
   const keys = Array.from(new Set([...keysByTitle.values(), ...titles.map(({ act }) => titleFilmKey(act))]));
   if (keys.length === 0) {
     return { titles, keysByTitle, places: new Map(), recentlyAttempted: new Set() };
@@ -569,6 +568,25 @@ export async function getFilmPlacesForYear(visibleEmails: string[], year: number
 }
 
 /**
+ * The crew's ticket titles for a year and which film each is, worked out like the ratings' keys:
+ * a rating can remember a title's film after its last linked ticket is gone, and the place should
+ * stay with the film then too (see filmKeysByTitle).
+ */
+async function getPlaceFilmKeys(
+  visibleEmails: string[],
+  year: number
+): Promise<{ titles: Array<{ act: string; festivalLink: string | null }>; keysByTitle: Map<string, string> }> {
+  const [titles, ratings] = await Promise.all([
+    getFilmTitles(visibleEmails, year),
+    sql`
+      SELECT act, film_key AS "filmKey" FROM ratings
+      WHERE festival_year = ${year} AND user_email = ANY(${visibleEmails as any}::text[])
+    `,
+  ]);
+  return { titles, keysByTitle: filmKeysByTitle(titles, ratings.rows as Array<{ act: string; filmKey: string | null }>) };
+}
+
+/**
  * Copy places saved under a title key onto the film key the title now belongs to, keeping a
  * person's correction over the AI's place (and the newer of two corrections). One statement per
  * title, and nothing is deleted, so a correction saved meanwhile is never lost: it's copied on the
@@ -603,22 +621,28 @@ export async function getFilmPlace(visibleEmails: string[], act: string, year: n
 
 /**
  * Store where the film `act` belongs to takes place: a place, or null for "no single place" (the
- * AI's finding with source 'none', or a person's choice with source 'manual'). Returns false when
- * nobody in the crew has a ticket with that title this year. A person's choice, place or no place,
- * is never replaced by the AI's: only another manual one overwrites it.
+ * AI's finding with source 'none', or a person's choice with source 'manual'). Returns false, saving
+ * nothing, when nobody in the crew has a ticket with that title this year, or when `expectedKey` is
+ * given and the title is no longer that film (a lookup whose ticket was corrected meanwhile). A
+ * person's choice, place or no place, is never replaced by the AI's: only another manual one
+ * overwrites it.
  */
 export async function saveFilmPlace(
   visibleEmails: string[],
   act: string,
   year: number,
   place: Omit<FilmPlace, 'source'> | null,
-  source: FilmPlace['source']
+  source: FilmPlace['source'],
+  { expectedKey }: { expectedKey?: string } = {}
 ): Promise<boolean> {
-  const titles = await getFilmTitles(visibleEmails, year);
+  const { titles, keysByTitle } = await getPlaceFilmKeys(visibleEmails, year);
   if (!titles.some((title) => title.act === act)) {
     return false;
   }
-  const key = filmKeysByTitle(titles).get(act) ?? titleFilmKey(act);
+  const key = keysByTitle.get(act) ?? titleFilmKey(act);
+  if (expectedKey && key !== expectedKey) {
+    return false;
+  }
   const value = !place || source === 'none' ? { placeName: null, country: null, lat: null, lon: null } : place;
   await withTransaction(async (query) => {
     await query`

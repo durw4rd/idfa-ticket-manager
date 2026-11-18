@@ -194,12 +194,16 @@ export async function placeFilm(
   if (found === null) {
     return { outcome: 'failed' };
   }
-  if (found === 'none') {
-    await saveFilmPlace(viewer.visibleEmails, act, year, null, 'none');
-    return { outcome: 'none' };
+  // Saved only if the title is still the film whose page was read: a ticket corrected or deleted
+  // during the lookup would otherwise put this film's place on another
+  const saved = await saveFilmPlace(viewer.visibleEmails, act, year, found === 'none' ? null : found, found === 'none' ? 'none' : 'ai', {
+    expectedKey: key,
+  });
+  if (!saved) {
+    await releaseFilmPlaceClaim(key, year);
+    return { outcome: 'skipped' };
   }
-  await saveFilmPlace(viewer.visibleEmails, act, year, found, 'ai');
-  return { outcome: 'placed', place: found };
+  return found === 'none' ? { outcome: 'none' } : { outcome: 'placed', place: found };
 }
 
 /**

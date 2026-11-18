@@ -298,21 +298,34 @@ export default function WorldMap({
   });
   const labels = chooseLabels(visible, pinById, shown, width, selected);
 
-  /** Select places, and move the map if the details panel would cover them */
-  const select = (members: MapPin[]) => {
-    onSelect(members.map((pin) => pin.id));
+  /** Move the map if the details panel (`inset` pixels at the bottom) would cover these places */
+  const reveal = (members: MapPin[], inset: number) => {
     const current = viewRef.current;
-    if (!current || !height) return;
+    if (!current || !height || members.length === 0) return;
     const ys = members.map((pin) => toScreen(pin.point, current, width)[1]);
     const lowest = Math.max(...ys);
-    const clearUntil = (height - bottomInset) * 0.85;
+    const clearUntil = (height - inset) * 0.85;
     if (lowest > clearUntil || Math.min(...ys) < 0) {
       // Put them in the middle of the part of the map the panel leaves visible
-      const target = (height - Math.max(bottomInset, height * 0.45)) / 2;
+      const target = (height - Math.max(inset, height * 0.45)) / 2;
       const shift = ((ys.reduce((a, b) => a + b, 0) / ys.length - target) / width) * current.w;
       moveTo(clampView({ ...current, y: current.y + shift }));
     }
   };
+
+  /** Select places, and move the map if the details panel would cover them */
+  const select = (members: MapPin[]) => {
+    onSelect(members.map((pin) => pin.id));
+    reveal(members, bottomInset);
+  };
+
+  // The panel's height is only known once it has opened (and changes with its content): check
+  // again then, so a pin it covers is moved into view
+  useEffect(() => {
+    if (bottomInset > 0) reveal(selectedIds.map((id) => pinById.get(id)).filter((pin): pin is MapPin => !!pin), bottomInset);
+    // Only when the panel's height changes; the selection itself is revealed by select()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bottomInset]);
 
   /** Zoom in on a cluster; one whose places are too close to split even fully zoomed is selected instead */
   const openCluster = (members: MapPin[]) => {
