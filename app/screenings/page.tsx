@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { after } from 'next/server';
-import { getFestivalYears, getFilmPlacesForYear, getScreeningsForYear, type FilmPlaces } from '@/lib/db';
+import { getFestivalYears, withCurrentYear, getFilmPlacesForYear, getScreeningsForYear, type FilmPlaces } from '@/lib/db';
 import { fillMissingFilmPlaces } from '@/lib/find-film-place';
 import { titleFilmKey } from '@/lib/films';
 import type { MapPlaceData } from '@/lib/types';
@@ -43,7 +43,7 @@ export default async function ScreeningsPage({
     }),
   ]);
   // Only years someone in the crew has tickets for, plus this one: ?year=1900 isn't a festival
-  if (year !== currentYear && !festivalYears.includes(year)) {
+  if (year !== currentYear && !festivalYears.some((entry) => entry.year === year)) {
     redirect('/screenings');
   }
   const now = getNow();
@@ -51,7 +51,7 @@ export default async function ScreeningsPage({
   const availability = await getAvailabilityForScreenings(screenings, now, userContext(viewer.email));
   // End times and Q&A are stored on the tickets; catch up with the IDFA site once the page is sent
   after(() => refreshShowDetails(viewer.visibleEmails, screenings, now, userContext(viewer.email)));
-  const years = Array.from(new Set([currentYear, ...festivalYears])).sort((a, b) => b - a);
+  const years = withCurrentYear(festivalYears, currentYear);
   // Films with an IDFA page but no place yet are placed after the page is sent, a few per visit
   if (filmPlaces && hasUnplacedFilms(filmPlaces)) {
     after(() => fillMissingFilmPlaces(viewer, year, userContext(viewer.email)));
@@ -67,6 +67,7 @@ export default async function ScreeningsPage({
       crew={crew}
       year={year}
       years={years}
+      pastEdition={year < currentYear}
       now={now.toISOString()}
       placeData={placeData}
       actions={screenings.length > 0 ? <SharePosterButton key="share" year={year} crew={crew} /> : undefined}
