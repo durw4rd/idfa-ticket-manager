@@ -16,7 +16,7 @@ export interface PageResult extends ProcessedTicketResult {
   fileName: string;
   pageNumber: number;
   // Kept for a page that failed, so it can be tried again without choosing the file again
-  retry?: { imageData: string; pdfUrl: string };
+  retry?: PageSource;
 }
 
 export interface ReviewItem {
@@ -35,18 +35,36 @@ function fieldsChanged(a: ExtractedTicketFields, b: ExtractedTicketFields): bool
 // (createTicketUnlessDuplicate) keeps concurrent inserts safe
 const CONCURRENT_PAGES = 2;
 
+/** What the server needs to read one page. `pdfHash` identifies tickets without a QR code. */
+interface PageSource {
+  imageData: string;
+  pdfUrl: string;
+  pdfHash?: string;
+}
+
+// The duplicate key for tickets from older editions, which have no QR code. crypto.subtle needs a
+// secure context; without one those tickets just can't be checked for duplicates.
+async function hashFile(file: File): Promise<string | undefined> {
+  try {
+    const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  } catch {
+    return undefined;
+  }
+}
+
 /** Send one page to the server (one per request keeps bodies under Vercel's 4.5 MB limit) */
-async function processPage(fileName: string, pageNumber: number, imageData: string, pdfUrl: string): Promise<PageResult> {
+async function processPage(fileName: string, pageNumber: number, source: PageSource): Promise<PageResult> {
   try {
     const response = await fetch('/api/process-pdf', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pageImages: [{ pageNumber, imageData, pdfUrl }] }),
+      body: JSON.stringify({ pageImages: [{ pageNumber, ...source }] }),
     });
     const summary = await readApiResponse<PDFProcessingSummary>(response, 'Failed to process ticket');
     const result: PageResult = { ...summary.tickets[0], fileName, pageNumber };
     // A duplicate is final; anything else that failed can be tried again
-    return result.success || result.duplicate ? result : { ...result, retry: { imageData, pdfUrl } };
+    return result.success || result.duplicate ? result : { ...result, retry: source };
   } catch (err) {
     return {
       ticketId: '',
@@ -55,7 +73,7 @@ async function processPage(fileName: string, pageNumber: number, imageData: stri
       error: err instanceof Error ? err.message : 'Unknown error',
       fileName,
       pageNumber,
-      retry: { imageData, pdfUrl },
+      retry: source,
     };
   }
 }
@@ -101,7 +119,12 @@ export default function UploadTicket({ crew }: { crew: CrewMember[] }) {
 
     try {
       // Convert all PDFs to page images on the client first, so we know the total page count
-      const pdfs: Array<{ file: File; pages: Awaited<ReturnType<typeof pdfFileToImages>>; pdfUrl: string }> = [];
+      const pdfs: Array<{
+        file: File;
+        pages: Awaited<ReturnType<typeof pdfFileToImages>>;
+        pdfUrl: string;
+        pdfHash?: string;
+      }> = [];
       for (let i = 0; i < pdfFiles.length; i++) {
         const file = pdfFiles[i];
         setStatus(`Opening ${file.name}`);
@@ -127,7 +150,7 @@ export default function UploadTicket({ crew }: { crew: CrewMember[] }) {
           console.warn('Failed to upload PDF, continuing without PDF URL:', e);
         }
 
-        pdfs.push({ file, pages, pdfUrl });
+        pdfs.push({ file, pages, pdfUrl, pdfHash: await hashFile(file) });
       }
 
       const jobs = pdfs.flatMap((pdf) => pdf.pages.map((page) => ({ pdf, page })));
@@ -141,7 +164,11 @@ export default function UploadTicket({ crew }: { crew: CrewMember[] }) {
         while (nextJob < jobs.length) {
           const index = nextJob++;
           const { pdf, page } = jobs[index];
-          pageResults[index] = await processPage(pdf.file.name, page.pageNumber, page.imageData, pdf.pdfUrl);
+          pageResults[index] = await processPage(pdf.file.name, page.pageNumber, {
+            imageData: page.imageData,
+            pdfUrl: pdf.pdfUrl,
+            pdfHash: pdf.pdfHash,
+          });
           processed++;
           setStatus(`Read ${processed} of ${jobs.length} ${jobs.length === 1 ? 'ticket' : 'tickets'}`);
           setProgress({ current: processed, total: jobs.length });
@@ -168,7 +195,7 @@ export default function UploadTicket({ crew }: { crew: CrewMember[] }) {
     if (!failed?.retry) return;
     setBusyKey(`page-${index}`);
     setError(null);
-    const result = await processPage(failed.fileName, failed.pageNumber, failed.retry.imageData, failed.retry.pdfUrl);
+    const result = await processPage(failed.fileName, failed.pageNumber, failed.retry);
     setResults((current) => current.map((r, i) => (i === index ? result : r)));
     if (result.success && result.extracted) {
       setReviewItems((items) => [...items, toReviewItem(result, me.email)]);

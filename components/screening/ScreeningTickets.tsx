@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowRightLeft, Loader2, MoreHorizontal, Pencil, QrCode, Trash2 } from 'lucide-react';
+import { ArrowRightLeft, Loader2, MoreHorizontal, Pencil, QrCode, Ticket, Trash2 } from 'lucide-react';
 import type { CrewMember, ExtractedTicketFields } from '@/lib/types';
 import { makeCrewLookup, screeningHref, screeningKey } from '@/lib/agenda';
 import { readApiResponse } from '@/lib/api-client';
@@ -18,6 +18,7 @@ export interface ScreeningTicket {
   id: string;
   ownerEmail: string;
   holderEmail: string;
+  hasQr: boolean; // Tickets from older editions have no QR code
   fields: ExtractedTicketFields;
 }
 
@@ -57,14 +58,15 @@ export default function ScreeningTickets({
   const ordered = [...tickets].sort(
     (a, b) => Number(b.holderEmail === meEmail) - Number(a.holderEmail === meEmail)
   );
-  const qrTickets: QrTicket[] = ordered.map((ticket, index) => ({
+  const withQr = ordered.filter((ticket) => ticket.hasQr);
+  const qrTickets: QrTicket[] = withQr.map((ticket, index) => ({
     id: ticket.id,
     title,
     meta,
     holder: lookup(ticket.holderEmail).name,
-    label: ordered.length > 1 ? `${index + 1} of ${ordered.length}` : undefined,
+    label: withQr.length > 1 ? `${index + 1} of ${withQr.length}` : undefined,
   }));
-  const mineCount = ordered.filter((ticket) => ticket.holderEmail === meEmail).length;
+  const mineCount = withQr.filter((ticket) => ticket.holderEmail === meEmail).length;
 
   const close = () => {
     setPanel(null);
@@ -141,32 +143,45 @@ export default function ScreeningTickets({
 
   return (
     <>
-      <Button
-        variant="spark"
-        className="w-full"
-        icon={<QrCode className="h-5 w-5" />}
-        onClick={() => setOverlay({ tickets: qrTickets, index: 0 })}
-      >
-        {mineCount > 0
-          ? `Show my ticket${mineCount > 1 ? 's' : ''}`
-          : `Show ticket${tickets.length > 1 ? 's' : ''}`}
-      </Button>
+      {withQr.length > 0 && (
+        <Button
+          variant="spark"
+          className="mb-3 w-full"
+          icon={<QrCode className="h-5 w-5" />}
+          onClick={() => setOverlay({ tickets: qrTickets, index: 0 })}
+        >
+          {mineCount > 0
+            ? `Show my ticket${mineCount > 1 ? 's' : ''}`
+            : `Show ticket${withQr.length > 1 ? 's' : ''}`}
+        </Button>
+      )}
 
-      <ul className="mt-3 divide-y divide-line rounded border border-line bg-surface">
+      <ul className="divide-y divide-line rounded border border-line bg-surface">
         {ordered.map((ticket, index) => {
           const holder = lookup(ticket.holderEmail);
           const isOwner = ticket.ownerEmail === meEmail;
           const canPassOn = isOwner || ticket.holderEmail === meEmail;
           return (
             <li key={ticket.id} className="flex items-center gap-3 p-3">
-              <button
-                type="button"
-                onClick={() => setOverlay({ tickets: qrTickets, index: index })}
-                aria-label={`Show QR code for ${holder.name}'s ticket`}
-                className="h-14 w-14 shrink-0 overflow-hidden rounded bg-white p-1 ring-1 ring-line"
-              >
-                <QrImage ticketId={ticket.id} alt="" compact className="h-full w-full object-contain" />
-              </button>
+              {ticket.hasQr ? (
+                <button
+                  type="button"
+                  onClick={() => setOverlay({ tickets: qrTickets, index: withQr.indexOf(ticket) })}
+                  aria-label={`Show QR code for ${holder.name}'s ticket`}
+                  className="h-14 w-14 shrink-0 overflow-hidden rounded bg-white p-1 ring-1 ring-line"
+                >
+                  <QrImage ticketId={ticket.id} alt="" compact className="h-full w-full object-contain" />
+                </button>
+              ) : (
+                <span
+                  role="img"
+                  aria-label="No QR code on this ticket"
+                  title="No QR code on this ticket"
+                  className="flex h-14 w-14 shrink-0 items-center justify-center rounded bg-surface ring-1 ring-line"
+                >
+                  <Ticket className="h-6 w-6 text-ink-3" aria-hidden />
+                </span>
+              )}
               <div className="min-w-0 flex-1">
                 <p className="flex items-center gap-2 font-semibold">
                   <Avatar member={holder} size="xs" />

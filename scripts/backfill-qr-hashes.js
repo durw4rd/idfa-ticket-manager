@@ -73,7 +73,9 @@ async function decodeQrPayload(imageBuffer) {
 
 async function main() {
   const { rows: tickets } = await sql`
-    SELECT id, act, date, qr_code_url FROM tickets WHERE qr_hash IS NULL ORDER BY created_at ASC
+    SELECT id, act, date, qr_code_url FROM tickets
+    WHERE qr_hash IS NULL AND qr_code_url <> '' -- tickets from older editions have no QR code
+    ORDER BY created_at ASC
   `;
 
   console.log(`Found ${tickets.length} tickets without a QR hash${dryRun ? ' (dry run)' : ''}`);

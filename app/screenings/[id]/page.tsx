@@ -229,6 +229,7 @@ export default async function ScreeningDetailPage({
               id: ticket.id,
               ownerEmail: ticket.ownerEmail,
               holderEmail: ticket.holderEmail,
+              hasQr: Boolean(ticket.qrCodeUrl),
               fields: { act: ticket.act, location: ticket.location, date: ticket.date, start: ticket.start },
             }))}
             crew={crew}
