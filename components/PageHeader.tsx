@@ -30,7 +30,11 @@ export default function PageHeader({
         {back}
         <div className="min-w-0 flex-1">
           {eyebrow && <p className="label leading-none">{eyebrow}</p>}
-          <h1 className="truncate font-display text-lg">{title}</h1>
+          {/* Only text titles are truncated here: overflow on the h1 itself would clip a control's
+              44px touch target and focus ring (YearPicker truncates its own label) */}
+          <h1 className="font-display text-lg">
+            {typeof title === 'string' ? <span className="block truncate">{title}</span> : title}
+          </h1>
         </div>
         {actions}
         {me && (
