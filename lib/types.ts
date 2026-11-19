@@ -6,7 +6,7 @@ export interface Ticket {
   location: string;
   date: string; // DD-MM-YYYY format
   start: string; // HH:MM AM/PM format
-  qrCodeUrl: string;
+  qrCodeUrl: string; // '' for tickets from older editions, which have no QR code
   pdfUrl: string;
   transactionId?: string;
   festivalLink?: string; // URL to IDFA festival page
@@ -14,7 +14,9 @@ export interface Ticket {
   holderEmail: string; // Who will use the ticket; the owner or the holder can reassign it
   festivalYear: number;
   startsAt: Date;
-  qrHash?: string | null; // SHA-256 of the decoded QR payload, used to detect duplicates
+  // Duplicate key: SHA-256 of the decoded QR payload, or for a ticket without a QR code (older
+  // editions) of its PDF file and page; see lib/ticket-dedup.ts
+  qrHash?: string | null;
   endsAt?: Date | null; // From the IDFA site, not the ticket; null when IDFA hasn't told us
   hasQa?: boolean | null; // Q&A after the film, from the IDFA site; null when unknown
   createdAt: Date;
