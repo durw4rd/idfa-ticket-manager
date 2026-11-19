@@ -129,6 +129,12 @@ export interface CrewMember {
 }
 
 // Ticket sales on the IDFA site for a screening; screenings with plenty left aren't marked
+/** A festival year someone visible has tickets for, for the year picker */
+export interface FestivalYear {
+  year: number;
+  tickets: number;
+}
+
 export type TicketAvailability = 'sold-out' | 'low';
 
 // A screening as sent to client components: plain JSON, no blob URLs
