@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Share } from 'lucide-react';
+import { Share2 } from 'lucide-react';
 import type { CrewMember } from '@/lib/types';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
@@ -39,7 +39,7 @@ export default function SharePosterButton({
         variant="ghost"
         size="icon"
         aria-label="Share agenda poster"
-        icon={<Share className="h-5 w-5" />}
+        icon={<Share2 className="h-5 w-5" />}
         onClick={() => setOpen(true)}
       />
       <ImageShareSheet

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Share } from 'lucide-react';
+import { Share2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { ImageShareSheet } from '@/components/ui/ImageShareSheet';
 
@@ -17,7 +17,7 @@ export default function ShareReviewButton({ year }: { year: number }) {
         variant="ghost"
         size="icon"
         aria-label="Share your festival review"
-        icon={<Share className="h-5 w-5" />}
+        icon={<Share2 className="h-5 w-5" />}
         onClick={() => setOpen(true)}
       />
       <ImageShareSheet

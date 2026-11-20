@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { Download, Loader2, Share } from 'lucide-react';
+import { Download, Loader2, Share2 } from 'lucide-react';
 import { redirectToSignIn } from '@/lib/api-client';
 import { Sheet } from './Sheet';
 import { Button } from './Button';
@@ -111,7 +111,7 @@ export function ImageShareSheet({
 
       <div className="mt-4 flex gap-2">
         {canShare && (
-          <Button className="flex-1" icon={<Share className="h-5 w-5" />} onClick={share} disabled={loading}>
+          <Button className="flex-1" icon={<Share2 className="h-5 w-5" />} onClick={share} disabled={loading}>
             Share
           </Button>
         )}
