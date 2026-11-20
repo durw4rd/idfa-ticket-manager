@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Share2 } from 'lucide-react';
 import type { CrewMember } from '@/lib/types';
+import { clientNow } from '@/lib/use-now';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
 import { Avatar } from '@/components/ui/Avatar';
@@ -18,13 +19,17 @@ type When = 'upcoming' | 'all';
 export default function SharePosterButton({
   year,
   crew,
-  canPickUpcoming,
+  startTimes,
+  now,
 }: {
   year: number;
   crew: CrewMember[];
-  canPickUpcoming: boolean; // The year has screenings both behind and ahead
+  startTimes: string[]; // Every screening's start (ISO), to tell which have begun
+  now: string; // From the server, so TEST_DATE applies here too
 }) {
   const [open, setOpen] = useState(false);
+  // Worked out on each open, from the clock then: a page left open passes screening starts
+  const [canPickUpcoming, setCanPickUpcoming] = useState(false);
   // 'all' or an index into `crew`, matching the poster route's `who` parameter
   const [who, setWho] = useState<string>(String(crew.findIndex((member) => member.isMe)));
   const [picked, setPicked] = useState<When>('upcoming');
@@ -40,7 +45,13 @@ export default function SharePosterButton({
         size="icon"
         aria-label="Share agenda poster"
         icon={<Share2 className="h-5 w-5" />}
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          // Started counts as past, as in the poster's upcoming filter: you can't join it any more
+          const at = clientNow(now).getTime();
+          const starts = startTimes.map((start) => new Date(start).getTime());
+          setCanPickUpcoming(starts.some((start) => start <= at) && starts.some((start) => start > at));
+          setOpen(true);
+        }}
       />
       <ImageShareSheet
         open={open}

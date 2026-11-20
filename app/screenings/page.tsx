@@ -76,11 +76,8 @@ export default async function ScreeningsPage({
             key="share"
             year={year}
             crew={crew}
-            // Started counts as past, as in the poster's upcoming filter: you can't join it any more
-            canPickUpcoming={
-              screenings.some((screening) => screening.dateTime <= now) &&
-              screenings.some((screening) => screening.dateTime > now)
-            }
+            startTimes={screenings.map((screening) => screening.dateTime.toISOString())}
+            now={now.toISOString()}
           />
         ) : undefined
       }
