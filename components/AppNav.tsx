@@ -31,8 +31,8 @@ export default function AppNav() {
 function TabBar() {
   const pathname = usePathname();
   const { status } = useSession();
-  const todoCount = useTodoCount(status === 'authenticated', pathname);
   const year = useSelectedYear(pathname);
+  const todoCount = useTodoCount(status === 'authenticated', pathname, year);
 
   if (status !== 'authenticated') {
     return null;
@@ -116,11 +116,12 @@ function useSelectedYear(pathname: string): string | null {
 }
 
 /**
- * How many films are on the Films page's to-do list. Asked again on every page change, when the
- * app comes back to the foreground, and after a rating or vote is saved. A failed request shows
- * no count: it's a nudge, never worth an error.
+ * How many films are on the Films page's to-do list, for the year the Films tab opens (this one
+ * when year is null). Asked again on every page change, when the year changes, when the app comes
+ * back to the foreground, and after a rating or vote is saved. A failed request shows no count:
+ * it's a nudge, never worth an error.
  */
-function useTodoCount(signedIn: boolean, pathname: string): number {
+function useTodoCount(signedIn: boolean, pathname: string, year: string | null): number {
   const [count, setCount] = useState(0);
 
   useEffect(() => {
@@ -131,7 +132,7 @@ function useTodoCount(signedIn: boolean, pathname: string): number {
     const load = () => {
       const request = ++latest;
       const current = () => !cancelled && request === latest;
-      fetch('/api/todo', { cache: 'no-store' })
+      fetch(year ? `/api/todo?year=${year}` : '/api/todo', { cache: 'no-store' })
         .then((response) => (response.ok ? response.json() : null))
         .then((data) => {
           if (current()) setCount(typeof data?.count === 'number' ? data.count : 0);
@@ -151,7 +152,7 @@ function useTodoCount(signedIn: boolean, pathname: string): number {
       window.removeEventListener(TODO_CHANGED_EVENT, load);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [signedIn, pathname]);
+  }, [signedIn, pathname, year]);
 
   return signedIn ? count : 0;
 }
