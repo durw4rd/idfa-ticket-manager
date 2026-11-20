@@ -5,11 +5,11 @@ import { getFestivalYears, withCurrentYear, getRatingsForYear, getScreeningsForY
 import { getCrew } from '@/lib/groups';
 import { getViewer } from '@/lib/auth-helpers';
 import { formatDate, getCurrentFestivalYear, getNow } from '@/lib/dates';
-import { makeCrewLookup, screeningHref, toAgendaScreening } from '@/lib/agenda';
-import { titleFilmKey } from '@/lib/films';
+import { filmShowings, makeCrewLookup, screeningHref, toAgendaScreening } from '@/lib/agenda';
 import { getPendingVoteLinksOrNone, todoFrom } from '@/lib/reminders';
 import type { AgendaScreening, Rating } from '@/lib/types';
 import PageHeader from '@/components/PageHeader';
+import ShareReviewButton from '@/components/films/ShareReviewButton';
 import YearPicker from '@/components/YearPicker';
 import RatingInput from '@/components/RatingInput';
 import VoteButtons from '@/components/VoteButtons';
@@ -58,22 +58,13 @@ export default async function FilmsPage({ searchParams }: { searchParams: Promis
   const lookup = makeCrewLookup(crew);
   const agenda = screenings.map(toAgendaScreening);
 
-  // Which titles are the same film ("Lonan Tché" and "Lonan Tché + Talk"), from getRatingsForYear,
-  // so the ratings' keys and the screenings' keys agree
-  const filmOf = (screening: AgendaScreening) => keysByTitle.get(screening.act) ?? titleFilmKey(screening.act);
   const myRatings = ratings.filter((rating) => rating.userEmail === viewer.email);
   // Films waiting for your rating or your Audience Award vote, one card each
   const todo = todoFrom({ viewer, agenda, ratings, keysByTitle, voteLinks, now });
 
-  // Each film's first screening, which its entry links to; the shortest title names it, as the
-  // longer ones add a series or a talk ("IDFA Hit: …", "… + Talk")
-  const showings = new Map<string, { screening: AgendaScreening; title: string }>();
-  for (const screening of agenda) {
-    const key = filmOf(screening);
-    const known = showings.get(key);
-    if (!known) showings.set(key, { screening, title: screening.act });
-    else if (screening.act.length < known.title.length) known.title = screening.act;
-  }
+  // Each film's first screening, which its entry links to, and the title that names it. keysByTitle
+  // (from getRatingsForYear) says which titles are one film, so the screenings' keys match the ratings'
+  const showings = filmShowings(agenda, keysByTitle);
 
   // Every film someone in the crew has rated, best (by your score, then the crew's) first
   const films: Film[] = Array.from(new Set(ratings.map((rating) => rating.filmKey)))
@@ -106,6 +97,7 @@ export default async function FilmsPage({ searchParams }: { searchParams: Promis
         title="Films"
         eyebrow={<YearPicker variant="eyebrow" years={years} selectedYear={year} basePath="/films" />}
         me={crew.find((member) => member.isMe)}
+        actions={myRatings.length > 0 ? <ShareReviewButton key="share" year={year} /> : undefined}
       />
 
       {year < currentYear && (

@@ -70,7 +70,20 @@ export default async function ScreeningsPage({
       pastEdition={year < currentYear}
       now={now.toISOString()}
       placeData={placeData}
-      actions={screenings.length > 0 ? <SharePosterButton key="share" year={year} crew={crew} /> : undefined}
+      actions={
+        screenings.length > 0 ? (
+          <SharePosterButton
+            key="share"
+            year={year}
+            crew={crew}
+            // Started counts as past, as in the poster's upcoming filter: you can't join it any more
+            canPickUpcoming={
+              screenings.some((screening) => screening.dateTime <= now) &&
+              screenings.some((screening) => screening.dateTime > now)
+            }
+          />
+        ) : undefined
+      }
     />
   );
 }
