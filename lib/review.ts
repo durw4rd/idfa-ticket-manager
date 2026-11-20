@@ -2,13 +2,14 @@
 
 import type { AgendaScreening, FilmPlace, Rating } from './types';
 import { filmShowings } from './agenda';
+import { titleFilmKey } from './films';
 import { project, toScreen, type ViewBox } from './world-map';
 
 export interface ReviewEntry {
   key: string; // The film (see lib/films.ts)
   title: string;
   rating: number; // 1-10
-  festivalLink: string | null; // For the synopsis, from the film's first showing
+  festivalLink: string | null; // For the synopsis: the first showing's link, else any showing's
   place: { name: string | null; country: string; lat: number; lon: number } | null;
 }
 
@@ -31,10 +32,15 @@ export function buildReview(input: {
   places: Map<string, Pick<FilmPlace, 'placeName' | 'country' | 'lat' | 'lon'>>;
   me: string;
 }): Review {
-  const showings = filmShowings(
-    [...input.screenings].sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
-    input.keysByTitle
-  );
+  const sorted = [...input.screenings].sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+  const showings = filmShowings(sorted, input.keysByTitle);
+  // The first link any showing of each film has: the first showing can be a title IDFA's page
+  // wasn't found for, while a later one ("… + Talk") has it
+  const links = new Map<string, string>();
+  for (const screening of sorted) {
+    const key = input.keysByTitle.get(screening.act) ?? titleFilmKey(screening.act);
+    if (screening.festivalLink && !links.has(key)) links.set(key, screening.festivalLink);
+  }
   const entries = input.ratings
     .filter((rating) => rating.userEmail === input.me)
     .map((rating): ReviewEntry => {
@@ -45,7 +51,7 @@ export function buildReview(input: {
         key: rating.filmKey,
         title: showing?.title ?? rating.act,
         rating: rating.rating,
-        festivalLink: showing?.screening.festivalLink ?? null,
+        festivalLink: links.get(rating.filmKey) ?? null,
         place: placed ? { name: stored.placeName, country: stored.country!, lat: stored.lat!, lon: stored.lon! } : null,
       };
     })
@@ -58,25 +64,59 @@ export function buildReview(input: {
   };
 }
 
+export const REVIEW_PIN_HEIGHT = 44;
+// Room kept between two pins' badges
+const PIN_GAP = 4;
+
 export interface ReviewPin {
-  x: number; // CSS pixels in the map frame
+  x: number; // Centre, in CSS pixels in the map frame
   y: number;
-  ranks: number[]; // 1-based places in the list of the films at this pin
+  ranks: number[]; // 1-based places in the list of the films at this pin, lowest first
+  label: string; // "3", "1·4", or "1·2 +3" when more than three films share it
+  width: number; // Of the badge, in CSS pixels; it grows with the label
+}
+
+function pinLabel(ranks: number[]): string {
+  return ranks.length > 3 ? `${ranks.slice(0, 2).join('·')} +${ranks.length - 2}` : ranks.join('·');
+}
+
+function toPin(x: number, y: number, ranks: number[]): ReviewPin {
+  const label = pinLabel(ranks);
+  return { x, y, ranks, label, width: Math.max(REVIEW_PIN_HEIGHT, 20 + label.length * 15) };
+}
+
+function overlap(a: ReviewPin, b: ReviewPin): boolean {
+  return (
+    Math.abs(a.x - b.x) < (a.width + b.width) / 2 + PIN_GAP && Math.abs(a.y - b.y) < REVIEW_PIN_HEIGHT + PIN_GAP
+  );
 }
 
 /**
- * The review map's pins: one per placed film, numbered like the list, except that films closer than
- * `minGapPx` on screen share the first one's pin (one place, or neighbours too close to tell apart).
+ * The review map's pins: one per placed film, numbered like the list, except that films whose badges
+ * would overlap share one, at the better-ranked film's place (one place, or neighbours too close to
+ * tell apart). A shared badge is wider, so merging repeats until no two badges overlap.
  */
-export function reviewPins(entries: ReviewEntry[], view: ViewBox, widthPx: number, minGapPx = 44): ReviewPin[] {
-  const pins: ReviewPin[] = [];
+export function reviewPins(entries: ReviewEntry[], view: ViewBox, widthPx: number): ReviewPin[] {
+  let pins: ReviewPin[] = [];
   entries.forEach((entry, index) => {
     if (!entry.place) return;
     const [x, y] = toScreen(project(entry.place.lon, entry.place.lat), view, widthPx);
-    const near = pins.find((pin) => Math.hypot(pin.x - x, pin.y - y) < minGapPx);
-    if (near) near.ranks.push(index + 1);
-    else pins.push({ x, y, ranks: [index + 1] });
+    pins.push(toPin(x, y, [index + 1]));
   });
+  for (let merged = true; merged; ) {
+    merged = false;
+    outer: for (let i = 0; i < pins.length; i++) {
+      for (let j = i + 1; j < pins.length; j++) {
+        if (overlap(pins[i], pins[j])) {
+          const ranks = [...pins[i].ranks, ...pins[j].ranks].sort((a, b) => a - b);
+          pins[i] = toPin(pins[i].x, pins[i].y, ranks);
+          pins = pins.filter((_, k) => k !== j);
+          merged = true;
+          break outer;
+        }
+      }
+    }
+  }
   return pins;
 }
 
@@ -98,16 +138,17 @@ export function synopsisLine(text: string | null, max = 160): string | null {
 const ABBREVIATIONS = new Set(['mr', 'mrs', 'ms', 'dr', 'st', 'jr', 'sr', 'prof', 'mt', 'vs', 'no', 'gen', 'lt', 'col', 'rev']);
 
 /**
- * Where the first sentence ends: after a full stop, question or exclamation mark followed by a space
- * and a capital (so "1.5 million" doesn't end it), unless the stop is part of an abbreviation.
+ * Where the first sentence ends: after a full stop, question or exclamation mark (and any closing
+ * quotes or brackets) followed by a space and a capital, so "1.5 million" doesn't end it, unless
+ * the stop is part of an abbreviation.
  */
 function sentenceEnd(text: string): number {
-  for (const match of Array.from(text.matchAll(/[.!?](?=\s+["“'‘(]?\p{Lu})/gu))) {
+  for (const match of Array.from(text.matchAll(/[.!?]["”’')\]]*(?=\s+["“'‘(]?\p{Lu})/gu))) {
     const index = match.index ?? 0;
     const word = text.slice(0, index).match(/(\p{L}+)$/u)?.[1] ?? '';
     // A lone initial ("J. Doe") or a known abbreviation
     if (match[0] === '.' && (word.length === 1 || ABBREVIATIONS.has(word.toLowerCase()))) continue;
-    return index + 1;
+    return index + match[0].length;
   }
   return text.length;
 }

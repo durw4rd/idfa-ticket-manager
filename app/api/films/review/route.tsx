@@ -7,7 +7,7 @@ import { getCurrentFestivalYear } from '@/lib/dates';
 import { toAgendaScreening } from '@/lib/agenda';
 import { getFilmOverview } from '@/lib/idfa';
 import { countryName } from '@/lib/countries';
-import { buildReview, reviewPins, synopsisLine, type ReviewEntry } from '@/lib/review';
+import { buildReview, reviewPins, synopsisLine, REVIEW_PIN_HEIGHT as PIN_SIZE, type ReviewEntry } from '@/lib/review';
 import { fitViewBox, project } from '@/lib/world-map';
 import { COUNTRY_SHAPES } from '@/lib/world-map-paths';
 import { getPosterFonts } from '@/lib/poster-fonts';
@@ -37,7 +37,6 @@ const ROW_PADDING = 44;
 const TITLE_LINE = 50;
 const PLACE_LINE = 40;
 const SYNOPSIS_LINE = 38;
-const PIN_SIZE = 44;
 // About this many characters surely fit on a line (title next to the rank and score; synopsis below it)
 const TITLE_CHARS_PER_LINE = 28;
 const SYNOPSIS_CHARS_PER_LINE = 54;
@@ -211,8 +210,8 @@ export async function GET(request: NextRequest) {
             </svg>
             {/* Divs, not SVG text: next/og draws an inline SVG without the poster's fonts */}
             {pins.map((pin) => {
-              const label = pin.ranks.length > 3 ? `${pin.ranks.slice(0, 2).join('·')} +${pin.ranks.length - 2}` : pin.ranks.join('·');
-              const width = Math.max(PIN_SIZE, 20 + label.length * 15);
+              // Drawn at the width reviewPins measured, so merged badges never overlap
+              const { label, width } = pin;
               return (
                 <div
                   key={pin.ranks[0]}
