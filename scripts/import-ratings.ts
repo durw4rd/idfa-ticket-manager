@@ -11,7 +11,7 @@
 
 import { readFileSync } from 'fs';
 import { sql, upsertRating } from '../lib/db';
-import { normalizeEmail } from '../lib/groups';
+import { getVisibleEmails, normalizeEmail } from '../lib/groups';
 import { MAX_COMMENT_LENGTH } from '../lib/films';
 
 interface Entry {
@@ -27,6 +27,7 @@ const rawEmail = process.argv.find((arg) => arg.startsWith('--email='))?.slice('
 
 /** Why an entry can't be saved, checked like POST /api/ratings does; null when it's fine */
 function problem(entry: Entry): string | null {
+  if (!entry || typeof entry !== 'object') return 'not an object';
   if (!Number.isInteger(entry.year) || entry.year < 2000 || entry.year > 2100) return 'year must be 2000-2100';
   if (!entry.act || typeof entry.act !== 'string') return 'act (the ticket title) is required';
   if (!Number.isInteger(entry.rating) || entry.rating < 1 || entry.rating > 10) return 'rating must be a whole number 1-10';
@@ -50,11 +51,16 @@ async function importRatings() {
     SELECT DISTINCT act, festival_year FROM tickets WHERE owner_email = ${email}
   `;
   const titles = new Set(tickets.rows.map((row) => `${row.festival_year}|${row.act}`));
+  // Which film a title is comes from the whole crew's tickets, as in the app: a crewmate's ticket
+  // can carry the IDFA link that ties a title to a film already rated under its film key
+  const visibleEmails = await getVisibleEmails(email);
 
   let saved = 0;
   let skipped = 0;
   for (const entry of entries) {
-    const label = `${entry.year} ${entry.act} (${entry.rating}/10, ${entry.comment?.length ?? 0} chars)`;
+    const label = entry && typeof entry === 'object'
+      ? `${entry.year} ${entry.act} (${entry.rating}/10, ${entry.comment?.length ?? 0} chars)`
+      : JSON.stringify(entry);
     const why = problem(entry) ?? (titles.has(`${entry.year}|${entry.act}`) ? null : 'no ticket with this exact title that year');
     if (why) {
       console.log(`  ✗ ${label}: ${why}`);
@@ -62,7 +68,7 @@ async function importRatings() {
       continue;
     }
     if (!dryRun) {
-      await upsertRating([email], email, entry.act, entry.year, entry.rating, entry.comment?.trim() || null);
+      await upsertRating(visibleEmails, email, entry.act, entry.year, entry.rating, entry.comment?.trim() || null);
     }
     console.log(`  ✓ ${label}`);
     saved++;
