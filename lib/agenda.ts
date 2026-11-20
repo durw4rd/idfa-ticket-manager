@@ -46,6 +46,11 @@ export function filterByPerson(screenings: AgendaScreening[], who: PersonFilter)
   return screenings.filter((screening) => screening.tickets.some((ticket) => ticket.holderEmail === who));
 }
 
+/** Screenings that haven't started yet: the ones a friend could still join */
+export function upcomingOnly(screenings: AgendaScreening[], now: Date): AgendaScreening[] {
+  return screenings.filter((screening) => new Date(screening.startsAt) > now);
+}
+
 /** Two or more different people hold tickets for it */
 export function isTogether(screening: AgendaScreening): boolean {
   return holdersOf(screening).length > 1;
@@ -236,6 +241,25 @@ export function parseScreeningKey(key: string): { act: string; date: string; sta
   const start = parts.pop()!;
   const date = parts.pop()!;
   return { act: parts.join('|'), date, start };
+}
+
+/**
+ * Each film's first screening (in the order given), by film key, and the title that names the film:
+ * the shortest one, as the longer ones add a series or a talk ("IDFA Hit: …", "… + Talk").
+ * `keysByTitle` is from getRatingsForYear in lib/db.ts.
+ */
+export function filmShowings(
+  screenings: AgendaScreening[],
+  keysByTitle: Map<string, string>
+): Map<string, { screening: AgendaScreening; title: string }> {
+  const showings = new Map<string, { screening: AgendaScreening; title: string }>();
+  for (const screening of screenings) {
+    const key = keysByTitle.get(screening.act) ?? titleFilmKey(screening.act);
+    const known = showings.get(key);
+    if (!known) showings.set(key, { screening, title: screening.act });
+    else if (screening.act.length < known.title.length) known.title = screening.act;
+  }
+  return showings;
 }
 
 export function screeningHref(screening: Pick<AgendaScreening, 'id'>): string {

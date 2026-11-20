@@ -8,6 +8,14 @@ const MINUTE = 60_000;
 const STALE_AFTER_MS = 5 * MINUTE;
 
 /**
+ * "Now" at the moment of an event (a tap), for client code that doesn't need a ticking clock: this
+ * device's clock, or the server's `now` while TEST_DATE fixes it (see useNow).
+ */
+export function clientNow(serverNowIso: string): Date {
+  return document.documentElement.dataset.fixedClock !== undefined ? new Date(serverNowIso) : new Date();
+}
+
+/**
  * "Now" for client components. The first render uses the server's `now`, so server and client
  * markup match. After that it's this device's clock, moving on every minute, so a page left open
  * (often an installed home-screen app) keeps "in 20 min", the next screening and the past greying

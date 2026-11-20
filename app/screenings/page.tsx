@@ -70,7 +70,17 @@ export default async function ScreeningsPage({
       pastEdition={year < currentYear}
       now={now.toISOString()}
       placeData={placeData}
-      actions={screenings.length > 0 ? <SharePosterButton key="share" year={year} crew={crew} /> : undefined}
+      actions={
+        screenings.length > 0 ? (
+          <SharePosterButton
+            key="share"
+            year={year}
+            crew={crew}
+            startTimes={screenings.map((screening) => screening.dateTime.toISOString())}
+            now={now.toISOString()}
+          />
+        ) : undefined
+      }
     />
   );
 }
