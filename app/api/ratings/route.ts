@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth-helpers';
 import { upsertRating, deleteRating } from '@/lib/db';
+import { MAX_COMMENT_LENGTH } from '@/lib/films';
 
 function parseYear(value: unknown): number | null {
   const year = Number(value);
@@ -49,9 +50,9 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
-      if (comment.length > 500) {
+      if (comment.length > MAX_COMMENT_LENGTH) {
         return NextResponse.json(
-          { error: 'Comment must be 500 characters or less' },
+          { error: `Comment must be ${MAX_COMMENT_LENGTH} characters or less` },
           { status: 400 }
         );
       }

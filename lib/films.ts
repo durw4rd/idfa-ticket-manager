@@ -2,6 +2,9 @@
 // same film can reach the app under several titles ("IDFA Hit: The Siege of Paradise" and
 // "The Siege of Paradise", "Lonan Tché" and "Lonan Tché + Talk"). Pure functions, no database access.
 
+/** The longest comment a rating can carry, checked by the form, the API and the import script */
+export const MAX_COMMENT_LENGTH = 1000;
+
 export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface FestivalPage {

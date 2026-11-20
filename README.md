@@ -90,6 +90,7 @@ Run with `npm run <name>`; they read `.env.local`.
 
 - `backfill-qr-hashes` adds QR hashes to tickets uploaded before migration 002, for duplicate detection
 - `backfill-festival-links` finds IDFA page links for tickets that don't have one, with the same lookup as uploads (pass `-- --dry-run` to only print them)
+- `import-ratings` saves ratings kept outside the app from a JSON file of `{ year, act, rating, comment }` (act is the exact ticket title): `npm run import-ratings -- notes.json --email=you@example.com [--dry-run]`
 - `optimize-backgrounds`, `generate-favicons` regenerate images in `public/`
 
 For how the code is organized, see [ARCHITECTURE.md](ARCHITECTURE.md).
