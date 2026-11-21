@@ -110,6 +110,7 @@ export interface Group {
   createdBy: string;
   role: 'owner' | 'member';
   status: 'invited' | 'active';
+  invitedBy: string | null; // Who invited you (null for the group's creator)
   members: GroupMember[];
 }
 

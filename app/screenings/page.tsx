@@ -4,7 +4,8 @@ import { getFestivalYears, withCurrentYear, getFilmPlacesForYear, getScreeningsF
 import { fillMissingFilmPlaces } from '@/lib/find-film-place';
 import { titleFilmKey } from '@/lib/films';
 import type { MapPlaceData } from '@/lib/types';
-import { getCrew } from '@/lib/groups';
+import { getCrew, getGroupsForUser, isOnboarded } from '@/lib/groups';
+import { isAllowedWithoutGroups } from '@/lib/auth';
 import { getViewer } from '@/lib/auth-helpers';
 import { getCurrentFestivalYear, getNow } from '@/lib/dates';
 import { toAgendaScreening, withAvailability } from '@/lib/agenda';
@@ -12,6 +13,7 @@ import { getAvailabilityForScreenings, refreshShowDetails } from '@/lib/idfa';
 import { userContext } from '@/lib/launchdarkly';
 import AgendaView from '@/components/agenda/AgendaView';
 import SharePosterButton from '@/components/agenda/SharePosterButton';
+import PendingInvites from '@/components/PendingInvites';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +26,15 @@ export default async function ScreeningsPage({
   if (!viewer) {
     redirect('/login');
   }
+
+  const [onboarded, groups] = await Promise.all([isOnboarded(viewer.email), getGroupsForUser(viewer.email)]);
+  // New users (sign-in lands here) get the walkthrough first: joining their crew, then tickets
+  if (!onboarded) {
+    redirect('/welcome');
+  }
+  const hasInvites = groups.some((group) => group.status === 'invited');
+  // Only asked when there's an invite to decline; if it can't be asked, hasAccessEnded keeps them in too
+  const allowedWithoutGroups = hasInvites ? await isAllowedWithoutGroups(viewer.email).catch(() => true) : true;
 
   const currentYear = getCurrentFestivalYear();
   const year = Number((await searchParams).year) || currentYear;
@@ -70,6 +81,12 @@ export default async function ScreeningsPage({
       pastEdition={year < currentYear}
       now={now.toISOString()}
       placeData={placeData}
+      // Invites that came after the walkthrough (or were left for later), on this year's agenda only
+      invites={
+        hasInvites && year === currentYear ? (
+          <PendingInvites groups={groups} crew={crew} allowedWithoutGroups={allowedWithoutGroups} />
+        ) : undefined
+      }
       actions={
         screenings.length > 0 ? (
           <SharePosterButton

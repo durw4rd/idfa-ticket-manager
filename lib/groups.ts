@@ -82,6 +82,22 @@ export async function setProfileName(email: string, name: string): Promise<void>
   `;
 }
 
+/** Whether the user has finished or skipped the welcome flow (/welcome) */
+export async function isOnboarded(email: string): Promise<boolean> {
+  const result = await sql`
+    SELECT 1 FROM profiles WHERE email = ${normalizeEmail(email)} AND onboarded_at IS NOT NULL
+  `;
+  return result.rows.length > 0;
+}
+
+/** Remember that the user is done with the welcome flow; the first time counts */
+export async function markOnboarded(email: string): Promise<void> {
+  await sql`
+    INSERT INTO profiles (email, onboarded_at) VALUES (${normalizeEmail(email)}, NOW())
+    ON CONFLICT (email) DO UPDATE SET onboarded_at = COALESCE(profiles.onboarded_at, NOW())
+  `;
+}
+
 /**
  * Set your own badge, or null to show your initial. Returns false if someone in your crew already
  * has it. Two people picking the same badge at once can both get through; getCrew settles that.
@@ -122,7 +138,7 @@ export async function isKnownMember(userEmail: string): Promise<boolean> {
 export async function getGroupsForUser(userEmail: string): Promise<Group[]> {
   const me = normalizeEmail(userEmail);
   const result = await sql`
-    SELECT g.id, g.name, g.created_by as "createdBy", mine.role, mine.status,
+    SELECT g.id, g.name, g.created_by as "createdBy", mine.role, mine.status, mine.invited_by as "invitedBy",
            other.user_email as "memberEmail", other.role as "memberRole", other.status as "memberStatus"
     FROM group_members mine
     JOIN groups g ON g.id = mine.group_id
@@ -140,6 +156,7 @@ export async function getGroupsForUser(userEmail: string): Promise<Group[]> {
         createdBy: row.createdBy,
         role: row.role,
         status: row.status,
+        invitedBy: row.invitedBy ?? null,
         members: [],
       });
     }

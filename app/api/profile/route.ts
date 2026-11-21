@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth-helpers';
-import { setProfileBadge, setProfileName } from '@/lib/groups';
+import { markOnboarded, setProfileBadge, setProfileName } from '@/lib/groups';
 import { isBadge } from '@/lib/display';
 
 export const runtime = 'nodejs';
@@ -10,6 +10,7 @@ const MAX_NAME_LENGTH = 40;
 
 // PATCH: Set your display name and/or badge; send only the field you're changing. An empty name
 // resets it to the default derived from your email; a null badge goes back to your initial.
+// `onboarded: true` marks the welcome flow (/welcome) done.
 export async function PATCH(request: NextRequest) {
   const { viewer, error } = await requireAuth();
   if (error) return error;
@@ -30,6 +31,10 @@ export async function PATCH(request: NextRequest) {
     if (hasBadge && body.badge !== null && !isBadge(body.badge)) {
       return NextResponse.json({ error: 'Unknown badge' }, { status: 400 });
     }
+    const hasOnboarded = 'onboarded' in body;
+    if (hasOnboarded && body.onboarded !== true) {
+      return NextResponse.json({ error: 'onboarded can only be set to true' }, { status: 400 });
+    }
 
     // The badge goes first: it's the one that can still be refused (taken), and then nothing is written
     if (hasBadge && !(await setProfileBadge(viewer, body.badge))) {
@@ -37,6 +42,9 @@ export async function PATCH(request: NextRequest) {
     }
     if (hasName) {
       await setProfileName(viewer.email, name);
+    }
+    if (hasOnboarded) {
+      await markOnboarded(viewer.email);
     }
 
     return NextResponse.json({ success: true });

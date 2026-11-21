@@ -63,13 +63,7 @@ export async function hasAccessEnded(rawEmail: string, { fresh = false } = {}): 
   const check = ++checkCount;
   let ended: boolean;
   try {
-    if (await isKnownMember(email)) {
-      ended = false;
-    } else {
-      const access = await evaluateBooleanFlag(APP_ACCESS_FLAG_KEY, userContext(email), true);
-      // With LaunchDarkly down, the fallback allowlist only decides when there is one
-      ended = access.available ? !access.value : ALLOWED_EMAILS.length > 0 && !ALLOWED_EMAILS.includes(email);
-    }
+    ended = !(await isKnownMember(email)) && !(await isAllowedWithoutGroups(email));
   } catch (error) {
     console.error('Failed to re-check access:', error);
     return false;
@@ -81,6 +75,19 @@ export async function hasAccessEnded(rawEmail: string, { fresh = false } = {}): 
     allowedAt.set(email, Date.now());
   }
   return ended;
+}
+
+/**
+ * Whether the user may keep using the app without being in (or invited to) any group: the
+ * app-access flag lets them in, or, with LaunchDarkly down, the fallback allowlist does (or there
+ * is none). Used by hasAccessEnded, and to warn someone that declining their last invite would sign
+ * them out.
+ */
+export async function isAllowedWithoutGroups(rawEmail: string): Promise<boolean> {
+  const email = normalizeEmail(rawEmail);
+  const access = await evaluateBooleanFlag(APP_ACCESS_FLAG_KEY, userContext(email), true);
+  // With LaunchDarkly down, the fallback allowlist only decides when there is one
+  return access.available ? access.value : ALLOWED_EMAILS.length === 0 || ALLOWED_EMAILS.includes(email);
 }
 
 // NextAuth needs the site's public URL for OAuth callbacks and sign-out redirects. On Vercel,

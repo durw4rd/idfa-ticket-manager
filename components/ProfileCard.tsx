@@ -13,8 +13,22 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { inputClasses, Notice } from '@/components/ui/Field';
 
-/** Your display name and badge (what the crew sees on avatars and ratings) and sign out */
-export default function ProfileCard({ me, crew, email }: { me: CrewMember; crew: CrewMember[]; email: string }) {
+/** Your display name and badge (what the crew sees on avatars and ratings) and, on the Crew page, sign out */
+export default function ProfileCard({
+  me,
+  crew,
+  email,
+  showSignOut = true,
+  onNameDraft,
+}: {
+  me: CrewMember;
+  crew: CrewMember[];
+  email: string;
+  showSignOut?: boolean;
+  // Told what's typed in the name field, for the welcome flow, whose Continue saves a name left
+  // unsaved rather than dropping it
+  onNameDraft?: (name: string) => void;
+}) {
   const router = useRouter();
   const [refreshing, startTransition] = useTransition();
   const [name, setName] = useState(me.name);
@@ -95,7 +109,10 @@ export default function ProfileCard({ me, crew, email }: { me: CrewMember; crew:
           <span className="sr-only">Display name</span>
           <input
             value={name}
-            onChange={(event) => setName(event.target.value)}
+            onChange={(event) => {
+              setName(event.target.value);
+              onNameDraft?.(event.target.value);
+            }}
             maxLength={40}
             placeholder="Your name"
             className={inputClasses}
@@ -164,19 +181,21 @@ export default function ProfileCard({ me, crew, email }: { me: CrewMember; crew:
         </div>
       )}
 
-      <Button
-        variant="ghost"
-        size="sm"
-        className="-ml-3 mt-4 text-ink-2"
-        icon={<LogOut className="h-4 w-4" />}
-        onClick={async () => {
-          // Tickets saved for offline use mustn't outlive the session on a shared device
-          await clearOfflineCopies();
-          signOut({ callbackUrl: '/login' });
-        }}
-      >
-        Sign out
-      </Button>
+      {showSignOut && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ml-3 mt-4 text-ink-2"
+          icon={<LogOut className="h-4 w-4" />}
+          onClick={async () => {
+            // Tickets saved for offline use mustn't outlive the session on a shared device
+            await clearOfflineCopies();
+            signOut({ callbackUrl: '/login' });
+          }}
+        >
+          Sign out
+        </Button>
+      )}
     </section>
   );
 }

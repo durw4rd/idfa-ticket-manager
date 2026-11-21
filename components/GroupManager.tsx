@@ -3,9 +3,11 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Check, Loader2, LogOut, Pencil, Share2, UserPlus, X } from 'lucide-react';
+import { declineConfirm, InviteCard } from '@/components/InviteCard';
 import type { CrewMember, Group } from '@/lib/types';
 import { makeCrewLookup } from '@/lib/agenda';
 import { readApiResponse } from '@/lib/api-client';
+import { clearOfflineCopies } from '@/lib/offline';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { inputClasses, Notice } from '@/components/ui/Field';
@@ -16,9 +18,18 @@ interface Confirm {
   message: string;
   action: string;
   body: Record<string, string>;
+  endsAccess?: boolean; // Declining your last invite signs you out
 }
 
-export default function GroupManager({ initialGroups, crew }: { initialGroups: Group[]; crew: CrewMember[] }) {
+export default function GroupManager({
+  initialGroups,
+  crew,
+  allowedWithoutGroups,
+}: {
+  initialGroups: Group[];
+  crew: CrewMember[];
+  allowedWithoutGroups: boolean; // Whether the app-access flag lets you in without any group
+}) {
   const router = useRouter();
   const lookup = makeCrewLookup(crew);
   const me = crew.find((member) => member.isMe)!;
@@ -40,7 +51,7 @@ export default function GroupManager({ initialGroups, crew }: { initialGroups: G
     const url = window.location.origin;
     const text =
       `${me.name} invited you to "${group.name}" in the IDFA ticket app. ` +
-      `Sign in with Google as ${email}, then tap Join on the Crew page.`;
+      `Sign in with Google as ${email} and the app walks you through joining.`;
     setError(null);
     try {
       if (typeof navigator.share === 'function') {
@@ -58,7 +69,7 @@ export default function GroupManager({ initialGroups, crew }: { initialGroups: G
     }
   };
 
-  const runAction = async (body: Record<string, string>) => {
+  const runAction = async (body: Record<string, string>, endsAccess = false) => {
     setBusy(true);
     setError(null);
     try {
@@ -68,6 +79,13 @@ export default function GroupManager({ initialGroups, crew }: { initialGroups: G
         body: JSON.stringify(body),
       });
       const data = await readApiResponse<{ groups: Group[] }>(response, 'Something went wrong');
+      if (endsAccess) {
+        // Signs them out now (ACCESS_ENDED_PATH in lib/auth-helpers.ts, which client code can't import)
+        // Like Sign out: offline tickets mustn't outlive the session (access-ended clears the rest)
+        await clearOfflineCopies();
+        window.location.assign('/api/access-ended');
+        return true;
+      }
       setGroups(data.groups);
       // Only offer to share an invite that is actually pending: inviting someone already in the
       // group succeeds too, and they'd have no Join button to tap
@@ -98,35 +116,17 @@ export default function GroupManager({ initialGroups, crew }: { initialGroups: G
           <h2 className="label mb-3">Invitations</h2>
           <div className="space-y-3">
             {invites.map((group) => (
-              <div key={group.id} className="relative overflow-hidden rounded border border-line bg-surface p-4 pl-6">
-                <div className="absolute inset-y-0 left-0 w-1.5 bg-spark" aria-hidden />
-                <p className="font-display text-lg">{group.name}</p>
-                <p className="text-sm text-ink-2">
-                  With{' '}
-                  {group.members
-                    .filter((m) => m.status === 'active')
-                    .map((m) => lookup(m.userEmail).name)
-                    .join(', ')}
-                </p>
-                <div className="mt-3 flex gap-2">
-                  <Button
-                    size="sm"
-                    icon={<Check className="h-4 w-4" />}
-                    onClick={() => runAction({ action: 'accept', groupId: group.id })}
-                    disabled={busy}
-                  >
-                    Join
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => runAction({ action: 'leave', groupId: group.id })}
-                    disabled={busy}
-                  >
-                    Decline
-                  </Button>
-                </div>
-              </div>
+              <InviteCard
+                key={group.id}
+                group={group}
+                lookup={lookup}
+                busy={busy}
+                onJoin={() => runAction({ action: 'accept', groupId: group.id })}
+                onDecline={() => {
+                  const { endsAccess, ...text } = declineConfirm(group, groups, allowedWithoutGroups);
+                  setConfirm({ ...text, body: { action: 'leave', groupId: group.id }, endsAccess });
+                }}
+              />
             ))}
           </div>
         </section>
@@ -370,7 +370,7 @@ export default function GroupManager({ initialGroups, crew }: { initialGroups: G
               <Button
                 variant="danger"
                 className="flex-1"
-                onClick={() => runAction(confirm.body)}
+                onClick={() => runAction(confirm.body, confirm.endsAccess)}
                 disabled={busy}
                 icon={busy ? <Loader2 className="h-5 w-5 animate-spin" /> : undefined}
               >

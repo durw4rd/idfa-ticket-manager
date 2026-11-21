@@ -43,6 +43,7 @@ export default function AgendaView({
   pastEdition,
   now: nowIso,
   placeData,
+  invites,
   actions,
 }: {
   screenings: AgendaScreening[];
@@ -52,6 +53,7 @@ export default function AgendaView({
   pastEdition: boolean; // A year before the current festival: a recap, not a plan
   now: string; // From the server, so TEST_DATE applies here too
   placeData: MapPlaceData; // Where the films are set, for the map view
+  invites?: React.ReactNode; // Pending crew invitations, shown above everything else
   actions?: React.ReactNode;
 }) {
   const now = useNow(nowIso);
@@ -129,10 +131,13 @@ export default function AgendaView({
         }
       />
 
+      {invites && <div className="mb-6">{invites}</div>}
+
       {screenings.length === 0 ? (
         <EmptyState
           icon={<CalendarDays className="h-10 w-10" strokeWidth={1.5} />}
-          title={`No tickets for ${year} yet`}
+          // With an invite above, joining is what fills the agenda first
+          title={invites ? 'Join your crew, then add tickets' : `No tickets for ${year} yet`}
           action={
             <ButtonLink href="/upload" icon={<Plus className="h-5 w-5" />}>
               Add tickets
