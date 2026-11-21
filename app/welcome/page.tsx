@@ -19,7 +19,7 @@ export default async function WelcomePage() {
     redirect('/login');
   }
 
-  const [groups, crew, screenings, allowedWithoutGroups, inboundAddress, confirmUrl] = await Promise.all([
+  const [groups, crew, screenings, allowedWithoutGroups, inboundAddress] = await Promise.all([
     getGroupsForUser(viewer.email),
     getCrew(viewer),
     getScreeningsForYear(viewer.visibleEmails, getCurrentFestivalYear()),
@@ -27,8 +27,9 @@ export default async function WelcomePage() {
     isAllowedWithoutGroups(viewer.email).catch(() => true),
     // Null until inbound mail is configured (INBOUND_EMAIL_ADDRESS), which leaves out the voting step
     getInboundAddress(viewer.email),
-    getForwardConfirmUrl(viewer.email),
   ]);
+  // Only asked where inbound mail is set up, like the Crew page
+  const confirmUrl = inboundAddress ? await getForwardConfirmUrl(viewer.email) : null;
 
   return (
     <Welcome
