@@ -74,6 +74,12 @@ async function store(cacheName, key, response, since, stillWanted = () => true) 
     const cache = await caches.open(cacheName);
     if (since !== generation || !stillWanted()) return false;
     await cache.put(key, response);
+    // A wipe or refusal can land while the put is still writing, and its delete then runs before
+    // the copy exists: check again now that it does, and take the copy back out
+    if (since !== generation || !stillWanted()) {
+      await cache.delete(key);
+      return false;
+    }
     return true;
   } catch (error) {
     console.warn('Offline copy not stored:', error);
