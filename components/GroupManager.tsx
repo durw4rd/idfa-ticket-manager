@@ -69,7 +69,13 @@ export default function GroupManager({ initialGroups, crew }: { initialGroups: G
       });
       const data = await readApiResponse<{ groups: Group[] }>(response, 'Something went wrong');
       setGroups(data.groups);
-      setJustInvited(body.action === 'invite' ? { groupId: body.groupId, email: body.email.trim().toLowerCase() } : null);
+      // Only offer to share an invite that is actually pending: inviting someone already in the
+      // group succeeds too, and they'd have no Join button to tap
+      const invitee = body.action === 'invite' ? body.email.trim().toLowerCase() : null;
+      const pending = data.groups
+        .find((group) => group.id === body.groupId)
+        ?.members.some((member) => member.userEmail === invitee && member.status === 'invited');
+      setJustInvited(invitee && pending ? { groupId: body.groupId, email: invitee } : null);
       // Membership decides whose tickets you see, so every page's data changes with it
       router.refresh();
       return true;
