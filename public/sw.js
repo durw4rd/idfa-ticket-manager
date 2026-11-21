@@ -56,15 +56,23 @@ self.addEventListener('fetch', (event) => {
 // that was already on its way when the user signed out can't put the wallet back.
 let generation = 0;
 
+// Bumped per QR path each time the server refuses it (403). A sync that fetched the code before
+// the refusal checks this, so its older answer can't put back the copy the refusal deleted.
+const refusals = new Map();
+
+function refusalCount(path) {
+  return refusals.get(path) ?? 0;
+}
+
 /**
- * Store a copy unless a wipe happened since `since`. Storage errors (a full disk) are logged, not
- * thrown. Returns whether the copy was stored.
+ * Store a copy unless a wipe happened since `since`, or `stillWanted` (if given) says no. Storage
+ * errors (a full disk) are logged, not thrown. Returns whether the copy was stored.
  */
-async function store(cacheName, key, response, since) {
-  if (since !== generation) return false;
+async function store(cacheName, key, response, since, stillWanted = () => true) {
+  if (since !== generation || !stillWanted()) return false;
   try {
     const cache = await caches.open(cacheName);
-    if (since !== generation) return false;
+    if (since !== generation || !stillWanted()) return false;
     await cache.put(key, response);
     return true;
   } catch (error) {
@@ -130,6 +138,8 @@ async function networkFirst(request, cacheName) {
   // Not yours to show (e.g. a ticket handed to someone else since it was stored): drop the copy
   // so it can't be served offline later
   if (response.status === 403) {
+    const path = new URL(request.url).pathname;
+    refusals.set(path, refusalCount(path) + 1);
     try {
       const cache = await caches.open(cacheName);
       await cache.delete(request, { ignoreSearch: true });
@@ -237,11 +247,14 @@ async function sync({ assets }, since) {
 /** Store `path` in the cache unless it's there already. A network error is left for next time. */
 async function fetchStored(cacheName, path, since) {
   if (await stored(path, { cacheName })) return 'stored';
+  const refusedBefore = refusalCount(path);
   try {
     const response = await fetch(path, { redirect: 'manual' });
     if (response.type === 'opaqueredirect' || response.status === 401) return 'signed-out';
+    // Refused while this request was out (e.g. the ticket was handed on): don't store the old answer
+    const notRefused = () => refusalCount(path) === refusedBefore;
     // 'stored' only when the copy really is: a full disk must not count as done
-    return response.ok && (await store(cacheName, path, response, since)) ? 'stored' : 'missing';
+    return response.ok && (await store(cacheName, path, response, since, notRefused)) ? 'stored' : 'missing';
   } catch {
     return 'missing';
   }
