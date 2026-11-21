@@ -34,7 +34,8 @@ function TabBar() {
   const year = useSelectedYear(pathname);
   const todoCount = useTodoCount(status === 'authenticated', pathname, year);
 
-  if (status !== 'authenticated') {
+  // The welcome flow has its own way forward; tabs there would skip it half done
+  if (status !== 'authenticated' || pathname === '/welcome') {
     return null;
   }
 

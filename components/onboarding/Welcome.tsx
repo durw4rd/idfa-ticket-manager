@@ -1,0 +1,358 @@
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft, Loader2, Plus } from 'lucide-react';
+import type { CrewMember, Group } from '@/lib/types';
+import { onboardingSteps, type OnboardingStep } from '@/lib/onboarding';
+import { readApiResponse } from '@/lib/api-client';
+import IDFALogo from '@/components/IDFALogo';
+import PendingInvites from '@/components/PendingInvites';
+import ProfileCard from '@/components/ProfileCard';
+import { Avatar } from '@/components/ui/Avatar';
+import { Button } from '@/components/ui/Button';
+import { inputClasses, Notice } from '@/components/ui/Field';
+import Tour from './Tour';
+
+/**
+ * The first-run walkthrough (/welcome), one step at a time. Joining, the profile and new groups save
+ * as they happen; finishing or skipping marks the flow done, so the Agenda stops sending them here.
+ */
+export default function Welcome({
+  groups: initialGroups,
+  crew,
+  email,
+  allowedWithoutGroups,
+  crewScreenings,
+  hasOwnTickets,
+}: {
+  groups: Group[];
+  crew: CrewMember[];
+  email: string;
+  allowedWithoutGroups: boolean;
+  crewScreenings: number; // This year's screenings the viewer can see, theirs and their crew's
+  hasOwnTickets: boolean;
+}) {
+  const router = useRouter();
+  // Fixed when the flow opens: joining a group mustn't make the crew step vanish under them
+  const [steps] = useState(() => onboardingSteps(initialGroups));
+  const [index, setIndex] = useState(0);
+  // Kept here too, so a join shows at once rather than when the refreshed page data arrives
+  const [groups, setGroups] = useState(initialGroups);
+  const [finishing, setFinishing] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const step: OnboardingStep = steps[index];
+  const me = crew.find((member) => member.isMe)!;
+  const next = () => setIndex((i) => Math.min(i + 1, steps.length - 1));
+
+  const finish = async (to: string) => {
+    setFinishing(to);
+    setError(null);
+    try {
+      const response = await fetch('/api/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ onboarded: true }),
+      });
+      await readApiResponse(response, 'Could not save that you are done');
+      router.push(to);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save that you are done');
+      setFinishing(null);
+    }
+  };
+
+  return (
+    <div className="flex min-h-dvh flex-col pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-safe">
+      <header className="flex h-14 items-center gap-3">
+        {index > 0 ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="-ml-3"
+            aria-label="Back"
+            icon={<ArrowLeft className="h-5 w-5" />}
+            onClick={() => setIndex(index - 1)}
+          />
+        ) : (
+          <IDFALogo className="h-7 w-auto" />
+        )}
+        <ol className="flex flex-1 justify-center gap-1.5" aria-label={`Step ${index + 1} of ${steps.length}`}>
+          {steps.map((s, i) => (
+            <li
+              key={s}
+              aria-hidden
+              className={`h-1.5 rounded-full transition-all ${i === index ? 'w-6 bg-ink' : i < index ? 'w-1.5 bg-ink-2' : 'w-1.5 bg-line-strong'}`}
+            />
+          ))}
+        </ol>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-mr-3 text-ink-2"
+          disabled={!!finishing}
+          onClick={() => finish('/screenings')}
+        >
+          Skip
+        </Button>
+      </header>
+
+      <div className="flex flex-1 flex-col pt-6">
+        {step === 'crew' && (
+          <CrewStep
+            groups={groups}
+            crew={crew}
+            allowedWithoutGroups={allowedWithoutGroups}
+            onGroupsChange={setGroups}
+            onNext={next}
+          />
+        )}
+
+        {step === 'profile' && (
+          <StepLayout
+            title="How your crew sees you"
+            intro="Your name and badge show on the agenda, on tickets you hold and next to your ratings."
+            footer={<Button className="w-full" onClick={next}>Continue</Button>}
+          >
+            <ProfileCard me={me} crew={crew} email={email} showSignOut={false} />
+          </StepLayout>
+        )}
+
+        {step === 'tour' && (
+          <StepLayout
+            title="What's in the app"
+            intro="Three tabs at the bottom, one for each job."
+            footer={<Button className="w-full" onClick={next}>Continue</Button>}
+          >
+            <Tour />
+          </StepLayout>
+        )}
+
+        {step === 'tickets' && (
+          <StepLayout
+            title={hasOwnTickets ? "You're all set" : 'Add your tickets'}
+            intro={
+              hasOwnTickets
+                ? 'Your tickets are in. Add more any time with the + at the top of the Agenda.'
+                : 'Upload the PDFs from your IDFA order. Every page becomes a ticket with its QR code, and your agenda builds itself.'
+            }
+            footer={
+              <div className="space-y-2">
+                {error && <Notice>{error}</Notice>}
+                {hasOwnTickets ? (
+                  <Button
+                    className="w-full"
+                    disabled={!!finishing}
+                    icon={finishing ? <Loader2 className="h-5 w-5 animate-spin" /> : undefined}
+                    onClick={() => finish('/screenings')}
+                  >
+                    Go to the agenda
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      className="w-full"
+                      disabled={!!finishing}
+                      icon={
+                        finishing === '/upload' ? (
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                        ) : (
+                          <Plus className="h-5 w-5" />
+                        )
+                      }
+                      onClick={() => finish('/upload')}
+                    >
+                      Upload tickets
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      className="w-full"
+                      disabled={!!finishing}
+                      onClick={() => finish('/screenings')}
+                    >
+                      Later
+                    </Button>
+                  </>
+                )}
+              </div>
+            }
+          >
+            {crewScreenings > 0 && !hasOwnTickets && (
+              <p className="rounded border border-line bg-surface p-4 text-sm text-ink-2">
+                Your crew already has {crewScreenings} {crewScreenings === 1 ? 'screening' : 'screenings'} this year.
+                They&apos;re waiting on the Agenda, and yours join them once you upload.
+              </p>
+            )}
+          </StepLayout>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StepLayout({
+  title,
+  intro,
+  children,
+  footer,
+}: {
+  title: string;
+  intro: string;
+  children?: React.ReactNode;
+  footer: React.ReactNode;
+}) {
+  return (
+    <>
+      <div className="flex-1 space-y-6">
+        <div>
+          <h1 className="font-display text-xl text-balance">{title}</h1>
+          <p className="mt-2 text-ink-2">{intro}</p>
+        </div>
+        {children}
+      </div>
+      <div className="pt-8">{footer}</div>
+    </>
+  );
+}
+
+/**
+ * Join the crew you were invited to; or, with no invite and no group, start one or go on alone.
+ * Once you're in a group it says who's there.
+ */
+function CrewStep({
+  groups,
+  crew,
+  allowedWithoutGroups,
+  onGroupsChange,
+  onNext,
+}: {
+  groups: Group[];
+  crew: CrewMember[];
+  allowedWithoutGroups: boolean;
+  onGroupsChange: (groups: Group[]) => void;
+  onNext: () => void;
+}) {
+  const router = useRouter();
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const invites = groups.filter((group) => group.status === 'invited');
+  const active = groups.filter((group) => group.status === 'active');
+  // Others in your groups; the crew prop catches up after the page data refreshes
+  const others = crew.filter((member) => !member.isMe);
+
+  const createGroup = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create', name: name.trim() }),
+      });
+      const data = await readApiResponse<{ groups: Group[] }>(response, 'Could not create the group');
+      onGroupsChange(data.groups);
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create the group');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (invites.length > 0) {
+    return (
+      <StepLayout
+        title={invites.length === 1 ? 'Join your crew' : 'Join your crews'}
+        intro="You've been invited to share the festival. Once you join, you'll see each other's screenings, tickets and ratings in one agenda."
+        footer={
+          <Button variant="ghost" className="w-full" onClick={onNext}>
+            {active.length > 0 ? 'Continue' : 'Decide later'}
+          </Button>
+        }
+      >
+        <PendingInvites
+          groups={groups}
+          crew={crew}
+          allowedWithoutGroups={allowedWithoutGroups}
+          onChange={onGroupsChange}
+        />
+        {active.length > 0 && <InGroups groups={active} others={others} />}
+      </StepLayout>
+    );
+  }
+
+  if (active.length > 0) {
+    return (
+      <StepLayout
+        title="You're in"
+        intro="Everyone in your crew sees each other's screenings, tickets and ratings. You can hand a ticket to anyone in it."
+        footer={<Button className="w-full" onClick={onNext}>Continue</Button>}
+      >
+        <InGroups groups={active} others={others} />
+      </StepLayout>
+    );
+  }
+
+  return (
+    <StepLayout
+      title="Start a crew"
+      intro="The app is made for going to the festival together: everyone in a group sees each other's screenings and tickets. Start one and invite friends from the Crew page, or ask a friend to invite you."
+      footer={
+        <Button variant="ghost" className="w-full" onClick={onNext}>
+          Continue on my own
+        </Button>
+      }
+    >
+      <form
+        className="flex gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (name.trim()) createGroup();
+        }}
+      >
+        <input
+          type="text"
+          placeholder="e.g. Festival friends"
+          aria-label="New group name"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          maxLength={100}
+          className={`${inputClasses} min-w-0 flex-1`}
+        />
+        <Button
+          type="submit"
+          variant="secondary"
+          disabled={busy || !name.trim()}
+          icon={busy ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}
+        >
+          Create
+        </Button>
+      </form>
+      {error && <Notice>{error}</Notice>}
+    </StepLayout>
+  );
+}
+
+function InGroups({ groups, others }: { groups: Group[]; others: CrewMember[] }) {
+  return (
+    <div className="rounded border border-line bg-surface p-4">
+      <p className="label">You&apos;re in</p>
+      <p className="mt-1 font-display text-lg">{groups.map((group) => group.name).join(', ')}</p>
+      {others.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-3">
+          {others.map((member) => (
+            <div key={member.email} className="flex items-center gap-2">
+              <Avatar member={member} size="md" />
+              <span className="text-sm">{member.name}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-1 text-sm text-ink-2">
+          Just you so far. Invite friends from the Crew page: tap your avatar at the top of any screen.
+        </p>
+      )}
+    </div>
+  );
+}

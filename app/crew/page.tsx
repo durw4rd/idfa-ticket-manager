@@ -7,6 +7,7 @@ import ProfileCard from '@/components/ProfileCard';
 import ForwardingCard from '@/components/ForwardingCard';
 import { getForwardConfirmUrl, getInboundAddress, getSpareVoteLinks } from '@/lib/vote-links';
 import { getCurrentFestivalYear } from '@/lib/dates';
+import { isAllowedWithoutGroups } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,11 +17,13 @@ export default async function CrewPage() {
     redirect('/login');
   }
 
-  const [groups, crew, inboundAddress] = await Promise.all([
+  const [groups, crew, inboundAddress, allowedWithoutGroups] = await Promise.all([
     getGroupsForUser(viewer.email),
     getCrew(viewer),
     // Null until inbound mail is configured (INBOUND_EMAIL_ADDRESS), which hides the card
     getInboundAddress(viewer.email),
+    // Only for warning before a decline; if it can't be asked, hasAccessEnded keeps them in too
+    isAllowedWithoutGroups(viewer.email).catch(() => true),
   ]);
   const [confirmUrl, spareLinks] = inboundAddress
     ? await Promise.all([
@@ -40,7 +43,7 @@ export default async function CrewPage() {
       />
       <div className="space-y-10 pt-2">
         <ProfileCard me={me} crew={crew} email={viewer.email} />
-        <GroupManager initialGroups={groups} crew={crew} />
+        <GroupManager initialGroups={groups} crew={crew} allowedWithoutGroups={allowedWithoutGroups} />
         {inboundAddress && (
           <ForwardingCard address={inboundAddress} confirmUrl={confirmUrl} spareLinks={spareLinks} />
         )}
