@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, Loader2, LogOut, Pencil, Share2, UserPlus, X } from 'lucide-react';
+import { Check, Loader2, LogOut, Pencil, QrCode, Share2, UserPlus, X } from 'lucide-react';
 import { declineConfirm, InviteCard } from '@/components/InviteCard';
 import type { CrewMember, Group } from '@/lib/types';
 import { makeCrewLookup } from '@/lib/agenda';
@@ -25,10 +25,12 @@ export default function GroupManager({
   initialGroups,
   crew,
   allowedWithoutGroups,
+  initialQrSharedWith,
 }: {
   initialGroups: Group[];
   crew: CrewMember[];
   allowedWithoutGroups: boolean; // Whether the app-access flag lets you in without any group
+  initialQrSharedWith: string[]; // Crew-mates who may see your tickets' QR codes (see canSeeQr)
 }) {
   const router = useRouter();
   const lookup = makeCrewLookup(crew);
@@ -40,6 +42,15 @@ export default function GroupManager({
   const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [renaming, setRenaming] = useState<{ groupId: string; name: string } | null>(null);
+  // Who can show your tickets. Starts again from the server's list whenever a refresh brings a new
+  // one: after a group change, an old share can come back into effect
+  const [qrSharedWith, setQrSharedWith] = useState<string[]>(initialQrSharedWith);
+  const [qrSharedFrom, setQrSharedFrom] = useState(initialQrSharedWith);
+  if (qrSharedFrom !== initialQrSharedWith) {
+    setQrSharedFrom(initialQrSharedWith);
+    setQrSharedWith(initialQrSharedWith);
+  }
+  const [sharing, setSharing] = useState<string | null>(null); // The share being saved
   // The invite just sent, offered for sharing: the app doesn't email invitees itself
   const [justInvited, setJustInvited] = useState<{ groupId: string; email: string } | null>(null);
   // The invite whose text was just copied (where sharing isn't available), as `groupId|email`
@@ -66,6 +77,30 @@ export default function GroupManager({
       // Closing the share sheet isn't a failure
       if (err instanceof DOMException && err.name === 'AbortError') return;
       setError('Could not share the invite. Send them the app link yourself.');
+    }
+  };
+
+  // Let a crew-mate see your tickets' QR codes, or stop
+  const toggleQrShare = async (email: string, name: string) => {
+    const shared = !qrSharedWith.includes(email);
+    setSharing(email);
+    setError(null);
+    try {
+      await readApiResponse(
+        await fetch('/api/qr-shares', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ viewerEmail: email, shared }),
+        }),
+        `Could not update sharing with ${name}`
+      );
+      setQrSharedWith((current) => (shared ? [...current, email] : current.filter((other) => other !== email)));
+      // The router keeps visited pages for a while: refresh so coming back doesn't show the old choice
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Could not update sharing with ${name}`);
+    } finally {
+      setSharing(null);
     }
   };
 
@@ -135,7 +170,9 @@ export default function GroupManager({
       <section>
         <h2 className="label mb-1">Your crew</h2>
         <p className="mb-4 text-sm text-ink-2">
-          Everyone in a group sees each other&apos;s screenings, tickets and ratings.
+          Everyone in a group sees each other&apos;s screenings, tickets and ratings. QR codes show only to whoever
+          holds or bought a ticket; tap <QrCode className="inline h-3.5 w-3.5 align-[-2px]" aria-label="the QR button" /> by
+          someone&apos;s name to let them show yours too.
         </p>
 
         {activeGroups.length === 0 && (
@@ -218,6 +255,9 @@ export default function GroupManager({
                 {group.members.map((member) => {
                   const person = lookup(member.userEmail);
                   const isMe = member.userEmail === me.email;
+                  // Sharing is with crew-mates: both of you active in this group
+                  const canShare = !isMe && member.status === 'active' && group.status === 'active';
+                  const shared = canShare && qrSharedWith.includes(member.userEmail);
                   return (
                     <li key={member.userEmail} className="flex items-center gap-3 py-3">
                       <Avatar member={person} size="md" className={member.status === 'invited' ? 'opacity-40' : ''} />
@@ -227,10 +267,30 @@ export default function GroupManager({
                           {isMe && <span className="font-normal text-ink-3"> (you)</span>}
                         </p>
                         <p className="truncate text-xs text-ink-3">{member.userEmail}</p>
+                        {shared && <p className="text-xs font-semibold text-ink-2">Can show your tickets</p>}
                       </div>
                       <span className="text-xs text-ink-3">
                         {member.status === 'invited' ? 'Invited' : member.role === 'owner' ? 'Owner' : ''}
                       </span>
+                      {canShare && (
+                        <Button
+                          size="icon"
+                          variant={shared ? 'primary' : 'ghost'}
+                          className={shared ? '' : 'text-ink-3'}
+                          aria-pressed={shared}
+                          aria-label={`Let ${person.name} show your tickets`}
+                          title={shared ? `${person.name} can show your tickets' QR codes` : `Let ${person.name} show your tickets' QR codes`}
+                          icon={
+                            sharing === member.userEmail ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <QrCode className="h-4 w-4" />
+                            )
+                          }
+                          disabled={sharing !== null}
+                          onClick={() => toggleQrShare(member.userEmail, person.name)}
+                        />
+                      )}
                       {member.status === 'invited' && (
                         <Button
                           size="icon"

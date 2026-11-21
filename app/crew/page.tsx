@@ -5,7 +5,6 @@ import PageHeader, { BackLink } from '@/components/PageHeader';
 import GroupManager from '@/components/GroupManager';
 import ProfileCard from '@/components/ProfileCard';
 import ForwardingCard from '@/components/ForwardingCard';
-import QrSharingCard from '@/components/QrSharingCard';
 import { getQrSharedWith } from '@/lib/qr-shares';
 import { getForwardConfirmUrl, getInboundAddress, getSpareVoteLinks } from '@/lib/vote-links';
 import { getCurrentFestivalYear } from '@/lib/dates';
@@ -46,13 +45,11 @@ export default async function CrewPage() {
       />
       <div className="space-y-10 pt-2">
         <ProfileCard me={me} crew={crew} email={viewer.email} />
-        <GroupManager initialGroups={groups} crew={crew} allowedWithoutGroups={allowedWithoutGroups} />
-        {/* Keyed on the server's data: a group change refreshes the page, and an old share can come
-            back into effect, so the chips must start again from what's stored */}
-        <QrSharingCard
-          key={`${crew.map((member) => member.email).join(',')}|${[...qrSharedWith].sort().join(',')}`}
+        <GroupManager
+          initialGroups={groups}
           crew={crew}
-          initialSharedWith={qrSharedWith}
+          allowedWithoutGroups={allowedWithoutGroups}
+          initialQrSharedWith={qrSharedWith}
         />
         {inboundAddress && (
           <ForwardingCard address={inboundAddress} confirmUrl={confirmUrl} spareLinks={spareLinks} />
