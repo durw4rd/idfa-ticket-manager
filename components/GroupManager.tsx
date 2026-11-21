@@ -36,6 +36,13 @@ export default function GroupManager({
   const lookup = makeCrewLookup(crew);
   const me = crew.find((member) => member.isMe)!;
   const [groups, setGroups] = useState<Group[]>(initialGroups);
+  // A refresh (after a profile save or share, say) can bring newer memberships, e.g. an invite
+  // accepted on someone else's phone: start again from those
+  const [groupsFrom, setGroupsFrom] = useState(initialGroups);
+  if (groupsFrom !== initialGroups) {
+    setGroupsFrom(initialGroups);
+    setGroups(initialGroups);
+  }
   const [newGroupName, setNewGroupName] = useState('');
   const [inviteEmails, setInviteEmails] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
