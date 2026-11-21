@@ -129,7 +129,7 @@ export default function Welcome({
             intro="Your name and badge show on the agenda, on tickets you hold and next to your ratings."
             footer={<Button className="w-full" onClick={next}>Continue</Button>}
           >
-            <ProfileCard me={me} crew={crew} email={email} showSignOut={false} />
+            <ProfileCard me={me} crew={crew} email={email} showSignOut={false} saveNameOnBlur />
           </StepLayout>
         )}
 
