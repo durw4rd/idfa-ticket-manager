@@ -7,6 +7,7 @@ import { declineConfirm, InviteCard } from '@/components/InviteCard';
 import type { CrewMember, Group } from '@/lib/types';
 import { makeCrewLookup } from '@/lib/agenda';
 import { readApiResponse } from '@/lib/api-client';
+import { clearOfflineCopies } from '@/lib/offline';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { inputClasses, Notice } from '@/components/ui/Field';
@@ -80,6 +81,8 @@ export default function GroupManager({
       const data = await readApiResponse<{ groups: Group[] }>(response, 'Something went wrong');
       if (endsAccess) {
         // Signs them out now (ACCESS_ENDED_PATH in lib/auth-helpers.ts, which client code can't import)
+        // Like Sign out: offline tickets mustn't outlive the session (access-ended clears the rest)
+        await clearOfflineCopies();
         window.location.assign('/api/access-ended');
         return true;
       }

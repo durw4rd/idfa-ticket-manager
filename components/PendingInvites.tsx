@@ -6,6 +6,7 @@ import { Loader2 } from 'lucide-react';
 import type { CrewMember, Group } from '@/lib/types';
 import { makeCrewLookup } from '@/lib/agenda';
 import { readApiResponse } from '@/lib/api-client';
+import { clearOfflineCopies } from '@/lib/offline';
 import { Button } from '@/components/ui/Button';
 import { Notice } from '@/components/ui/Field';
 import { Sheet } from '@/components/ui/Sheet';
@@ -52,6 +53,8 @@ export default function PendingInvites({
       if (endsAccess) {
         // Signs them out now, rather than on whichever page load first notices (ACCESS_ENDED_PATH in
         // lib/auth-helpers.ts, which client code can't import)
+        // Like Sign out: offline tickets mustn't outlive the session (access-ended clears the rest)
+        await clearOfflineCopies();
         window.location.assign('/api/access-ended');
         return;
       }
