@@ -1,5 +1,5 @@
 import { sql as vercelSql, db } from '@vercel/postgres';
-import { Ticket, Screening, Rating, FilmPlace } from './types';
+import { Ticket, Screening, Rating, FilmPlace, FestivalYear } from './types';
 import { getFestivalYear, parseTicketDateTime } from './dates';
 import { parseScreeningKey, screeningKey } from './agenda';
 import { filmKeysByTitle, latestRatingPerFilm, pickStoredPlace, ratingFilmKey, titleFilmKey } from './films';
@@ -181,15 +181,23 @@ export async function findTicketByQrHash(visibleEmails: string[], qrHash: string
   return (result.rows[0] as Ticket) || null;
 }
 
-export async function getFestivalYears(visibleEmails: string[]): Promise<number[]> {
+/** The festival years anyone visible has tickets for, newest first, with how many tickets each */
+export async function getFestivalYears(visibleEmails: string[]): Promise<FestivalYear[]> {
   const result = await sql`
-    SELECT DISTINCT festival_year as "festivalYear"
+    SELECT festival_year as "year", COUNT(*)::int as "tickets"
     FROM tickets
     WHERE owner_email = ANY(${visibleEmails as any}::text[])
+    GROUP BY festival_year
     ORDER BY festival_year DESC
   `;
 
-  return result.rows.map((row) => Number(row.festivalYear));
+  return result.rows.map((row) => ({ year: Number(row.year), tickets: Number(row.tickets) }));
+}
+
+/** The years to offer in the year picker: those with tickets, plus the current one even before any */
+export function withCurrentYear(festivalYears: FestivalYear[], currentYear: number): FestivalYear[] {
+  if (festivalYears.some((entry) => entry.year === currentYear)) return festivalYears;
+  return [{ year: currentYear, tickets: 0 }, ...festivalYears].sort((a, b) => b.year - a.year);
 }
 
 /**

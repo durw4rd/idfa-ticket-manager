@@ -11,8 +11,8 @@ import { notifyTodoChanged } from '@/lib/todo-events';
 import { Notice } from '@/components/ui/Field';
 import { AutoTextarea } from '@/components/ui/AutoTextarea';
 import { RatingRow } from '@/components/CrewRatings';
+import { MAX_COMMENT_LENGTH } from '@/lib/films';
 
-const MAX_COMMENT_LENGTH = 500;
 const SCALE = Array.from({ length: 10 }, (_, i) => i + 1);
 
 /**

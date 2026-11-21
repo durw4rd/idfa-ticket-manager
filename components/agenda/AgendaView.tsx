@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { CalendarDays, ChevronUp, GanttChart, Globe, List, Plus } from 'lucide-react';
-import type { AgendaScreening, CrewMember, MapPlaceData } from '@/lib/types';
+import type { AgendaScreening, CrewMember, FestivalYear, MapPlaceData } from '@/lib/types';
 import { festivalDayKey } from '@/lib/dates';
 import {
   filterByPeople,
@@ -17,6 +17,7 @@ import {
 import { usePersistentState } from '@/lib/use-persistent-state';
 import { useNow } from '@/lib/use-now';
 import PageHeader from '@/components/PageHeader';
+import YearPicker from '@/components/YearPicker';
 import { ButtonLink } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
@@ -25,7 +26,6 @@ import AgendaList, { type RowMarks } from './AgendaList';
 import DayTimeline from './DayTimeline';
 import PersonFilter from './PersonFilter';
 import UpNext from './UpNext';
-import YearSwitcher from './YearSwitcher';
 
 type View = 'list' | 'timeline' | 'map';
 
@@ -40,6 +40,7 @@ export default function AgendaView({
   crew,
   year,
   years,
+  pastEdition,
   now: nowIso,
   placeData,
   actions,
@@ -47,7 +48,8 @@ export default function AgendaView({
   screenings: AgendaScreening[];
   crew: CrewMember[];
   year: number;
-  years: number[];
+  years: FestivalYear[];
+  pastEdition: boolean; // A year before the current festival: a recap, not a plan
   now: string; // From the server, so TEST_DATE applies here too
   placeData: MapPlaceData; // Where the films are set, for the map view
   actions?: React.ReactNode;
@@ -110,8 +112,8 @@ export default function AgendaView({
   return (
     <>
       <PageHeader
-        eyebrow={festivalDay}
-        title={`IDFA ${year}`}
+        eyebrow={pastEdition ? 'Past edition' : festivalDay}
+        title={<YearPicker variant="title" years={years} selectedYear={year} basePath="/screenings" />}
         me={me}
         actions={
           <>
@@ -128,24 +130,17 @@ export default function AgendaView({
       />
 
       {screenings.length === 0 ? (
-        <>
-          {years.length > 1 && (
-            <div className="mb-3">
-              <YearSwitcher years={years} selectedYear={year} />
-            </div>
-          )}
-          <EmptyState
-            icon={<CalendarDays className="h-10 w-10" strokeWidth={1.5} />}
-            title={`No tickets for ${year} yet`}
-            action={
-              <ButtonLink href="/upload" icon={<Plus className="h-5 w-5" />}>
-                Add tickets
-              </ButtonLink>
-            }
-          >
-            Upload the PDFs from your IDFA order and your agenda builds itself.
-          </EmptyState>
-        </>
+        <EmptyState
+          icon={<CalendarDays className="h-10 w-10" strokeWidth={1.5} />}
+          title={`No tickets for ${year} yet`}
+          action={
+            <ButtonLink href="/upload" icon={<Plus className="h-5 w-5" />}>
+              Add tickets
+            </ButtonLink>
+          }
+        >
+          Upload the PDFs from your IDFA order and your agenda builds itself.
+        </EmptyState>
       ) : (
         <>
           {/* The map is the whole view there; your films show in yellow on it instead */}
@@ -157,19 +152,16 @@ export default function AgendaView({
             {crew.length > 1 && (
               <PersonFilter crew={crew} value={who} onChange={setWho} counts={counts} total={screenings.length} />
             )}
-            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-              <YearSwitcher years={years} selectedYear={year} />
-              <SegmentedControl
-                label="Agenda view"
-                value={view}
-                onChange={setView}
-                options={[
-                  { value: 'list', label: 'List', icon: <List className="h-4 w-4" /> },
-                  { value: 'timeline', label: 'Timeline', icon: <GanttChart className="h-4 w-4" /> },
-                  { value: 'map', label: 'Map', icon: <Globe className="h-4 w-4" /> },
-                ]}
-              />
-            </div>
+            <SegmentedControl
+              label="Agenda view"
+              value={view}
+              onChange={setView}
+              options={[
+                { value: 'list', label: 'List', icon: <List className="h-4 w-4" /> },
+                { value: 'timeline', label: 'Timeline', icon: <GanttChart className="h-4 w-4" /> },
+                { value: 'map', label: 'Map', icon: <Globe className="h-4 w-4" /> },
+              ]}
+            />
           </div>
 
           {visible.length === 0 ? (

@@ -1,5 +1,3 @@
-import { createElement, type ReactElement } from 'react';
-import type { LucideIcon, LucideProps } from 'lucide-react';
 import { NextRequest, NextResponse } from 'next/server';
 import { ImageResponse } from 'next/og';
 import { requireAuth } from '@/lib/auth-helpers';
@@ -12,25 +10,31 @@ import {
   holdersOf,
   makeCrewLookup,
   toAgendaScreening,
+  upcomingOnly,
   withAvailability,
 } from '@/lib/agenda';
 import { getAvailabilityForScreenings } from '@/lib/idfa';
 import { userContext } from '@/lib/launchdarkly';
 import { getPosterFonts } from '@/lib/poster-fonts';
+import {
+  CREW_HEX,
+  DANGER,
+  INK,
+  MUTED,
+  ONE_LINE,
+  PAPER,
+  POSTER_FOOTER_HEIGHT as FOOTER_HEIGHT,
+  POSTER_PAD as PAD,
+  POSTER_WIDTH as WIDTH,
+  RULE,
+  SPARK,
+  plainIcon,
+  plural,
+} from '@/lib/poster-style';
 import { BADGE_ICONS } from '@/components/ui/Avatar';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-const WIDTH = 1080;
-const PAD = 72;
-const INK = '#111111';
-const PAPER = '#FAFAF7';
-const MUTED = '#9C9B94';
-const SPARK = '#FFD600';
-const DANGER = '#FF6B5B'; // --danger in dark mode, app/globals.css
-// Crew colours as hex (satori can't read CSS variables); the dark-mode values from app/globals.css
-const CREW_HEX = ['#FF7057', '#6A92FF', '#38C496', '#BE80FF', '#FF66AA', '#30C4D8'];
 
 // The canvas height is the sum of these fixed blocks, so every block has an explicit height and
 // clamps its text: nothing can wrap past its budget and get cut off at the bottom of the image.
@@ -39,7 +43,7 @@ const DAY_HEADING_HEIGHT = 84; // 28px gap above + 56px heading
 const ROW_PADDING = 44;
 const TITLE_LINE = 48;
 const VENUE_LINE = 40;
-const FOOTER_HEIGHT = 100;
+const EMPTY_HEIGHT = 160; // "Nothing coming up", when the upcoming filter leaves nothing
 // About this many title characters surely fit on one line next to the time and avatars. A title
 // that's estimated at two lines but fits in one leaves the spare space under its row.
 const TITLE_CHARS_PER_LINE = 28;
@@ -53,25 +57,10 @@ function rowHeight(title: string): number {
 }
 
 /**
- * Satori draws nothing for forwardRef components, and lucide icons are two of them wrapped around a
- * plain <svg>. Unwrap down to that <svg> (lucide's render functions use no hooks, so calling them is safe).
- */
-function plainIcon(Icon: LucideIcon, props: LucideProps): ReactElement {
-  let element = createElement(Icon, props) as ReactElement<Record<string, unknown>>;
-  while (typeof element.type === 'object' && element.type && 'render' in element.type) {
-    const render = (element.type as { render: (props: unknown, ref: null) => ReactElement }).render;
-    element = render(element.props, null) as ReactElement<Record<string, unknown>>;
-  }
-  return element;
-}
-
-// Single line with an ellipsis
-const ONE_LINE = { display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } as const;
-
-/**
- * GET /api/agenda/poster?year=2026&who=all|<crew index>
- * The whole festival as one tall PNG, made to be shared. `who` is an index into the viewer's crew
- * (as returned by getCrew), so no email ends up in a URL.
+ * GET /api/agenda/poster?year=2026&who=all|<crew index>&when=all|upcoming
+ * The festival as one tall PNG, made to be shared. `who` is an index into the viewer's crew
+ * (as returned by getCrew), so no email ends up in a URL. `when=upcoming` leaves out screenings that
+ * have started, for inviting friends to the rest.
  */
 export async function GET(request: NextRequest) {
   const { viewer, error } = await requireAuth();
@@ -80,11 +69,13 @@ export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const year = Number(params.get('year')) || getCurrentFestivalYear();
   const whoParam = params.get('who') || 'all';
+  const upcoming = params.get('when') === 'upcoming';
+  const now = getNow();
 
   const [{ screenings, availability }, crew, fonts] = await Promise.all([
     getScreeningsForYear(viewer.visibleEmails, year).then(async (screenings) => ({
       screenings,
-      availability: await getAvailabilityForScreenings(screenings, getNow(), userContext(viewer.email)),
+      availability: await getAvailabilityForScreenings(screenings, now, userContext(viewer.email)),
     })),
     getCrew(viewer),
     getPosterFonts(),
@@ -96,10 +87,11 @@ export async function GET(request: NextRequest) {
   }
 
   const lookup = makeCrewLookup(crew);
-  const agenda = filterByPerson(
+  const everything = filterByPerson(
     withAvailability(screenings.map(toAgendaScreening), availability),
     person ? person.email : 'all'
   );
+  const agenda = upcoming ? upcomingOnly(everything, now) : everything;
   const soldOut = agenda.filter((screening) => screening.availability === 'sold-out').length;
   const days = groupByDay(agenda);
   const subtitle = person ? person.name : crew.map((member) => member.name).join(' · ');
@@ -111,6 +103,7 @@ export async function GET(request: NextRequest) {
     MASTHEAD_HEIGHT +
     days.length * DAY_HEADING_HEIGHT +
     agenda.reduce((sum, screening) => sum + rowHeight(screening.act), 0) +
+    (agenda.length === 0 ? EMPTY_HEIGHT : 0) +
     FOOTER_HEIGHT;
 
   return new ImageResponse(
@@ -132,7 +125,7 @@ export async function GET(request: NextRequest) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <div style={{ width: 28, height: 28, borderRadius: 28, background: SPARK }} />
             <div style={{ fontSize: 30, letterSpacing: 4, color: MUTED, textTransform: 'uppercase' }}>
-              My festival
+              {upcoming ? 'Coming up' : 'My festival'}
             </div>
           </div>
           <div style={{ fontFamily: display, fontSize: 150, lineHeight: 1, marginTop: 24, letterSpacing: -4 }}>
@@ -140,10 +133,26 @@ export async function GET(request: NextRequest) {
           </div>
           <div style={{ ...ONE_LINE, fontSize: 44, lineHeight: '56px', marginTop: 16, color: SPARK }}>{subtitle}</div>
           <div style={{ display: 'flex', fontSize: 30, marginTop: 8, color: MUTED }}>
-            {`${agenda.length} ${agenda.length === 1 ? 'screening' : 'screenings'} · ${days.length} ${days.length === 1 ? 'day' : 'days'}`}
+            {`${plural(agenda.length, upcoming ? 'upcoming screening' : 'screening')} · ${plural(days.length, 'day')}`}
             {soldOut > 0 && <span style={{ color: DANGER, marginLeft: 12 }}>{`· ${soldOut} sold out`}</span>}
           </div>
         </div>
+
+        {agenda.length === 0 && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              height: EMPTY_HEIGHT,
+              fontFamily: display,
+              fontSize: 44,
+              color: MUTED,
+              borderTop: `2px solid ${SPARK}`,
+            }}
+          >
+            Nothing coming up
+          </div>
+        )}
 
         {days.map((day) => (
           <div key={day.key} style={{ display: 'flex', flexDirection: 'column' }}>
@@ -174,7 +183,7 @@ export async function GET(request: NextRequest) {
                     overflow: 'hidden',
                     paddingTop: ROW_PADDING / 2,
                     paddingBottom: ROW_PADDING / 2,
-                    borderBottom: '1px solid #2A2A27',
+                    borderBottom: `1px solid ${RULE}`,
                   }}
                 >
                   <div style={{ display: 'flex', flexDirection: 'column', width: 150 }}>

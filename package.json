@@ -12,6 +12,7 @@
     "backfill-festival-links": "tsx --env-file-if-exists=.env.local scripts/backfill-festival-links.ts",
     "backfill-film-places": "tsx --env-file-if-exists=.env.local scripts/backfill-film-places.ts",
     "backfill-qr-hashes": "node scripts/backfill-qr-hashes.js",
+    "import-ratings": "tsx --env-file-if-exists=.env.local scripts/import-ratings.ts",
     "test": "vitest run",
     "generate-world-map": "tsx scripts/generate-world-map.ts"
   },

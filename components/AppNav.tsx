@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { CalendarDays, Star, Ticket } from 'lucide-react';
 import { TODO_CHANGED_EVENT } from '@/lib/todo-events';
@@ -14,11 +14,25 @@ const NAV_ITEMS = [
   { href: '/films', label: 'Films', icon: Star },
 ];
 
+// The tabs that show one festival year at a time, picked with ?year= (YearPicker)
+const YEAR_TABS = ['/screenings', '/films'];
+const YEAR_STORAGE_KEY = 'idfa:selected-year';
+
 /** Bottom tab bar on every screen size. Hidden when signed out. */
 export default function AppNav() {
+  // useSearchParams needs a Suspense boundary on prerendered pages (login, not found)
+  return (
+    <Suspense fallback={null}>
+      <TabBar />
+    </Suspense>
+  );
+}
+
+function TabBar() {
   const pathname = usePathname();
   const { status } = useSession();
-  const todoCount = useTodoCount(status === 'authenticated', pathname);
+  const year = useSelectedYear(pathname);
+  const todoCount = useTodoCount(status === 'authenticated', pathname, year);
 
   if (status !== 'authenticated') {
     return null;
@@ -36,7 +50,7 @@ export default function AppNav() {
           return (
             <Link
               key={href}
-              href={href}
+              href={year && YEAR_TABS.includes(href) ? `${href}?year=${year}` : href}
               aria-current={active ? 'page' : undefined}
               aria-label={count > 0 ? `${label}, ${count} to do` : undefined}
               className={`flex flex-col items-center justify-center gap-0.5 text-xs font-semibold transition-colors ${
@@ -71,11 +85,43 @@ export default function AppNav() {
 }
 
 /**
- * How many films are on the Films page's to-do list. Asked again on every page change, when the
- * app comes back to the foreground, and after a rating or vote is saved. A failed request shows
- * no count: it's a nudge, never worth an error.
+ * The festival year last shown on Agenda or Films, so switching tabs keeps it instead of jumping
+ * back to this year. Read from the URL on those tabs (null there means this year), and kept in
+ * sessionStorage for the other pages and reloads: a new visit starts on this year again.
  */
-function useTodoCount(signedIn: boolean, pathname: string): number {
+function useSelectedYear(pathname: string): string | null {
+  const searchParams = useSearchParams();
+  const onYearTab = YEAR_TABS.includes(pathname);
+  const param = searchParams.get('year');
+  // Pages redirect a bad ?year= to this year; only a plain year is worth carrying along
+  const urlYear = param && /^\d{4}$/.test(param) ? param : null;
+  const [storedYear, setStoredYear] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      if (onYearTab) {
+        if (urlYear) window.sessionStorage.setItem(YEAR_STORAGE_KEY, urlYear);
+        else window.sessionStorage.removeItem(YEAR_STORAGE_KEY);
+        setStoredYear(urlYear);
+      } else {
+        setStoredYear(window.sessionStorage.getItem(YEAR_STORAGE_KEY));
+      }
+    } catch {
+      // Storage can be unavailable (private mode): remember it for this page only
+      if (onYearTab) setStoredYear(urlYear);
+    }
+  }, [onYearTab, urlYear]);
+
+  return onYearTab ? urlYear : storedYear;
+}
+
+/**
+ * How many films are on the Films page's to-do list, for the year the Films tab opens (this one
+ * when year is null). Asked again on every page change, when the year changes, when the app comes
+ * back to the foreground, and after a rating or vote is saved. A failed request shows no count:
+ * it's a nudge, never worth an error.
+ */
+function useTodoCount(signedIn: boolean, pathname: string, year: string | null): number {
   const [count, setCount] = useState(0);
 
   useEffect(() => {
@@ -86,7 +132,7 @@ function useTodoCount(signedIn: boolean, pathname: string): number {
     const load = () => {
       const request = ++latest;
       const current = () => !cancelled && request === latest;
-      fetch('/api/todo', { cache: 'no-store' })
+      fetch(year ? `/api/todo?year=${year}` : '/api/todo', { cache: 'no-store' })
         .then((response) => (response.ok ? response.json() : null))
         .then((data) => {
           if (current()) setCount(typeof data?.count === 'number' ? data.count : 0);
@@ -106,7 +152,7 @@ function useTodoCount(signedIn: boolean, pathname: string): number {
       window.removeEventListener(TODO_CHANGED_EVENT, load);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [signedIn, pathname]);
+  }, [signedIn, pathname, year]);
 
   return signedIn ? count : 0;
 }

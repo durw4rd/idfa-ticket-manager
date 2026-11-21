@@ -4,6 +4,7 @@ import {
   buildTodo,
   crewHint,
   crewSections,
+  filmShowings,
   filterByPeople,
   filterByPerson,
   findClashes,
@@ -14,6 +15,7 @@ import {
   screeningsToRate,
   toMapFilms,
   togglePeople,
+  upcomingOnly,
 } from './agenda';
 
 const ME = 'me@example.com';
@@ -387,5 +389,39 @@ describe('toMapFilms', () => {
     const [film] = toMapFilms([screening('The Siege of Paradise', '2026-11-20T19:00:00.000Z', [ME])], keysByTitle, places, ME);
     expect(Object.keys(film).sort()).toEqual(['holders', 'href', 'isMine', 'key', 'location', 'noPlace', 'place', 'startsAt', 'title']);
     expect(JSON.stringify(film)).not.toMatch(/blob|ownerEmail|qr/i);
+  });
+});
+
+describe('upcomingOnly', () => {
+  it('keeps screenings that have not started yet', () => {
+    const now = new Date('2026-11-18T19:00:00.000Z');
+    const kept = upcomingOnly(
+      [
+        screening('past', '2026-11-17T19:00:00.000Z', [ME]),
+        screening('started', '2026-11-18T19:00:00.000Z', [ME]),
+        screening('later', '2026-11-18T21:00:00.000Z', [ME]),
+      ],
+      now
+    );
+    expect(kept.map((s) => s.id)).toEqual(['later']);
+  });
+});
+
+describe('filmShowings', () => {
+  it('keeps each film’s first showing and names it by its shortest title', () => {
+    const showings = filmShowings(
+      [
+        screening('IDFA Hit: Lonan Tché', '2026-11-14T19:00:00.000Z', [ME]),
+        screening('Lonan Tché + Talk', '2026-11-15T19:00:00.000Z', [ME]),
+        screening('Lonan Tché', '2026-11-16T19:00:00.000Z', [ME]),
+      ],
+      new Map([
+        ['IDFA Hit: Lonan Tché', 'film:abc'],
+        ['Lonan Tché + Talk', 'film:abc'],
+        ['Lonan Tché', 'film:abc'],
+      ])
+    );
+    expect(showings.size).toBe(1);
+    expect(showings.get('film:abc')).toMatchObject({ title: 'Lonan Tché', screening: { id: 'IDFA Hit: Lonan Tché' } });
   });
 });

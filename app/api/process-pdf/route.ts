@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse, after } from 'next/server';
-import { createHash } from 'crypto';
 import { extractTicketDataFromImage } from '@/lib/ticket-extractor';
 import { extractQRCodeFromImage } from '@/lib/qr-extractor';
 import { createTicketUnlessDuplicate, findTicketByQrHash, getTicketsForYear, ticketUsesQrCodeUrl } from '@/lib/db';
@@ -9,7 +8,8 @@ import { findFestivalLink } from '@/lib/find-festival-link';
 import { getFestivalLink } from '@/lib/festival-links';
 import { flushLdEvents, userContext } from '@/lib/launchdarkly';
 import { deleteTicketFiles, isOwnTicketPdfUrl, uploadTicketFile } from '@/lib/storage';
-import { getFestivalYear, parseTicketDateTime } from '@/lib/dates';
+import { getCurrentFestivalYear, getFestivalYear, parseTicketDateTime } from '@/lib/dates';
+import { mayLackQrCode, parsePdfHash, ticketDedupKey } from '@/lib/ticket-dedup';
 import { validateTicketFields } from '@/lib/ticket-fields';
 import { getShowDetails } from '@/lib/idfa';
 import { ensureFilmPlace } from '@/lib/find-film-place';
@@ -22,6 +22,7 @@ interface ProcessPDFRequest {
     pageNumber: number;
     imageData: string; // Base64 encoded image
     pdfUrl?: string; // Optional: URL of original PDF for reference
+    pdfHash?: string; // SHA-256 of the PDF file: the duplicate key for tickets without a QR code
   }>;
 }
 
@@ -60,12 +61,14 @@ export async function POST(request: NextRequest) {
         // before paying for the AI calls (the insert below re-checks atomically)
         const qrCode = await extractQRCodeFromImage(pageImage.imageData);
 
-        if (!qrCode) {
-          throw new Error('Could not extract QR code');
-        }
-
-        const qrHash = createHash('sha256').update(qrCode.payload).digest('hex');
-        const existing = await findTicketByQrHash(viewer.visibleEmails, qrHash);
+        // Tickets from older editions have no QR code; for those the PDF file and page identify
+        // the ticket instead (see lib/ticket-dedup.ts)
+        const qrHash = ticketDedupKey({
+          qrPayload: qrCode?.payload ?? null,
+          pdfHash: parsePdfHash(pageImage.pdfHash),
+          pageNumber: pageImage.pageNumber,
+        });
+        const existing = qrHash ? await findTicketByQrHash(viewer.visibleEmails, qrHash) : null;
         if (existing) {
           results.push({
             ticketId: existing.id,
@@ -102,7 +105,13 @@ export async function POST(request: NextRequest) {
         const festivalYear = getFestivalYear(date);
         const screeningKey = `${act}|${date}|${start}`;
 
-        const qrCodeUrl = await uploadTicketFile(viewer.email, 'qr-codes', qrCode.image, 'image/png');
+        // Only a past edition's ticket may be saved without a QR code: a current one without it
+        // won't get anyone into the cinema, so that's a failed read
+        if (!qrCode && !mayLackQrCode(festivalYear, getCurrentFestivalYear())) {
+          throw new Error('Could not extract QR code');
+        }
+
+        const qrCodeUrl = qrCode ? await uploadTicketFile(viewer.email, 'qr-codes', qrCode.image, 'image/png') : '';
 
         let created: Awaited<ReturnType<typeof createTicketUnlessDuplicate>>;
         try {
@@ -146,7 +155,7 @@ export async function POST(request: NextRequest) {
           // delete the file once the database confirms no ticket uses it; when that can't be
           // checked either, keep it (a stray file is harmless, a ticket without its QR is not)
           try {
-            if (!(await ticketUsesQrCodeUrl(viewer.email, qrCodeUrl))) {
+            if (qrCodeUrl && !(await ticketUsesQrCodeUrl(viewer.email, qrCodeUrl))) {
               await deleteTicketFiles([qrCodeUrl]);
             }
           } catch (checkError) {
