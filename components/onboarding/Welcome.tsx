@@ -97,6 +97,13 @@ export default function Welcome({
         </Button>
       </header>
 
+      {/* Here rather than in a step: Skip can fail from any of them */}
+      {error && (
+        <div className="pt-2">
+          <Notice>{error}</Notice>
+        </div>
+      )}
+
       <div className="flex flex-1 flex-col pt-6">
         {step === 'crew' && (
           <CrewStep
@@ -138,7 +145,6 @@ export default function Welcome({
             }
             footer={
               <div className="space-y-2">
-                {error && <Notice>{error}</Notice>}
                 {hasOwnTickets ? (
                   <Button
                     className="w-full"

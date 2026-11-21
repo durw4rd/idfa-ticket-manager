@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import type { CrewMember, Group } from '@/lib/types';
@@ -18,7 +18,7 @@ import { declineConfirm, InviteCard } from './InviteCard';
  * membership decides whose tickets you see.
  */
 export default function PendingInvites({
-  groups,
+  groups: groupsProp,
   crew,
   allowedWithoutGroups,
   onChange,
@@ -33,6 +33,10 @@ export default function PendingInvites({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [declining, setDeclining] = useState<Group | null>(null);
+  // The memberships each action returns, used at once: the page's refreshed data comes later, and a
+  // second decline before then must see the first one gone to know whether it signs them out
+  const [groups, setGroups] = useState(groupsProp);
+  useEffect(() => setGroups(groupsProp), [groupsProp]);
   const invites = groups.filter((group) => group.status === 'invited');
 
   const run = async (action: 'accept' | 'leave', group: Group, endsAccess = false) => {
@@ -51,6 +55,7 @@ export default function PendingInvites({
         window.location.assign('/api/access-ended');
         return;
       }
+      setGroups(data.groups);
       onChange?.(data.groups, action === 'accept' ? group : null);
       router.refresh();
     } catch (err) {
