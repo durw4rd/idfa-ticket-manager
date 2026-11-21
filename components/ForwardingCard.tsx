@@ -14,7 +14,9 @@ export default function ForwardingCard({
   address,
   confirmUrl,
   spareLinks,
+  showHeading = true,
 }: {
+  showHeading?: boolean; // Off in the welcome flow, whose step has its own title
   address: string;
   confirmUrl: string | null; // Gmail's "confirm forwarding" link, once its confirmation mail has arrived
   spareLinks: { id: string; act: string; url: string; votedAt: string | null }[];
@@ -34,10 +36,12 @@ export default function ForwardingCard({
   };
 
   return (
-    <section aria-labelledby="forwarding-heading">
-      <h2 id="forwarding-heading" className="label mb-3">
-        Voting links
-      </h2>
+    <section aria-labelledby={showHeading ? 'forwarding-heading' : undefined} aria-label={showHeading ? undefined : 'Voting links'}>
+      {showHeading && (
+        <h2 id="forwarding-heading" className="label mb-3">
+          Voting links
+        </h2>
+      )}
       <div className="space-y-4 rounded border border-line bg-surface p-4">
         <p className="text-sm text-ink-2">
           After a screening in the Audience Award, IDFA emails you a voting link for each ticket. Forward those emails

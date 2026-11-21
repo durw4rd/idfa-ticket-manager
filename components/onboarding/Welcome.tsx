@@ -1,14 +1,15 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2, Plus } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, RefreshCw } from 'lucide-react';
 import type { CrewMember, Group } from '@/lib/types';
 import { onboardingSteps, type OnboardingStep } from '@/lib/onboarding';
 import { readApiResponse } from '@/lib/api-client';
 import IDFALogo from '@/components/IDFALogo';
 import PendingInvites from '@/components/PendingInvites';
 import ProfileCard from '@/components/ProfileCard';
+import ForwardingCard from '@/components/ForwardingCard';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { inputClasses, Notice } from '@/components/ui/Field';
@@ -23,6 +24,7 @@ export default function Welcome({
   crew,
   email,
   allowedWithoutGroups,
+  forwarding,
   crewScreenings,
   hasOwnTickets,
 }: {
@@ -30,18 +32,22 @@ export default function Welcome({
   crew: CrewMember[];
   email: string;
   allowedWithoutGroups: boolean;
+  // Your address for forwarding IDFA's voting emails, and Gmail's confirm link once it arrives;
+  // null where inbound mail isn't set up
+  forwarding: { address: string; confirmUrl: string | null } | null;
   crewScreenings: number; // This year's screenings the viewer can see, theirs and their crew's
   hasOwnTickets: boolean;
 }) {
   const router = useRouter();
   // Fixed when the flow opens: joining a group mustn't make the crew step vanish under them
-  const [steps] = useState(() => onboardingSteps(initialGroups));
+  const [steps] = useState(() => onboardingSteps(initialGroups, { voting: !!forwarding }));
   const [index, setIndex] = useState(0);
   // Kept here too, so a join shows at once rather than when the refreshed page data arrives
   const [groups, setGroups] = useState(initialGroups);
   const [finishing, setFinishing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const step: OnboardingStep = steps[index];
+  const [refreshing, startRefresh] = useTransition();
   const me = crew.find((member) => member.isMe)!;
   // What's typed in the profile step's name field, saved by Continue if it wasn't saved already
   const [nameDraft, setNameDraft] = useState<string | null>(null);
@@ -180,6 +186,37 @@ export default function Welcome({
             footer={<Button className="w-full" onClick={next}>Continue</Button>}
           >
             <Tour />
+          </StepLayout>
+        )}
+
+        {step === 'voting' && forwarding && (
+          <StepLayout
+            focus={moved}
+            title="Vote for the Audience Award"
+            intro="After each screening IDFA emails a voting link per ticket, to whoever bought them. Have Gmail forward those emails here and each link shows up in the app for whoever holds the ticket, so the whole crew can vote."
+            footer={
+              <div className="space-y-2">
+                <Button className="w-full" onClick={next}>
+                  Continue
+                </Button>
+                <p className="text-center text-xs text-ink-3">You can also set this up later on the Crew page.</p>
+              </div>
+            }
+          >
+            <ForwardingCard address={forwarding.address} confirmUrl={forwarding.confirmUrl} spareLinks={[]} showHeading={false} />
+            {!forwarding.confirmUrl && (
+              // Gmail's confirmation mail takes a minute; this picks it up without leaving the flow
+              <Button
+                variant="ghost"
+                size="sm"
+                className="-ml-3 text-ink-2"
+                icon={<RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />}
+                disabled={refreshing}
+                onClick={() => startRefresh(() => router.refresh())}
+              >
+                Added the address in Gmail? Check for its confirmation
+              </Button>
+            )}
           </StepLayout>
         )}
 

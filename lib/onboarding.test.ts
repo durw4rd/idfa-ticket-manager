@@ -14,19 +14,23 @@ const group = (id: string, status: Group['status']): Group => ({
 
 describe('onboardingSteps', () => {
   it('starts with the crew step for someone invited', () => {
-    expect(onboardingSteps([group('g', 'invited')])).toEqual(['crew', 'profile', 'tour', 'tickets']);
+    expect(onboardingSteps([group('g', 'invited')], { voting: false })).toEqual(['crew', 'profile', 'tour', 'tickets']);
   });
 
   it('offers the crew step to someone in no group, to start one', () => {
-    expect(onboardingSteps([])).toEqual(['crew', 'profile', 'tour', 'tickets']);
+    expect(onboardingSteps([], { voting: false })).toEqual(['crew', 'profile', 'tour', 'tickets']);
   });
 
   it('skips the crew step for someone already in a group with nothing pending', () => {
-    expect(onboardingSteps([group('g', 'active')])).toEqual(['profile', 'tour', 'tickets']);
+    expect(onboardingSteps([group('g', 'active')], { voting: false })).toEqual(['profile', 'tour', 'tickets']);
+  });
+
+  it('adds the voting step before tickets where inbound mail is set up', () => {
+    expect(onboardingSteps([group('g', 'active')], { voting: true })).toEqual(['profile', 'tour', 'voting', 'tickets']);
   });
 
   it('keeps the crew step when a new invite is pending next to a group', () => {
-    expect(onboardingSteps([group('g', 'active'), group('h', 'invited')])[0]).toBe('crew');
+    expect(onboardingSteps([group('g', 'active'), group('h', 'invited')], { voting: false })[0]).toBe('crew');
   });
 });
 
