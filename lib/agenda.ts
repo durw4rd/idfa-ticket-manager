@@ -1,6 +1,6 @@
 // Agenda logic shared by server pages and client components. Pure functions, no database access.
 
-import type { AgendaScreening, CrewMember, FilmPlace, MapFilm, Rating, Screening, TicketAvailability } from './types';
+import type { AgendaScreening, CrewGroup, CrewMember, FilmPlace, MapFilm, Rating, Screening, TicketAvailability } from './types';
 import { festivalDayKey, festivalDayStart, screeningEnd } from './dates';
 import { CREW_COLOR_COUNT, getDisplayName } from './display';
 import { comparableTitle, titleFilmKey } from './films';
@@ -42,8 +42,68 @@ export function holdersOf(screening: AgendaScreening): string[] {
 export type PersonFilter = 'all' | string;
 
 export function filterByPerson(screenings: AgendaScreening[], who: PersonFilter): AgendaScreening[] {
-  if (who === 'all') return screenings;
-  return screenings.filter((screening) => screening.tickets.some((ticket) => ticket.holderEmail === who));
+  return filterByPeople(screenings, who === 'all' ? [] : [who]);
+}
+
+/** Screenings any of `people` holds a ticket for; nobody selected means everyone's */
+export function filterByPeople(screenings: AgendaScreening[], people: string[]): AgendaScreening[] {
+  if (people.length === 0) return screenings;
+  const wanted = new Set(people);
+  return screenings.filter((screening) => screening.tickets.some((ticket) => wanted.has(ticket.holderEmail)));
+}
+
+/**
+ * Tap a person, or a whole crew, in a multi-select filter: if they're all selected already they
+ * all come off, otherwise they all go on. Keeps the result in crew order.
+ */
+export function togglePeople(crew: CrewMember[], selected: string[], emails: string[]): string[] {
+  const next = new Set(selected);
+  const allOn = emails.length > 0 && emails.every((email) => next.has(email));
+  for (const email of emails) {
+    if (allOn) next.delete(email);
+    else next.add(email);
+  }
+  return crew.filter((member) => next.has(member.email)).map((member) => member.email);
+}
+
+export interface CrewSection {
+  group: CrewGroup;
+  everyone: string[]; // All its members, you included, for selecting the whole crew
+  members: CrewMember[]; // The people listed under it: not you, and not anyone an earlier crew already lists
+}
+
+/**
+ * The viewer's crews in the person filter, oldest first. Someone in several of your crews is listed
+ * under the first; a crew with nobody else in it yet (only pending invites) is left out.
+ */
+export function crewSections(crew: CrewMember[]): CrewSection[] {
+  const me = crew.find((member) => member.isMe);
+  const listed = new Set<string>();
+  const sections: CrewSection[] = [];
+  for (const group of me?.groups ?? []) {
+    const inGroup = crew.filter((member) => member.groups.some((g) => g.id === group.id));
+    const others = inGroup.filter((member) => !member.isMe);
+    if (others.length === 0) continue;
+    const members = others.filter((member) => !listed.has(member.email));
+    members.forEach((member) => listed.add(member.email));
+    sections.push({ group, everyone: inGroup.map((member) => member.email), members });
+  }
+  return sections;
+}
+
+/**
+ * Which of your crews someone is from, for a light hint next to their name. Only when you're in
+ * more than one crew (otherwise it says nothing new), and never for you.
+ */
+export function crewHint(member: CrewMember, me: CrewMember | undefined): string | null {
+  if (!me || member.isMe || me.groups.length < 2 || member.groups.length === 0) return null;
+  return member.groups.map((group) => group.name).join(', ');
+}
+
+/** "Alex", "Alex and Sam", "Alex, Sam and Joe" */
+export function joinNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
 /** Two or more different people hold tickets for it */
@@ -216,7 +276,7 @@ export function buildTodo<L extends TodoVoteLink>(input: {
 export function makeCrewLookup(crew: CrewMember[]): (email: string) => CrewMember {
   const byEmail = new Map(crew.map((member) => [member.email, member]));
   return (email) =>
-    byEmail.get(email) || { email, name: getDisplayName(email), color: CREW_COLOR_COUNT - 1, badge: null, isMe: false };
+    byEmail.get(email) || { email, name: getDisplayName(email), color: CREW_COLOR_COUNT - 1, badge: null, isMe: false, groups: [] };
 }
 
 /** A screening's id: tickets with the same title, date and start are one screening */

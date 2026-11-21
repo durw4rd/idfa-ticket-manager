@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowRightLeft, Loader2, MoreHorizontal, Pencil, QrCode, Trash2 } from 'lucide-react';
 import type { CrewMember, ExtractedTicketFields } from '@/lib/types';
-import { makeCrewLookup, screeningHref, screeningKey } from '@/lib/agenda';
+import { crewHint, makeCrewLookup, screeningHref, screeningKey } from '@/lib/agenda';
 import { readApiResponse } from '@/lib/api-client';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
@@ -46,6 +46,7 @@ export default function ScreeningTickets({
 }) {
   const router = useRouter();
   const lookup = makeCrewLookup(crew);
+  const me = crew.find((member) => member.isMe);
   // The tickets are copied when the viewer opens, so a refresh or the minute tick can't swap the QR
   // being shown at the door for another one
   const [overlay, setOverlay] = useState<{ tickets: QrTicket[]; index: number } | null>(null);
@@ -175,6 +176,7 @@ export default function ScreeningTickets({
                 <p className="mt-0.5 text-xs text-ink-3">
                   {tickets.length > 1 ? `Ticket ${index + 1} of ${tickets.length}` : 'Ticket'}
                   {!isOwner && ` · from ${lookup(ticket.ownerEmail).name}`}
+                  {crewHint(holder, me) && ` · ${crewHint(holder, me)}`}
                 </p>
                 {canPassOn && (crew.length > 1 || ticket.holderEmail !== meEmail) && (
                   <button
@@ -214,7 +216,10 @@ export default function ScreeningTickets({
                 icon={<Avatar member={member} size="md" />}
                 onClick={() => setHolder(panel.ticket, member.email)}
               >
-                {member.isMe ? `${member.name} (you)` : member.name}
+                <span className="block">{member.isMe ? `${member.name} (you)` : member.name}</span>
+                {crewHint(member, me) && (
+                  <span className="block text-xs font-normal text-ink-3">{crewHint(member, me)}</span>
+                )}
               </SheetOption>
             ))}
             {error && <Notice>{error}</Notice>}

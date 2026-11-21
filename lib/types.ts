@@ -124,6 +124,13 @@ export interface CrewMember {
   color: number; // Index into the crew colour palette: the badge's colour, else derived from the email (see getCrew)
   badge: Badge | null; // The avatar icon they picked; null shows their initial
   isMe: boolean;
+  groups: CrewGroup[]; // The viewer's groups this person is in, oldest first; the viewer's own is all of them
+}
+
+// One of the viewer's groups, as shown in crew hints and the agenda's person filter
+export interface CrewGroup {
+  id: string;
+  name: string;
 }
 
 // Ticket sales on the IDFA site for a screening; screenings with plenty left aren't marked

@@ -6,13 +6,13 @@ import { CalendarDays, ChevronUp, GanttChart, Globe, List, Plus } from 'lucide-r
 import type { AgendaScreening, CrewMember, MapPlaceData } from '@/lib/types';
 import { festivalDayKey } from '@/lib/dates';
 import {
-  filterByPerson,
+  filterByPeople,
   findClashes,
   groupByDay,
   holdersOf,
+  joinNames,
   makeCrewLookup,
   toMapFilms,
-  type PersonFilter as Filter,
 } from '@/lib/agenda';
 import { usePersistentState } from '@/lib/use-persistent-state';
 import { useNow } from '@/lib/use-now';
@@ -56,17 +56,20 @@ export default function AgendaView({
   const me = crew.find((member) => member.isMe)!;
   const lookup = useMemo(() => makeCrewLookup(crew), [crew]);
 
-  const [who, setWho] = usePersistentState<Filter>(
-    'agenda.who',
-    'all',
-    (value) => value === 'all' || crew.some((member) => member.email === value),
-  );
+  // The people picked in the filter, stored comma-separated; empty is everyone. People who have
+  // since left the crew drop out, and the rest keep crew order
+  const [stored, setStored] = usePersistentState<string>('agenda.people', '');
+  const who = useMemo(() => {
+    const picked = new Set(stored.split(','));
+    return crew.filter((member) => picked.has(member.email)).map((member) => member.email);
+  }, [stored, crew]);
+  const setWho = (emails: string[]) => setStored(emails.join(','));
   const [view, setView] = usePersistentState<View>('agenda.view', 'list', (value) =>
     ['list', 'timeline', 'map'].includes(value),
   );
   const [showEarlier, setShowEarlier] = useState(false);
 
-  const visible = useMemo(() => filterByPerson(screenings, who), [screenings, who]);
+  const visible = useMemo(() => filterByPeople(screenings, who), [screenings, who]);
   const clashes = useMemo(() => findClashes(screenings), [screenings]);
   const counts = useMemo(() => {
     const result = new Map<string, number>();
@@ -76,8 +79,8 @@ export default function AgendaView({
     return result;
   }, [screenings]);
 
-  // Whose "up next" to show: the selected person, or you when showing everyone
-  const focusEmail = who === 'all' ? me.email : who;
+  // Whose "up next" to show: you, unless you're not among the people picked
+  const focusEmail = who.length === 0 || who.includes(me.email) ? me.email : who[0];
   const upcoming = visible.filter((screening) => new Date(screening.startsAt) > now);
   const nextForFocus = upcoming.find((screening) => holdersOf(screening).includes(focusEmail));
 
@@ -90,12 +93,13 @@ export default function AgendaView({
   const marks: RowMarks = { nextId: nextForFocus?.id || null, clashes, todayKey, now };
   // Lanes for everyone holding a visible ticket, including people who have since left the group
   const people = useMemo(() => {
-    if (who !== 'all') return [lookup(who)];
+    if (who.length > 0) return who.map(lookup);
     const extra = Array.from(new Set(screenings.flatMap(holdersOf)))
       .filter((email) => !crew.some((member) => member.email === email))
       .map(lookup);
     return [...crew, ...extra];
   }, [who, screenings, crew, lookup]);
+  const pickedNames = joinNames(who.map((email) => (email === me.email ? 'you' : lookup(email).name)));
   const festivalDay = festivalDayLabel(screenings, todayKey);
   // The map shows the films of the screenings the person filter leaves, at their stored places
   const mapFilms = useMemo(
@@ -169,8 +173,8 @@ export default function AgendaView({
           </div>
 
           {visible.length === 0 ? (
-            <EmptyState title={`Nothing for ${lookup(who).name} in ${year}`}>
-              Tickets show up here once they&apos;re handed to {lookup(who).name}.
+            <EmptyState title={`Nothing for ${pickedNames} in ${year}`}>
+              Tickets show up here once they&apos;re handed to {who.length > 1 ? 'one of them' : pickedNames}.
             </EmptyState>
           ) : view === 'map' ? (
             <MapView films={mapFilms} crew={crew} />
