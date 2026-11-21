@@ -1,5 +1,5 @@
 import { sql, withAdvisoryLock, withTransaction } from './db';
-import { CrewMember, Group, GroupMember } from './types';
+import { CrewGroup, CrewMember, Group, GroupMember } from './types';
 import { assignCrewLooks, type Badge, getDisplayName } from './display';
 
 export function normalizeEmail(email: string): string {
@@ -37,6 +37,7 @@ export async function getCrew(viewer: { email: string; visibleEmails: string[] }
   const result = await sql`
     SELECT m.user_email as "email", MIN(g.created_at) as "groupCreated", MIN(m.created_at) as "joined",
            p.name, p.badge,
+           json_agg(json_build_object('id', g.id, 'name', g.name) ORDER BY g.created_at, g.id) as "groups",
            (SELECT MIN(x.created_at) FROM group_members x
             WHERE x.user_email = m.user_email AND x.status = 'active') as "firstJoined"
     FROM group_members m
@@ -48,7 +49,8 @@ export async function getCrew(viewer: { email: string; visibleEmails: string[] }
     ORDER BY MIN(g.created_at) ASC, MIN(m.created_at) ASC, m.user_email ASC
   `;
 
-  const rows = result.rows.length > 0 ? result.rows : [{ email: viewer.email, ...(await getProfile(viewer.email)) }];
+  const rows =
+    result.rows.length > 0 ? result.rows : [{ email: viewer.email, groups: [], ...(await getProfile(viewer.email)) }];
   const byPrecedence = [...rows].sort(
     (a, b) =>
       new Date(a.firstJoined ?? 0).getTime() - new Date(b.firstJoined ?? 0).getTime() ||
@@ -60,6 +62,7 @@ export async function getCrew(viewer: { email: string; visibleEmails: string[] }
     name: (row.name as string | null) || getDisplayName(row.email as string),
     ...looks.get(row.email as string)!,
     isMe: row.email === viewer.email,
+    groups: row.groups as CrewGroup[],
   }));
   return crew.sort((a, b) => Number(b.isMe) - Number(a.isMe));
 }

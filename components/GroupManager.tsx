@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, Loader2, LogOut, Pencil, UserPlus, X } from 'lucide-react';
+import { Check, Loader2, LogOut, Pencil, Share2, UserPlus, X } from 'lucide-react';
 import type { CrewMember, Group } from '@/lib/types';
 import { makeCrewLookup } from '@/lib/agenda';
 import { readApiResponse } from '@/lib/api-client';
@@ -29,6 +29,34 @@ export default function GroupManager({ initialGroups, crew }: { initialGroups: G
   const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [renaming, setRenaming] = useState<{ groupId: string; name: string } | null>(null);
+  // The invite just sent, offered for sharing: the app doesn't email invitees itself
+  const [justInvited, setJustInvited] = useState<{ groupId: string; email: string } | null>(null);
+  // The invite whose text was just copied (where sharing isn't available), as `groupId|email`
+  const [copied, setCopied] = useState<string | null>(null);
+
+  // Send someone the app's address and what to do there, through the phone's share sheet, or by
+  // copying it where there is none
+  const shareInvite = async (group: Group, email: string) => {
+    const url = window.location.origin;
+    const text =
+      `${me.name} invited you to "${group.name}" in the IDFA ticket app. ` +
+      `Sign in with Google as ${email}, then tap Join on the Crew page.`;
+    setError(null);
+    try {
+      if (typeof navigator.share === 'function') {
+        await navigator.share({ title: `Join ${group.name}`, text, url });
+      } else {
+        await navigator.clipboard.writeText(`${text} ${url}`);
+        const key = `${group.id}|${email}`;
+        setCopied(key);
+        setTimeout(() => setCopied((current) => (current === key ? null : current)), 2000);
+      }
+    } catch (err) {
+      // Closing the share sheet isn't a failure
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      setError('Could not share the invite. Send them the app link yourself.');
+    }
+  };
 
   const runAction = async (body: Record<string, string>) => {
     setBusy(true);
@@ -41,6 +69,13 @@ export default function GroupManager({ initialGroups, crew }: { initialGroups: G
       });
       const data = await readApiResponse<{ groups: Group[] }>(response, 'Something went wrong');
       setGroups(data.groups);
+      // Only offer to share an invite that is actually pending: inviting someone already in the
+      // group succeeds too, and they'd have no Join button to tap
+      const invitee = body.action === 'invite' ? body.email.trim().toLowerCase() : null;
+      const pending = data.groups
+        .find((group) => group.id === body.groupId)
+        ?.members.some((member) => member.userEmail === invitee && member.status === 'invited');
+      setJustInvited(invitee && pending ? { groupId: body.groupId, email: invitee } : null);
       // Membership decides whose tickets you see, so every page's data changes with it
       router.refresh();
       return true;
@@ -196,6 +231,24 @@ export default function GroupManager({ initialGroups, crew }: { initialGroups: G
                       <span className="text-xs text-ink-3">
                         {member.status === 'invited' ? 'Invited' : member.role === 'owner' ? 'Owner' : ''}
                       </span>
+                      {member.status === 'invited' && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="-mr-2 text-ink-3"
+                          aria-label={
+                            copied === `${group.id}|${member.userEmail}` ? 'Invite copied' : `Share invite with ${person.name}`
+                          }
+                          icon={
+                            copied === `${group.id}|${member.userEmail}` ? (
+                              <Check className="h-4 w-4" />
+                            ) : (
+                              <Share2 className="h-4 w-4" />
+                            )
+                          }
+                          onClick={() => shareInvite(group, member.userEmail)}
+                        />
+                      )}
                       {group.role === 'owner' && !isMe && (
                         <Button
                           size="icon"
@@ -246,6 +299,27 @@ export default function GroupManager({ initialGroups, crew }: { initialGroups: G
                   disabled={busy || !inviteEmails[group.id]?.trim()}
                 />
               </form>
+              {justInvited?.groupId === group.id && (
+                <div className="flex items-center gap-3 border-t border-line px-4 py-3">
+                  <p className="min-w-0 flex-1 text-sm text-ink-2">
+                    The app doesn&apos;t email invites. Send {lookup(justInvited.email).name} the link to sign in.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    icon={
+                      copied === `${group.id}|${justInvited.email}` ? (
+                        <Check className="h-4 w-4" />
+                      ) : (
+                        <Share2 className="h-4 w-4" />
+                      )
+                    }
+                    onClick={() => shareInvite(group, justInvited.email)}
+                  >
+                    {copied === `${group.id}|${justInvited.email}` ? 'Copied' : 'Share invite'}
+                  </Button>
+                </div>
+              )}
             </div>
           ))}
         </div>
