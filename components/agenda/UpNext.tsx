@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { Navigation, QrCode } from 'lucide-react';
+import { Lock, Navigation, QrCode } from 'lucide-react';
 import type { AgendaScreening, CrewMember } from '@/lib/types';
 import { dayKey, formatDate, formatTimeRange } from '@/lib/dates';
 import { formatTimeUntil } from '@/lib/display';
@@ -18,17 +18,22 @@ export default function UpNext({
   screening,
   now,
   personEmail,
+  viewerEmail,
   lookup,
 }: {
   screening: AgendaScreening;
   now: Date;
   personEmail: string;
+  viewerEmail: string;
   lookup: (email: string) => CrewMember;
 }) {
   // Copied when opened: the minute tick can move "Up next" on to the following film while this
   // film's QR is still being shown at the door
   const [qrTickets, setQrTickets] = useState<QrTicket[] | null>(null);
   const startsAt = new Date(screening.startsAt);
+  const nameOf = (email: string) => lookup(email).name;
+  // A crew-mate's film: their codes are theirs, unless you hold or bought one of the tickets
+  const canShow = qrTicketsFor(screening, nameOf, viewerEmail, personEmail).length > 0;
   // Compare with the server's `now`, not the browser clock, so TEST_DATE works
   const when = dayKey(startsAt) === dayKey(now) ? formatTimeUntil(startsAt, now) : formatDate(startsAt);
 
@@ -52,9 +57,21 @@ export default function UpNext({
           </span>
         </div>
         <div className="mt-4 flex gap-2">
-          <Button variant="spark" icon={<QrCode className="h-5 w-5" />} onClick={() => setQrTickets(qrTicketsFor(screening, (email) => lookup(email).name, personEmail))} className="flex-1">
-            Show ticket
-          </Button>
+          {canShow ? (
+            <Button
+              variant="spark"
+              icon={<QrCode className="h-5 w-5" />}
+              onClick={() => setQrTickets(qrTicketsFor(screening, nameOf, viewerEmail, personEmail))}
+              className="flex-1"
+            >
+              Show ticket
+            </Button>
+          ) : (
+            <p className="flex h-11 min-w-0 flex-1 items-center gap-2 text-sm text-ink-2">
+              <Lock className="h-4 w-4 shrink-0 text-ink-3" aria-hidden />
+              <span className="truncate">Only {lookup(personEmail).name} can show this ticket</span>
+            </p>
+          )}
           <ButtonLink
             variant="secondary"
             size="icon"

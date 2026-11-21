@@ -150,7 +150,7 @@ export default function AgendaView({
         <>
           {/* The map is the whole view there; your films show in yellow on it instead */}
           {nextForFocus && view !== 'map' && (
-            <UpNext screening={nextForFocus} now={now} personEmail={focusEmail} lookup={lookup} />
+            <UpNext screening={nextForFocus} now={now} personEmail={focusEmail} viewerEmail={me.email} lookup={lookup} />
           )}
 
           <div className="mb-3 space-y-3">

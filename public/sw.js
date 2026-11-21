@@ -125,6 +125,16 @@ async function networkFirst(request, cacheName) {
   }
   // The session is over: the copies go too, and the refusal stands
   if (response.status === 401) await clearAll();
+  // Not yours to show (a crew-mate's QR, kept from before codes were limited to their holder and
+  // owner): drop the copy so it can't be served offline later
+  if (response.status === 403) {
+    try {
+      const cache = await caches.open(cacheName);
+      await cache.delete(request, { ignoreSearch: true });
+    } catch {
+      // Housekeeping only; the next wallet sync drops it too
+    }
+  }
   return response;
 }
 

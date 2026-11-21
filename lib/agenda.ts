@@ -5,6 +5,14 @@ import { festivalDayKey, festivalDayStart, screeningEnd } from './dates';
 import { CREW_COLOR_COUNT, getDisplayName } from './display';
 import { comparableTitle, titleFilmKey } from './films';
 
+/**
+ * Whether `email` may see a ticket's QR code: its holder (who uses it at the door) or its owner
+ * (who uploaded it). The rest of the crew sees the ticket, not its code. The QR route enforces this.
+ */
+export function canSeeQr(ticket: { ownerEmail: string; holderEmail: string }, email: string): boolean {
+  return ticket.holderEmail === email || ticket.ownerEmail === email;
+}
+
 /** Strip a screening down to what the browser may see: no blob URLs, no QR hashes */
 export function toAgendaScreening(screening: Screening): AgendaScreening {
   return {

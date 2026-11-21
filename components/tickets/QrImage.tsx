@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { RotateCw, WifiOff } from 'lucide-react';
+import { Lock, RotateCw, WifiOff } from 'lucide-react';
 
 /**
  * A ticket's QR code from /api/tickets/[id]/qr. The route never lets the browser cache it; the
@@ -75,5 +75,23 @@ export function QrImage({
       onError={handleError}
       className={className}
     />
+  );
+}
+
+/**
+ * Stands in for a crew-mate's QR code, which only the ticket's holder and owner may see. Takes the
+ * QR's place so the layout doesn't move; the caller's className sets its size.
+ */
+export function QrLocked({ holderName, className = '' }: { holderName: string; className?: string }) {
+  const label = `Only ${holderName} can show this ticket`;
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      className={`flex shrink-0 items-center justify-center rounded bg-surface ring-1 ring-line ${className}`}
+    >
+      <Lock className="h-5 w-5 text-ink-3" aria-hidden />
+    </span>
   );
 }

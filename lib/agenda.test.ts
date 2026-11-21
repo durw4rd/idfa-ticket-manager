@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AgendaScreening, CrewGroup, CrewMember } from './types';
 import {
   buildTodo,
+  canSeeQr,
   crewHint,
   filmShowings,
   filterByPeople,
@@ -417,5 +418,14 @@ describe('filmShowings', () => {
     );
     expect(showings.size).toBe(1);
     expect(showings.get('film:abc')).toMatchObject({ title: 'Lonan Tché', screening: { id: 'IDFA Hit: Lonan Tché' } });
+  });
+});
+
+describe('canSeeQr', () => {
+  it('lets the holder and the owner see the code, and nobody else', () => {
+    const ticket = { ownerEmail: 'owner@example.com', holderEmail: 'holder@example.com' };
+    expect(canSeeQr(ticket, 'holder@example.com')).toBe(true);
+    expect(canSeeQr(ticket, 'owner@example.com')).toBe(true);
+    expect(canSeeQr(ticket, 'crewmate@example.com')).toBe(false);
   });
 });

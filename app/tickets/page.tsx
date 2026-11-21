@@ -3,7 +3,7 @@ import { getScreeningsForYear } from '@/lib/db';
 import { getCrew } from '@/lib/groups';
 import { getViewer } from '@/lib/auth-helpers';
 import { getCurrentFestivalYear, getNow, screeningEnd } from '@/lib/dates';
-import { toAgendaScreening } from '@/lib/agenda';
+import { canSeeQr, toAgendaScreening } from '@/lib/agenda';
 import PageHeader from '@/components/PageHeader';
 import TicketWallet from '@/components/tickets/TicketWallet';
 import OfflineTickets from '@/components/tickets/OfflineTickets';
@@ -27,8 +27,12 @@ export default async function TicketsPage() {
   return (
     <>
       <PageHeader title="Tickets" me={crew.find((member) => member.isMe)} />
-      {/* Every ticket in the wallet, yours and the crew's, so one phone can get both of you in */}
-      <OfflineTickets ticketIds={current.flatMap((screening) => screening.tickets.map((ticket) => ticket.id))} />
+      {/* The codes you may show (held or uploaded by you); the QR route refuses the crew's others */}
+      <OfflineTickets
+        ticketIds={current.flatMap((screening) =>
+          screening.tickets.filter((ticket) => canSeeQr(ticket, viewer.email)).map((ticket) => ticket.id)
+        )}
+      />
       <TicketWallet screenings={current.map(toAgendaScreening)} crew={crew} now={now.toISOString()} />
     </>
   );
