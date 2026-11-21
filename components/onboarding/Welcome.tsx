@@ -43,17 +43,18 @@ export default function Welcome({
   const [error, setError] = useState<string | null>(null);
   const step: OnboardingStep = steps[index];
   const me = crew.find((member) => member.isMe)!;
+  // What's typed in the profile step's name field, saved by Continue if it wasn't saved already
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
   // Set once they move between steps; from then on each new step's heading takes focus
   const [moved, setMoved] = useState(false);
   const goTo = (i: number) => {
     setMoved(true);
     setError(null); // An error belongs to the step it happened on
+    setNameDraft(null); // The profile step's field starts from the saved name when shown again
     setIndex(Math.max(0, Math.min(i, steps.length - 1)));
   };
   const next = () => goTo(index + 1);
 
-  // What's typed in the profile step's name field, saved by Continue if it wasn't saved already
-  const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [savingName, setSavingName] = useState(false);
   const continueFromProfile = async () => {
     if (nameDraft === null || nameDraft.trim() === me.name) {
