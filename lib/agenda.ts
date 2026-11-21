@@ -1,6 +1,6 @@
 // Agenda logic shared by server pages and client components. Pure functions, no database access.
 
-import type { AgendaScreening, CrewGroup, CrewMember, FilmPlace, MapFilm, Rating, Screening, TicketAvailability } from './types';
+import type { AgendaScreening, CrewMember, FilmPlace, MapFilm, Rating, Screening, TicketAvailability } from './types';
 import { festivalDayKey, festivalDayStart, screeningEnd } from './dates';
 import { CREW_COLOR_COUNT, getDisplayName } from './display';
 import { comparableTitle, titleFilmKey } from './films';
@@ -52,43 +52,12 @@ export function filterByPeople(screenings: AgendaScreening[], people: string[]):
   return screenings.filter((screening) => screening.tickets.some((ticket) => wanted.has(ticket.holderEmail)));
 }
 
-/**
- * Tap a person, or a whole crew, in a multi-select filter: if they're all selected already they
- * all come off, otherwise they all go on. Keeps the result in crew order.
- */
-export function togglePeople(crew: CrewMember[], selected: string[], emails: string[]): string[] {
+/** Tap a person in the multi-select filter: on if they were off, off if on. Keeps crew order. */
+export function togglePerson(crew: CrewMember[], selected: string[], email: string): string[] {
   const next = new Set(selected);
-  const allOn = emails.length > 0 && emails.every((email) => next.has(email));
-  for (const email of emails) {
-    if (allOn) next.delete(email);
-    else next.add(email);
-  }
+  if (next.has(email)) next.delete(email);
+  else next.add(email);
   return crew.filter((member) => next.has(member.email)).map((member) => member.email);
-}
-
-export interface CrewSection {
-  group: CrewGroup;
-  everyone: string[]; // All its members, you included, for selecting the whole crew
-  members: CrewMember[]; // The people listed under it: not you, and not anyone an earlier crew already lists
-}
-
-/**
- * The viewer's crews in the person filter, oldest first. Someone in several of your crews is listed
- * under the first; a crew with nobody else in it yet (only pending invites) is left out.
- */
-export function crewSections(crew: CrewMember[]): CrewSection[] {
-  const me = crew.find((member) => member.isMe);
-  const listed = new Set<string>();
-  const sections: CrewSection[] = [];
-  for (const group of me?.groups ?? []) {
-    const inGroup = crew.filter((member) => member.groups.some((g) => g.id === group.id));
-    const others = inGroup.filter((member) => !member.isMe);
-    if (others.length === 0) continue;
-    const members = others.filter((member) => !listed.has(member.email));
-    members.forEach((member) => listed.add(member.email));
-    sections.push({ group, everyone: inGroup.map((member) => member.email), members });
-  }
-  return sections;
 }
 
 /**
