@@ -13,10 +13,12 @@
 // delete all of it. Every write is best-effort: storage being full never breaks the online app.
 // Bump VERSION when the caching rules change: older caches are deleted on activate.
 
-const VERSION = 'v1';
+// v2: QR codes became holder-and-owner only, so wallets and codes stored under v1 (which held
+// crew-mates' codes too) are dropped; the next online Tickets visit stores your own again.
+const VERSION = 'v2';
 const PAGES = `pages-${VERSION}`;
 const STATIC = `static-${VERSION}`;
-const QR = 'ticket-qr'; // Shared with OfflineTickets.tsx and ProfileCard.tsx
+const QR = `ticket-qr-${VERSION}`; // Versioned too, so a bump drops old codes
 const KEEP = [PAGES, STATIC, QR];
 const WALLET = '/tickets';
 
@@ -125,8 +127,8 @@ async function networkFirst(request, cacheName) {
   }
   // The session is over: the copies go too, and the refusal stands
   if (response.status === 401) await clearAll();
-  // Not yours to show (a crew-mate's QR, kept from before codes were limited to their holder and
-  // owner): drop the copy so it can't be served offline later
+  // Not yours to show (e.g. a ticket handed to someone else since it was stored): drop the copy
+  // so it can't be served offline later
   if (response.status === 403) {
     try {
       const cache = await caches.open(cacheName);
