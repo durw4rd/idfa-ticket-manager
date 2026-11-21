@@ -17,5 +17,6 @@ Hand-run SQL; there is no migration runner. Run each file once, in number order,
 | `010-film-places-manual-none.sql` | Lets a person's "no single place" be stored as a manual row (`source = 'manual'`, no country) |
 | `011-vote-links-voted.sql` | `vote_links.voted_at`, for the Films page's to-do list |
 | `012-onboarding.sql` | `profiles.onboarded_at` (who has been through `/welcome`), set for everyone already using the app |
+| `013-qr-shares.sql` | `qr_shares`: crew-mates you let see your tickets' QR codes |
 
 Schema changes use `IF NOT EXISTS`, so re-running them does nothing. Data changes are a different matter: don't replay `002` on a database that has run it, because its seed only checks current membership, and if the seeded owner has since left every group it creates the group and both memberships again. When you add a migration, give it the next number, update `lib/types.ts` and the row mapping in `lib/db.ts`, and add it to this table.

@@ -23,7 +23,7 @@ interface Pass {
   screening: AgendaScreening;
   ticketId: string;
   holder: CrewMember;
-  canSeeQr: boolean; // Your own (held or uploaded); a crew-mate's shows a lock instead
+  canSeeQr: boolean; // Yours (held or uploaded) or shared with you; the rest show a lock
   index: number; // Position among the screening's tickets in this list
   of: number;
 }
@@ -31,15 +31,17 @@ interface Pass {
 /**
  * Upcoming tickets as passes, soonest first. The next one shows its QR right away; any of your
  * passes opens the full-screen QR, and you can swipe through your others from there. A crew-mate's
- * pass shows a lock: only a ticket's holder and owner see its code.
+ * pass shows a lock unless they share their codes with you (see canSeeQr).
  */
 export default function TicketWallet({
   screenings,
   crew,
+  qrEmails,
   now: nowIso,
 }: {
   screenings: AgendaScreening[];
   crew: CrewMember[];
+  qrEmails: string[]; // You plus whoever shares their codes with you (see canSeeQr)
   now: string;
 }) {
   const now = useNow(nowIso);
@@ -64,7 +66,7 @@ export default function TicketWallet({
       screening,
       ticketId: ticket.id,
       holder: lookup(ticket.holderEmail),
-      canSeeQr: canSeeQr(ticket, me.email),
+      canSeeQr: canSeeQr(ticket, qrEmails),
       index,
       of: tickets.length,
     }));

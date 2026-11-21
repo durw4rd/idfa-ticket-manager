@@ -4,6 +4,7 @@ import { getCrew } from '@/lib/groups';
 import { getViewer } from '@/lib/auth-helpers';
 import { getCurrentFestivalYear, getNow, screeningEnd } from '@/lib/dates';
 import { canSeeQr, toAgendaScreening } from '@/lib/agenda';
+import { getQrEmails } from '@/lib/qr-shares';
 import PageHeader from '@/components/PageHeader';
 import TicketWallet from '@/components/tickets/TicketWallet';
 import OfflineTickets from '@/components/tickets/OfflineTickets';
@@ -17,9 +18,10 @@ export default async function TicketsPage() {
   }
 
   const now = getNow();
-  const [screenings, crew] = await Promise.all([
+  const [screenings, crew, qrEmails] = await Promise.all([
     getScreeningsForYear(viewer.visibleEmails, getCurrentFestivalYear()),
     getCrew(viewer),
+    getQrEmails(viewer),
   ]);
   // Keep a ticket until its screening is over, in case you need it at the door after the start
   const current = screenings.filter((screening) => screeningEnd(screening.dateTime, screening.endsAt) > now);
@@ -27,13 +29,13 @@ export default async function TicketsPage() {
   return (
     <>
       <PageHeader title="Tickets" me={crew.find((member) => member.isMe)} />
-      {/* The codes you may show (held or uploaded by you); the QR route refuses the crew's others */}
+      {/* The codes you may show (yours, or shared with you); the QR route refuses the crew's others */}
       <OfflineTickets
         ticketIds={current.flatMap((screening) =>
-          screening.tickets.filter((ticket) => canSeeQr(ticket, viewer.email)).map((ticket) => ticket.id)
+          screening.tickets.filter((ticket) => canSeeQr(ticket, qrEmails)).map((ticket) => ticket.id)
         )}
       />
-      <TicketWallet screenings={current.map(toAgendaScreening)} crew={crew} now={now.toISOString()} />
+      <TicketWallet screenings={current.map(toAgendaScreening)} crew={crew} qrEmails={qrEmails} now={now.toISOString()} />
     </>
   );
 }

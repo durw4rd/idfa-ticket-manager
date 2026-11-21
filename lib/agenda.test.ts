@@ -422,10 +422,17 @@ describe('filmShowings', () => {
 });
 
 describe('canSeeQr', () => {
+  const ticket = { ownerEmail: 'owner@example.com', holderEmail: 'holder@example.com' };
+
   it('lets the holder and the owner see the code, and nobody else', () => {
-    const ticket = { ownerEmail: 'owner@example.com', holderEmail: 'holder@example.com' };
-    expect(canSeeQr(ticket, 'holder@example.com')).toBe(true);
-    expect(canSeeQr(ticket, 'owner@example.com')).toBe(true);
-    expect(canSeeQr(ticket, 'crewmate@example.com')).toBe(false);
+    expect(canSeeQr(ticket, ['holder@example.com'])).toBe(true);
+    expect(canSeeQr(ticket, ['owner@example.com'])).toBe(true);
+    expect(canSeeQr(ticket, ['crewmate@example.com'])).toBe(false);
+  });
+
+  it('lets someone the holder or owner shares with see it', () => {
+    expect(canSeeQr(ticket, ['crewmate@example.com', 'holder@example.com'])).toBe(true);
+    expect(canSeeQr(ticket, ['crewmate@example.com', 'owner@example.com'])).toBe(true);
+    expect(canSeeQr(ticket, ['crewmate@example.com', 'someone@example.com'])).toBe(false);
   });
 });

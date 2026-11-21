@@ -18,13 +18,13 @@ export default function UpNext({
   screening,
   now,
   personEmail,
-  viewerEmail,
+  qrEmails,
   lookup,
 }: {
   screening: AgendaScreening;
   now: Date;
   personEmail: string;
-  viewerEmail: string;
+  qrEmails: string[]; // You plus whoever shares their codes with you (see canSeeQr)
   lookup: (email: string) => CrewMember;
 }) {
   // Copied when opened: the minute tick can move "Up next" on to the following film while this
@@ -32,8 +32,8 @@ export default function UpNext({
   const [qrTickets, setQrTickets] = useState<QrTicket[] | null>(null);
   const startsAt = new Date(screening.startsAt);
   const nameOf = (email: string) => lookup(email).name;
-  // A crew-mate's film: their codes are theirs, unless you hold or bought one of the tickets
-  const canShow = qrTicketsFor(screening, nameOf, viewerEmail, personEmail).length > 0;
+  // A crew-mate's film: their codes are theirs, unless you hold or bought a ticket or they share with you
+  const canShow = qrTicketsFor(screening, nameOf, qrEmails, personEmail).length > 0;
   // Compare with the server's `now`, not the browser clock, so TEST_DATE works
   const when = dayKey(startsAt) === dayKey(now) ? formatTimeUntil(startsAt, now) : formatDate(startsAt);
 
@@ -61,7 +61,7 @@ export default function UpNext({
             <Button
               variant="spark"
               icon={<QrCode className="h-5 w-5" />}
-              onClick={() => setQrTickets(qrTicketsFor(screening, nameOf, viewerEmail, personEmail))}
+              onClick={() => setQrTickets(qrTicketsFor(screening, nameOf, qrEmails, personEmail))}
               className="flex-1"
             >
               Show ticket

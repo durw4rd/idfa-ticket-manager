@@ -6,11 +6,13 @@ import { CREW_COLOR_COUNT, getDisplayName } from './display';
 import { comparableTitle, titleFilmKey } from './films';
 
 /**
- * Whether `email` may see a ticket's QR code: its holder (who uses it at the door) or its owner
- * (who uploaded it). The rest of the crew sees the ticket, not its code. The QR route enforces this.
+ * Whether a viewer may see a ticket's QR code: they hold it (use it at the door) or own it
+ * (uploaded it), or its holder or owner shares their codes with them. `qrEmails` is the viewer plus
+ * those sharers (getQrEmails in lib/qr-shares.ts). The rest of the crew sees the ticket, not its
+ * code. The QR route enforces this.
  */
-export function canSeeQr(ticket: { ownerEmail: string; holderEmail: string }, email: string): boolean {
-  return ticket.holderEmail === email || ticket.ownerEmail === email;
+export function canSeeQr(ticket: { ownerEmail: string; holderEmail: string }, qrEmails: readonly string[]): boolean {
+  return qrEmails.includes(ticket.holderEmail) || qrEmails.includes(ticket.ownerEmail);
 }
 
 /** Strip a screening down to what the browser may see: no blob URLs, no QR hashes */

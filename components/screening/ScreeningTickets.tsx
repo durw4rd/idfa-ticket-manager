@@ -29,20 +29,22 @@ type Panel =
   | { kind: 'delete'; ticket: ScreeningTicket };
 
 /**
- * The tickets for one screening: who holds each, the QR codes of the ones you hold or own (a lock
- * on the rest), and the actions you're allowed: pass a ticket on (its owner or holder), fix details
+ * The tickets for one screening: who holds each, the QR codes you may see (yours, or shared with
+ * you; a lock on the rest), and the actions you're allowed: pass a ticket on (its owner or holder), fix details
  * or delete it (its owner).
  */
 export default function ScreeningTickets({
   tickets,
   crew,
   meEmail,
+  qrEmails,
   title,
   meta,
 }: {
   tickets: ScreeningTicket[];
   crew: CrewMember[];
   meEmail: string;
+  qrEmails: string[]; // You plus whoever shares their codes with you (see canSeeQr)
   title: string;
   meta: string;
 }) {
@@ -61,7 +63,7 @@ export default function ScreeningTickets({
     (a, b) => Number(b.holderEmail === meEmail) - Number(a.holderEmail === meEmail)
   );
   // Only the codes you may see (the QR route refuses the rest)
-  const withQr = ordered.filter((ticket) => ticket.hasQr && canSeeQr(ticket, meEmail));
+  const withQr = ordered.filter((ticket) => ticket.hasQr && canSeeQr(ticket, qrEmails));
   const qrTickets: QrTicket[] = withQr.map((ticket, index) => ({
     id: ticket.id,
     title,
@@ -166,7 +168,7 @@ export default function ScreeningTickets({
           const canPassOn = isOwner || ticket.holderEmail === meEmail;
           return (
             <li key={ticket.id} className="flex items-center gap-3 p-3">
-              {ticket.hasQr && !canSeeQr(ticket, meEmail) ? (
+              {ticket.hasQr && !canSeeQr(ticket, qrEmails) ? (
                 <QrLocked holderName={holder.name} className="h-14 w-14" />
               ) : ticket.hasQr ? (
                 <button
