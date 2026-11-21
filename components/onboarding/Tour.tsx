@@ -17,7 +17,7 @@ const CARDS: { icon: LucideIcon; title: string; text: string }[] = [
   {
     icon: Star,
     title: 'Films',
-    text: "Rate what you've seen, compare with your crew, and vote for the Audience Award.",
+    text: "Rate what you've seen, compare with your crew, and vote for the Audience Award with the links IDFA emails you.",
   },
   {
     icon: Users,
