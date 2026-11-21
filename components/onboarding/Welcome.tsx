@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, Plus } from 'lucide-react';
 import type { CrewMember, Group } from '@/lib/types';
@@ -43,7 +43,13 @@ export default function Welcome({
   const [error, setError] = useState<string | null>(null);
   const step: OnboardingStep = steps[index];
   const me = crew.find((member) => member.isMe)!;
-  const next = () => setIndex((i) => Math.min(i + 1, steps.length - 1));
+  // Set once they move between steps; from then on each new step's heading takes focus
+  const [moved, setMoved] = useState(false);
+  const goTo = (i: number) => {
+    setMoved(true);
+    setIndex(Math.max(0, Math.min(i, steps.length - 1)));
+  };
+  const next = () => goTo(index + 1);
 
   const finish = async (to: string) => {
     setFinishing(to);
@@ -72,7 +78,7 @@ export default function Welcome({
             className="-ml-3"
             aria-label="Back"
             icon={<ArrowLeft className="h-5 w-5" />}
-            onClick={() => setIndex(index - 1)}
+            onClick={() => goTo(index - 1)}
           />
         ) : (
           <IDFALogo className="h-7 w-auto" />
@@ -112,11 +118,13 @@ export default function Welcome({
             allowedWithoutGroups={allowedWithoutGroups}
             onGroupsChange={setGroups}
             onNext={next}
+            focus={moved}
           />
         )}
 
         {step === 'profile' && (
           <StepLayout
+            focus={moved}
             title="How your crew sees you"
             intro="Your name and badge show on the agenda, on tickets you hold and next to your ratings."
             footer={<Button className="w-full" onClick={next}>Continue</Button>}
@@ -127,6 +135,7 @@ export default function Welcome({
 
         {step === 'tour' && (
           <StepLayout
+            focus={moved}
             title="What's in the app"
             intro="Three tabs at the bottom, one for each job."
             footer={<Button className="w-full" onClick={next}>Continue</Button>}
@@ -137,6 +146,7 @@ export default function Welcome({
 
         {step === 'tickets' && (
           <StepLayout
+            focus={moved}
             title={hasOwnTickets ? "You're all set" : 'Add your tickets'}
             intro={
               hasOwnTickets
@@ -201,17 +211,27 @@ function StepLayout({
   intro,
   children,
   footer,
+  focus = false,
 }: {
   title: string;
   intro: string;
   children?: React.ReactNode;
   footer: React.ReactNode;
+  focus?: boolean; // Move focus to the heading when shown, so screen readers announce the new step
 }) {
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (focus) heading.current?.focus();
+    // Only when this step appears: a later prop change mustn't pull focus out of a form
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   return (
     <>
       <div className="flex-1 space-y-6">
         <div>
-          <h1 className="font-display text-xl text-balance">{title}</h1>
+          <h1 ref={heading} tabIndex={-1} className="font-display text-xl text-balance focus:outline-none">
+            {title}
+          </h1>
           <p className="mt-2 text-ink-2">{intro}</p>
         </div>
         {children}
@@ -231,14 +251,22 @@ function CrewStep({
   allowedWithoutGroups,
   onGroupsChange,
   onNext,
+  focus,
 }: {
   groups: Group[];
   crew: CrewMember[];
   allowedWithoutGroups: boolean;
   onGroupsChange: (groups: Group[]) => void;
   onNext: () => void;
+  focus: boolean;
 }) {
   const router = useRouter();
+  // Joining or creating swaps this step's content; its heading then takes focus too
+  const [acted, setActed] = useState(false);
+  const changeGroups = (next: Group[]) => {
+    setActed(true);
+    onGroupsChange(next);
+  };
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -257,7 +285,7 @@ function CrewStep({
         body: JSON.stringify({ action: 'create', name: name.trim() }),
       });
       const data = await readApiResponse<{ groups: Group[] }>(response, 'Could not create the group');
-      onGroupsChange(data.groups);
+      changeGroups(data.groups);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create the group');
@@ -269,6 +297,8 @@ function CrewStep({
   if (invites.length > 0) {
     return (
       <StepLayout
+        key="invites" // A new element per branch, so its heading takes focus
+        focus={focus || acted}
         title={invites.length === 1 ? 'Join your crew' : 'Join your crews'}
         intro="You've been invited to share the festival. Once you join, you'll see each other's screenings, tickets and ratings in one agenda."
         footer={
@@ -281,7 +311,7 @@ function CrewStep({
           groups={groups}
           crew={crew}
           allowedWithoutGroups={allowedWithoutGroups}
-          onChange={onGroupsChange}
+          onChange={changeGroups}
         />
         {active.length > 0 && <InGroups groups={active} others={others} />}
       </StepLayout>
@@ -291,6 +321,8 @@ function CrewStep({
   if (active.length > 0) {
     return (
       <StepLayout
+        key="in-group" // A new element per branch, so its heading takes focus
+        focus={focus || acted}
         title="You're in"
         intro="Everyone in your crew sees each other's screenings, tickets and ratings. You can hand a ticket to anyone in it."
         footer={<Button className="w-full" onClick={onNext}>Continue</Button>}
@@ -302,6 +334,8 @@ function CrewStep({
 
   return (
     <StepLayout
+      key="start" // A new element per branch, so its heading takes focus
+      focus={focus || acted}
       title="Start a crew"
       intro="The app is made for going to the festival together: everyone in a group sees each other's screenings and tickets. Start one and invite friends from the Crew page, or ask a friend to invite you."
       footer={
