@@ -47,7 +47,13 @@ export default async function CrewPage() {
       <div className="space-y-10 pt-2">
         <ProfileCard me={me} crew={crew} email={viewer.email} />
         <GroupManager initialGroups={groups} crew={crew} allowedWithoutGroups={allowedWithoutGroups} />
-        <QrSharingCard crew={crew} initialSharedWith={qrSharedWith} />
+        {/* Keyed on the server's data: a group change refreshes the page, and an old share can come
+            back into effect, so the chips must start again from what's stored */}
+        <QrSharingCard
+          key={`${crew.map((member) => member.email).join(',')}|${[...qrSharedWith].sort().join(',')}`}
+          crew={crew}
+          initialSharedWith={qrSharedWith}
+        />
         {inboundAddress && (
           <ForwardingCard address={inboundAddress} confirmUrl={confirmUrl} spareLinks={spareLinks} />
         )}
