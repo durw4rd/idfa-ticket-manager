@@ -210,19 +210,18 @@ export default function Welcome({
               showHeading={false}
               confirmStep="After a minute, tap Check for confirmation below, then Confirm forwarding when it appears."
             />
-            {!forwarding.confirmUrl && (
-              // Gmail's confirmation mail takes a minute; this picks it up without leaving the flow
-              <Button
-                variant="ghost"
-                size="sm"
-                className="-ml-3 text-ink-2"
-                icon={<RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />}
-                disabled={refreshing}
-                onClick={() => startRefresh(() => router.refresh())}
-              >
-                Check for confirmation
-              </Button>
-            )}
+            {/* Gmail's confirmation mail takes a minute; this picks it up (or a newer one, on a retry) without
+                leaving the flow */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="-ml-3 text-ink-2"
+              icon={<RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />}
+              disabled={refreshing}
+              onClick={() => startRefresh(() => router.refresh())}
+            >
+              Check for confirmation
+            </Button>
           </StepLayout>
         )}
 
