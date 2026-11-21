@@ -47,9 +47,38 @@ export default function Welcome({
   const [moved, setMoved] = useState(false);
   const goTo = (i: number) => {
     setMoved(true);
+    setError(null); // An error belongs to the step it happened on
     setIndex(Math.max(0, Math.min(i, steps.length - 1)));
   };
   const next = () => goTo(index + 1);
+
+  // What's typed in the profile step's name field, saved by Continue if it wasn't saved already
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
+  const [savingName, setSavingName] = useState(false);
+  const continueFromProfile = async () => {
+    if (nameDraft === null || nameDraft.trim() === me.name) {
+      next();
+      return;
+    }
+    setSavingName(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: nameDraft.trim() }),
+      });
+      await readApiResponse(response, 'Could not save your name');
+      setNameDraft(null);
+      router.refresh();
+      next();
+    } catch (err) {
+      // Stays on the step, name and all, with the error under the header
+      setError(err instanceof Error ? err.message : 'Could not save your name');
+    } finally {
+      setSavingName(false);
+    }
+  };
 
   const finish = async (to: string) => {
     setFinishing(to);
@@ -127,9 +156,18 @@ export default function Welcome({
             focus={moved}
             title="How your crew sees you"
             intro="Your name and badge show on the agenda, on tickets you hold and next to your ratings."
-            footer={<Button className="w-full" onClick={next}>Continue</Button>}
+            footer={
+              <Button
+                className="w-full"
+                disabled={savingName}
+                icon={savingName ? <Loader2 className="h-5 w-5 animate-spin" /> : undefined}
+                onClick={continueFromProfile}
+              >
+                Continue
+              </Button>
+            }
           >
-            <ProfileCard me={me} crew={crew} email={email} showSignOut={false} saveNameOnBlur />
+            <ProfileCard me={me} crew={crew} email={email} showSignOut={false} onNameDraft={setNameDraft} />
           </StepLayout>
         )}
 

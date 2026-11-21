@@ -19,15 +19,15 @@ export default function ProfileCard({
   crew,
   email,
   showSignOut = true,
-  saveNameOnBlur = false,
+  onNameDraft,
 }: {
   me: CrewMember;
   crew: CrewMember[];
   email: string;
   showSignOut?: boolean;
-  // Save a changed name when the field loses focus, for the welcome flow, where Continue would
-  // otherwise leave the step with the name unsaved
-  saveNameOnBlur?: boolean;
+  // Told what's typed in the name field, for the welcome flow, whose Continue saves a name left
+  // unsaved rather than dropping it
+  onNameDraft?: (name: string) => void;
 }) {
   const router = useRouter();
   const [refreshing, startTransition] = useTransition();
@@ -109,8 +109,10 @@ export default function ProfileCard({
           <span className="sr-only">Display name</span>
           <input
             value={name}
-            onChange={(event) => setName(event.target.value)}
-            onBlur={() => saveNameOnBlur && name.trim() !== me.name && !busy && save({ name })}
+            onChange={(event) => {
+              setName(event.target.value);
+              onNameDraft?.(event.target.value);
+            }}
             maxLength={40}
             placeholder="Your name"
             className={inputClasses}
