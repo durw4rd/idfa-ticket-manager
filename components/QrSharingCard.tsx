@@ -60,7 +60,7 @@ export default function QrSharingCard({
       <div className="space-y-4 rounded border border-line bg-surface p-4">
         <p className="text-sm text-ink-2">
           Your QR codes show only to you and to whoever holds a ticket you bought. Pick crew-mates who can show them
-          too, say to get you in from their phone.
+          too, say to get you in from their phone. They get the codes of tickets they can already see in the app.
         </p>
         <div className="flex flex-wrap gap-2">
           {others.map((member) => (
