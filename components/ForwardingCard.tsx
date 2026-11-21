@@ -15,8 +15,11 @@ export default function ForwardingCard({
   confirmUrl,
   spareLinks,
   showHeading = true,
+  confirmStep = 'Come back here and tap Confirm forwarding when it appears (reload after a minute).',
 }: {
   showHeading?: boolean; // Off in the welcome flow, whose step has its own title
+  // The second Gmail step. The welcome flow points to its own check button: a reload there restarts it
+  confirmStep?: string;
   address: string;
   confirmUrl: string | null; // Gmail's "confirm forwarding" link, once its confirmation mail has arrived
   spareLinks: { id: string; act: string; url: string; votedAt: string | null }[];
@@ -87,7 +90,7 @@ export default function ForwardingCard({
             In Gmail settings, under <span className="font-semibold text-ink">Forwarding and POP/IMAP</span>, add the
             address above as a forwarding address.
           </li>
-          <li>Come back here and tap Confirm forwarding when it appears (reload after a minute).</li>
+          <li>{confirmStep}</li>
           <li>
             Create a filter for mail from <span className="font-semibold text-ink">noreply@mailgun.idfa.nl</span> with
             the words <span className="font-semibold text-ink">Cast your vote</span>, and set it to forward to that

@@ -203,7 +203,13 @@ export default function Welcome({
               </div>
             }
           >
-            <ForwardingCard address={forwarding.address} confirmUrl={forwarding.confirmUrl} spareLinks={[]} showHeading={false} />
+            <ForwardingCard
+              address={forwarding.address}
+              confirmUrl={forwarding.confirmUrl}
+              spareLinks={[]}
+              showHeading={false}
+              confirmStep="After a minute, tap Check for confirmation below, then Confirm forwarding when it appears."
+            />
             {!forwarding.confirmUrl && (
               // Gmail's confirmation mail takes a minute; this picks it up without leaving the flow
               <Button
@@ -214,7 +220,7 @@ export default function Welcome({
                 disabled={refreshing}
                 onClick={() => startRefresh(() => router.refresh())}
               >
-                Added the address in Gmail? Check for its confirmation
+                Check for confirmation
               </Button>
             )}
           </StepLayout>
