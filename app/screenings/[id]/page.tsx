@@ -5,6 +5,7 @@ import { ExternalLink, Navigation } from 'lucide-react';
 import { getScreening, getRatingsForFilm, getFilmPlace } from '@/lib/db';
 import { getCrew } from '@/lib/groups';
 import { getViewer } from '@/lib/auth-helpers';
+import { getQrEmails } from '@/lib/qr-shares';
 import { formatDate, formatTime, formatTimeRange, getNow } from '@/lib/dates';
 import { holdersOf, makeCrewLookup, toAgendaScreening } from '@/lib/agenda';
 import { getVenueBackground } from '@/lib/venue-backgrounds';
@@ -57,9 +58,10 @@ export default async function ScreeningDetailPage({
   }
 
   const { id } = await params;
-  const [screening, crew] = await Promise.all([
+  const [screening, crew, qrEmails] = await Promise.all([
     getScreening(viewer.visibleEmails, decodeURIComponent(id)),
     getCrew(viewer),
+    getQrEmails(viewer),
   ]);
   const me = crew.find((member) => member.isMe);
 
@@ -234,6 +236,7 @@ export default async function ScreeningDetailPage({
             }))}
             crew={crew}
             meEmail={viewer.email}
+            qrEmails={qrEmails}
             title={screening.act}
             meta={`${formatDate(startsAt)} · ${formatTimeRange(startsAt, endsAt)} · ${screening.location}`}
           />

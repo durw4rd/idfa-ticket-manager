@@ -9,6 +9,7 @@ import { isAllowedWithoutGroups } from '@/lib/auth';
 import { getViewer } from '@/lib/auth-helpers';
 import { getCurrentFestivalYear, getNow } from '@/lib/dates';
 import { toAgendaScreening, withAvailability } from '@/lib/agenda';
+import { getQrEmails } from '@/lib/qr-shares';
 import { getAvailabilityForScreenings, refreshShowDetails } from '@/lib/idfa';
 import { userContext } from '@/lib/launchdarkly';
 import AgendaView from '@/components/agenda/AgendaView';
@@ -43,10 +44,11 @@ export default async function ScreeningsPage({
     redirect('/screenings');
   }
 
-  const [screenings, festivalYears, crew, filmPlaces] = await Promise.all([
+  const [screenings, festivalYears, crew, qrEmails, filmPlaces] = await Promise.all([
     getScreeningsForYear(viewer.visibleEmails, year),
     getFestivalYears(viewer.visibleEmails),
     getCrew(viewer),
+    getQrEmails(viewer),
     // For the map view. Never worth failing the agenda over: without it the map just has no pins
     getFilmPlacesForYear(viewer.visibleEmails, year).catch((error) => {
       console.warn('Could not load film places:', error);
@@ -76,6 +78,7 @@ export default async function ScreeningsPage({
     <AgendaView
       screenings={withAvailability(screenings.map(toAgendaScreening), availability)}
       crew={crew}
+      qrEmails={qrEmails}
       year={year}
       years={years}
       pastEdition={year < currentYear}

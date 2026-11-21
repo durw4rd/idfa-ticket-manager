@@ -56,7 +56,7 @@ self.addEventListener('fetch', (event) => {
 // that was already on its way when the user signed out can't put the wallet back.
 let generation = 0;
 
-// Bumped per QR path each time the server refuses it (403). A sync that fetched the code before
+// Bumped per QR path each time the server refuses it (403 or 404). A sync that fetched the code before
 // the refusal checks this, so its older answer can't put back the copy the refusal deleted.
 const refusals = new Map();
 
@@ -141,9 +141,9 @@ async function networkFirst(request, cacheName) {
   }
   // The session is over: the copies go too, and the refusal stands
   if (response.status === 401) await clearAll();
-  // Not yours to show (e.g. a ticket handed to someone else since it was stored): drop the copy
-  // so it can't be served offline later
-  if (response.status === 403) {
+  // Not yours to show (403: e.g. a ticket handed to someone else since it was stored), or no longer
+  // visible at all (404: e.g. its owner left your crew): drop the copy so it can't be served offline
+  if (response.status === 403 || response.status === 404) {
     const path = new URL(request.url).pathname;
     refusals.set(path, refusalCount(path) + 1);
     try {

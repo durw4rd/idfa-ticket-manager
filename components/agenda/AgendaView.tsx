@@ -38,6 +38,7 @@ const MapView = dynamic(() => import('@/components/map/MapView'), {
 export default function AgendaView({
   screenings,
   crew,
+  qrEmails,
   year,
   years,
   pastEdition,
@@ -48,6 +49,7 @@ export default function AgendaView({
 }: {
   screenings: AgendaScreening[];
   crew: CrewMember[];
+  qrEmails: string[]; // You plus whoever shares their codes with you (see canSeeQr)
   year: number;
   years: FestivalYear[];
   pastEdition: boolean; // A year before the current festival: a recap, not a plan
@@ -150,7 +152,7 @@ export default function AgendaView({
         <>
           {/* The map is the whole view there; your films show in yellow on it instead */}
           {nextForFocus && view !== 'map' && (
-            <UpNext screening={nextForFocus} now={now} personEmail={focusEmail} viewerEmail={me.email} lookup={lookup} />
+            <UpNext screening={nextForFocus} now={now} personEmail={focusEmail} qrEmails={qrEmails} lookup={lookup} />
           )}
 
           <div className="mb-3 space-y-3">
