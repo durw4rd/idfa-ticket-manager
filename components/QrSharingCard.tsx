@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import type { CrewMember } from '@/lib/types';
 import { readApiResponse } from '@/lib/api-client';
 import { Avatar } from '@/components/ui/Avatar';
@@ -18,6 +19,7 @@ export default function QrSharingCard({
   crew: CrewMember[];
   initialSharedWith: string[];
 }) {
+  const router = useRouter();
   const others = crew.filter((member) => !member.isMe);
   const [sharedWith, setSharedWith] = useState<string[]>(initialSharedWith);
   const [saving, setSaving] = useState<string | null>(null);
@@ -41,6 +43,8 @@ export default function QrSharingCard({
       setSharedWith((current) =>
         shared ? [...current, member.email] : current.filter((email) => email !== member.email)
       );
+      // The router keeps visited pages for a while: refresh so coming back doesn't show the old choice
+      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not update sharing');
     } finally {
