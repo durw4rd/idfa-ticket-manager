@@ -6,7 +6,7 @@ import { ChevronRight, Plus, QrCode, Ticket } from 'lucide-react';
 import type { AgendaScreening, CrewMember } from '@/lib/types';
 import { dayKey, formatDate, formatTimeRange, screeningEnd } from '@/lib/dates';
 import { formatTimeUntil } from '@/lib/display';
-import { makeCrewLookup, screeningHref } from '@/lib/agenda';
+import { canSeeQr, makeCrewLookup, screeningHref } from '@/lib/agenda';
 import { usePersistentState } from '@/lib/use-persistent-state';
 import { useNow } from '@/lib/use-now';
 import { Avatar } from '@/components/ui/Avatar';
@@ -15,7 +15,7 @@ import QaMark from '@/components/QaMark';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import QrOverlay, { type QrTicket } from './QrOverlay';
-import { QrImage } from '@/components/tickets/QrImage';
+import { QrImage, QrLocked } from '@/components/tickets/QrImage';
 
 type Scope = 'mine' | 'crew';
 
@@ -23,13 +23,15 @@ interface Pass {
   screening: AgendaScreening;
   ticketId: string;
   holder: CrewMember;
+  canSeeQr: boolean; // Your own (held or uploaded); a crew-mate's shows a lock instead
   index: number; // Position among the screening's tickets in this list
   of: number;
 }
 
 /**
- * Upcoming tickets as passes, soonest first. The next one shows its QR right away; any pass opens
- * the full-screen QR, and you can swipe through the rest from there.
+ * Upcoming tickets as passes, soonest first. The next one shows its QR right away; any of your
+ * passes opens the full-screen QR, and you can swipe through your others from there. A crew-mate's
+ * pass shows a lock: only a ticket's holder and owner see its code.
  */
 export default function TicketWallet({
   screenings,
@@ -62,12 +64,14 @@ export default function TicketWallet({
       screening,
       ticketId: ticket.id,
       holder: lookup(ticket.holderEmail),
+      canSeeQr: canSeeQr(ticket, me.email),
       index,
       of: tickets.length,
     }));
   });
 
-  const qrTickets: QrTicket[] = passes.map((pass) => {
+  const viewable = passes.filter((pass) => pass.canSeeQr);
+  const qrTickets: QrTicket[] = viewable.map((pass) => {
     const start = new Date(pass.screening.startsAt);
     return {
       id: pass.ticketId,
@@ -149,20 +153,27 @@ export default function TicketWallet({
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setOverlay({ tickets: qrTickets, index: position })}
-                    aria-label={`Show QR code for ${pass.screening.act}`}
-                    className={`shrink-0 overflow-hidden rounded bg-white ring-1 ring-line ${
-                      first ? 'mx-auto w-full max-w-[16rem] p-3' : 'h-16 w-16 p-1'
-                    }`}
-                  >
-                    {first ? (
-                      <QrImage ticketId={pass.ticketId} alt="" compact className="aspect-square w-full object-contain" />
-                    ) : (
-                      <QrCode className="m-auto h-8 w-8 text-[#111]" />
-                    )}
-                  </button>
+                  {!pass.canSeeQr ? (
+                    <QrLocked
+                      holderName={pass.holder.name}
+                      className={first ? 'mx-auto aspect-square w-full max-w-[16rem]' : 'h-16 w-16'}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setOverlay({ tickets: qrTickets, index: viewable.indexOf(pass) })}
+                      aria-label={`Show QR code for ${pass.screening.act}`}
+                      className={`shrink-0 overflow-hidden rounded bg-white ring-1 ring-line ${
+                        first ? 'mx-auto w-full max-w-[16rem] p-3' : 'h-16 w-16 p-1'
+                      }`}
+                    >
+                      {first ? (
+                        <QrImage ticketId={pass.ticketId} alt="" compact className="aspect-square w-full object-contain" />
+                      ) : (
+                        <QrCode className="m-auto h-8 w-8 text-[#111]" />
+                      )}
+                    </button>
+                  )}
                 </div>
               </li>
             );

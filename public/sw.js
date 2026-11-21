@@ -13,10 +13,12 @@
 // delete all of it. Every write is best-effort: storage being full never breaks the online app.
 // Bump VERSION when the caching rules change: older caches are deleted on activate.
 
-const VERSION = 'v1';
+// v2: QR codes became holder-and-owner only, so wallets and codes stored under v1 (which held
+// crew-mates' codes too) are dropped; the next online Tickets visit stores your own again.
+const VERSION = 'v2';
 const PAGES = `pages-${VERSION}`;
 const STATIC = `static-${VERSION}`;
-const QR = 'ticket-qr'; // Shared with OfflineTickets.tsx and ProfileCard.tsx
+const QR = `ticket-qr-${VERSION}`; // Versioned too, so a bump drops old codes
 const KEEP = [PAGES, STATIC, QR];
 const WALLET = '/tickets';
 
@@ -54,16 +56,30 @@ self.addEventListener('fetch', (event) => {
 // that was already on its way when the user signed out can't put the wallet back.
 let generation = 0;
 
+// Bumped per QR path each time the server refuses it (403). A sync that fetched the code before
+// the refusal checks this, so its older answer can't put back the copy the refusal deleted.
+const refusals = new Map();
+
+function refusalCount(path) {
+  return refusals.get(path) ?? 0;
+}
+
 /**
- * Store a copy unless a wipe happened since `since`. Storage errors (a full disk) are logged, not
- * thrown. Returns whether the copy was stored.
+ * Store a copy unless a wipe happened since `since`, or `stillWanted` (if given) says no. Storage
+ * errors (a full disk) are logged, not thrown. Returns whether the copy was stored.
  */
-async function store(cacheName, key, response, since) {
-  if (since !== generation) return false;
+async function store(cacheName, key, response, since, stillWanted = () => true) {
+  if (since !== generation || !stillWanted()) return false;
   try {
     const cache = await caches.open(cacheName);
-    if (since !== generation) return false;
+    if (since !== generation || !stillWanted()) return false;
     await cache.put(key, response);
+    // A wipe or refusal can land while the put is still writing, and its delete then runs before
+    // the copy exists: check again now that it does, and take the copy back out
+    if (since !== generation || !stillWanted()) {
+      await cache.delete(key);
+      return false;
+    }
     return true;
   } catch (error) {
     console.warn('Offline copy not stored:', error);
@@ -125,6 +141,18 @@ async function networkFirst(request, cacheName) {
   }
   // The session is over: the copies go too, and the refusal stands
   if (response.status === 401) await clearAll();
+  // Not yours to show (e.g. a ticket handed to someone else since it was stored): drop the copy
+  // so it can't be served offline later
+  if (response.status === 403) {
+    const path = new URL(request.url).pathname;
+    refusals.set(path, refusalCount(path) + 1);
+    try {
+      const cache = await caches.open(cacheName);
+      await cache.delete(request, { ignoreSearch: true });
+    } catch {
+      // Housekeeping only; the next wallet sync drops it too
+    }
+  }
   return response;
 }
 
@@ -225,11 +253,14 @@ async function sync({ assets }, since) {
 /** Store `path` in the cache unless it's there already. A network error is left for next time. */
 async function fetchStored(cacheName, path, since) {
   if (await stored(path, { cacheName })) return 'stored';
+  const refusedBefore = refusalCount(path);
   try {
     const response = await fetch(path, { redirect: 'manual' });
     if (response.type === 'opaqueredirect' || response.status === 401) return 'signed-out';
+    // Refused while this request was out (e.g. the ticket was handed on): don't store the old answer
+    const notRefused = () => refusalCount(path) === refusedBefore;
     // 'stored' only when the copy really is: a full disk must not count as done
-    return response.ok && (await store(cacheName, path, response, since)) ? 'stored' : 'missing';
+    return response.ok && (await store(cacheName, path, response, since, notRefused)) ? 'stored' : 'missing';
   } catch {
     return 'missing';
   }

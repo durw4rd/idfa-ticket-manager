@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import type { AgendaScreening } from '@/lib/types';
+import { canSeeQr } from '@/lib/agenda';
 import { useModal } from '@/lib/use-modal';
 import { formatDate, formatTimeRange } from '@/lib/dates';
 import { QrImage } from '@/components/tickets/QrImage';
@@ -166,16 +167,19 @@ export default function QrOverlay({
 }
 
 /**
- * The tickets to show for a screening: the ones `preferEmail` holds, or all of them if they hold
- * none (e.g. showing a crew-mate's ticket from your phone).
+ * The tickets to show for a screening: of those `viewerEmail` may see (held or uploaded by them),
+ * the ones `preferEmail` holds, or all of them if they hold none (e.g. a ticket you bought for a
+ * crew-mate). Empty when the viewer may see none.
  */
 export function qrTicketsFor(
   screening: AgendaScreening,
   nameOf: (email: string) => string,
+  viewerEmail: string,
   preferEmail?: string
 ): QrTicket[] {
-  const mine = screening.tickets.filter((ticket) => ticket.holderEmail === preferEmail);
-  const tickets = mine.length > 0 ? mine : screening.tickets;
+  const viewable = screening.tickets.filter((ticket) => canSeeQr(ticket, viewerEmail));
+  const preferred = viewable.filter((ticket) => ticket.holderEmail === preferEmail);
+  const tickets = preferred.length > 0 ? preferred : viewable;
   const startsAt = new Date(screening.startsAt);
   const meta = `${formatDate(startsAt)} · ${formatTimeRange(startsAt, screening.endsAt)} · ${screening.location}`;
   return tickets.map((ticket, index) => ({

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowRightLeft, Loader2, MoreHorizontal, Pencil, QrCode, Ticket, Trash2 } from 'lucide-react';
 import type { CrewMember, ExtractedTicketFields } from '@/lib/types';
-import { crewHint, makeCrewLookup, screeningHref, screeningKey } from '@/lib/agenda';
+import { canSeeQr, crewHint, makeCrewLookup, screeningHref, screeningKey } from '@/lib/agenda';
 import { readApiResponse } from '@/lib/api-client';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
@@ -12,7 +12,7 @@ import { Notice } from '@/components/ui/Field';
 import { Sheet, SheetOption } from '@/components/ui/Sheet';
 import TicketFieldsForm from '@/components/TicketFieldsForm';
 import QrOverlay, { type QrTicket } from '@/components/tickets/QrOverlay';
-import { QrImage } from '@/components/tickets/QrImage';
+import { QrImage, QrLocked } from '@/components/tickets/QrImage';
 
 export interface ScreeningTicket {
   id: string;
@@ -29,8 +29,9 @@ type Panel =
   | { kind: 'delete'; ticket: ScreeningTicket };
 
 /**
- * The tickets for one screening: who holds each, the QR codes, and the actions you're allowed:
- * pass a ticket on (its owner or holder), fix details or delete it (its owner).
+ * The tickets for one screening: who holds each, the QR codes of the ones you hold or own (a lock
+ * on the rest), and the actions you're allowed: pass a ticket on (its owner or holder), fix details
+ * or delete it (its owner).
  */
 export default function ScreeningTickets({
   tickets,
@@ -59,7 +60,8 @@ export default function ScreeningTickets({
   const ordered = [...tickets].sort(
     (a, b) => Number(b.holderEmail === meEmail) - Number(a.holderEmail === meEmail)
   );
-  const withQr = ordered.filter((ticket) => ticket.hasQr);
+  // Only the codes you may see (the QR route refuses the rest)
+  const withQr = ordered.filter((ticket) => ticket.hasQr && canSeeQr(ticket, meEmail));
   const qrTickets: QrTicket[] = withQr.map((ticket, index) => ({
     id: ticket.id,
     title,
@@ -164,7 +166,9 @@ export default function ScreeningTickets({
           const canPassOn = isOwner || ticket.holderEmail === meEmail;
           return (
             <li key={ticket.id} className="flex items-center gap-3 p-3">
-              {ticket.hasQr ? (
+              {ticket.hasQr && !canSeeQr(ticket, meEmail) ? (
+                <QrLocked holderName={holder.name} className="h-14 w-14" />
+              ) : ticket.hasQr ? (
                 <button
                   type="button"
                   onClick={() => setOverlay({ tickets: qrTickets, index: withQr.indexOf(ticket) })}
