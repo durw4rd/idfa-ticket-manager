@@ -3,7 +3,6 @@ import type { AgendaScreening, CrewGroup, CrewMember } from './types';
 import {
   buildTodo,
   crewHint,
-  crewSections,
   filmShowings,
   filterByPeople,
   filterByPerson,
@@ -14,7 +13,7 @@ import {
   makeCrewLookup,
   screeningsToRate,
   toMapFilms,
-  togglePeople,
+  togglePerson,
   upcomingOnly,
 } from './agenda';
 
@@ -273,42 +272,37 @@ function member(email: string, groups: CrewGroup[], isMe = false): CrewMember {
   return { email, name: email.split('@')[0], color: 0, badge: null, isMe, groups };
 }
 
-describe('togglePeople', () => {
+describe('togglePerson', () => {
   const OTHER = 'other@example.com';
-  const crew = [member(ME, [FESTIVAL], true), member(FRIEND, [FESTIVAL]), member(OTHER, [FESTIVAL])];
+  const SAM = 'sam@example.com';
+  // You share Festival friends with FRIEND and OTHER, and Duo with SAM only
+  const crew = [
+    member(ME, [FESTIVAL, DUO], true),
+    member(FRIEND, [FESTIVAL]),
+    member(OTHER, [FESTIVAL]),
+    member(SAM, [DUO]),
+  ];
 
   it('adds a person, keeping crew order', () => {
-    expect(togglePeople(crew, [OTHER], [ME])).toEqual([ME, OTHER]);
+    expect(togglePerson(crew, [OTHER], ME)).toEqual([ME, OTHER]);
   });
 
   it('takes a selected person off', () => {
-    expect(togglePeople(crew, [ME, OTHER], [OTHER])).toEqual([ME]);
+    expect(togglePerson(crew, [ME, OTHER], OTHER)).toEqual([ME]);
   });
 
-  it('selects a whole crew unless all of it is on, then clears it', () => {
-    expect(togglePeople(crew, [FRIEND], [ME, FRIEND, OTHER])).toEqual([ME, FRIEND, OTHER]);
-    expect(togglePeople(crew, [ME, FRIEND, OTHER], [ME, FRIEND, OTHER])).toEqual([]);
+  it('picks people from different crews together', () => {
+    const picked = [ME, FRIEND, SAM].reduce((selected, email) => togglePerson(crew, selected, email), [] as string[]);
+    expect(picked).toEqual([ME, FRIEND, SAM]);
   });
 });
 
-describe('crewSections and crewHint', () => {
+describe('crewHint', () => {
   const MARTINA = 'martina@example.com';
   const SAM = 'sam@example.com';
   const me = member(ME, [FESTIVAL, DUO], true);
   const martina = member(MARTINA, [FESTIVAL, DUO]);
   const sam = member(SAM, [DUO]);
-
-  it('lists each person once, under their first crew, and selects whole crews', () => {
-    const sections = crewSections([me, martina, sam]);
-    expect(sections.map((s) => [s.group.name, s.members.map((m) => m.email), s.everyone])).toEqual([
-      ['Festival friends', [MARTINA], [ME, MARTINA]],
-      ['Duo', [SAM], [ME, MARTINA, SAM]],
-    ]);
-  });
-
-  it('leaves out a crew with nobody else in it yet', () => {
-    expect(crewSections([member(ME, [FESTIVAL, DUO], true), sam]).map((s) => s.group.id)).toEqual(['g2']);
-  });
 
   it('names crews only when you are in more than one, and never for you', () => {
     expect(crewHint(sam, me)).toBe('Duo');
